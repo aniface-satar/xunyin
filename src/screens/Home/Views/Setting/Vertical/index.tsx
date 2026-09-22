@@ -23,10 +23,47 @@ const SETTING_ITEMS: Array<{ id: SettingScreenIds, icon: string }> = [
   { id: 'backup', icon: 'download-2' },
   { id: 'other', icon: 'dots-vertical' },
   { id: 'version', icon: 'available_updates' },
-  { id: 'about', icon: 'logo' },
+  { id: 'about', icon: 'about-info' },
 ]
 
 const DOTS_VERTICAL_ALIGNMENT_OFFSET = scaleSizeW(17) * 384 / 1024
+
+const AboutIcon = memo(({ color }: { color: string }) => {
+  const frameSize = scaleSizeW(17)
+  const circleSize = scaleSizeW(11.5)
+  const strokeWidth = Math.max(1, scaleSizeW(1.1))
+  const dotSize = Math.max(2, scaleSizeW(2.2))
+
+  return (
+    <View style={{
+      ...styles.aboutIconFrame,
+      width: frameSize,
+      height: frameSize,
+      borderWidth: strokeWidth,
+      borderColor: color,
+    }}>
+      <View style={{
+        ...styles.aboutIconCircle,
+        width: circleSize,
+        height: circleSize,
+        borderWidth: strokeWidth,
+        borderColor: color,
+      }}>
+        <View style={{
+          width: strokeWidth,
+          height: scaleSizeW(5),
+          backgroundColor: color,
+        }} />
+        <View style={{
+          ...styles.aboutIconDot,
+          width: dotSize,
+          height: dotSize,
+          backgroundColor: color,
+        }} />
+      </View>
+    </View>
+  )
+})
 
 const ParentItem = memo(({ id, icon, onPress }: {
   id: SettingScreenIds
@@ -43,12 +80,16 @@ const ParentItem = memo(({ id, icon, onPress }: {
       onPress={() => { onPress(id) }}
     >
       <View style={{ ...styles.itemIcon, backgroundColor: theme['c-primary-background-active'] }}>
-        <Icon
-          name={icon}
-          size={17}
-          color={theme['c-primary-font-active']}
-          style={icon === 'dots-vertical' ? styles.dotsIcon : undefined}
-        />
+        {icon === 'about-info' ? (
+          <AboutIcon color={theme['c-primary-font-active']} />
+        ) : (
+          <Icon
+            name={icon}
+            size={17}
+            color={theme['c-primary-font-active']}
+            style={icon === 'dots-vertical' ? styles.dotsIcon : undefined}
+          />
+        )}
       </View>
       <Text style={styles.itemText} size={16} numberOfLines={1}>{t(`setting_${id}`)}</Text>
       <Icon name="chevron-right" size={14} color={theme['c-font-label']} />
@@ -139,6 +180,20 @@ const styles = createStyle({
   },
   dotsIcon: {
     transform: [{ translateX: DOTS_VERTICAL_ALIGNMENT_OFFSET }],
+  },
+  aboutIconFrame: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 3,
+  },
+  aboutIconCircle: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+  },
+  aboutIconDot: {
+    borderRadius: 999,
+    marginTop: 1,
   },
   detailContent: {
     flex: 1,
