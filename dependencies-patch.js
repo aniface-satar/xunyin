@@ -12,6 +12,7 @@ const trackPlayerService = 'node_modules/react-native-track-player/android/src/m
 const trackPlayerModule = 'node_modules/react-native-track-player/android/src/main/java/com/guichaguri/trackplayer/module'
 const trackPlayerMetadata = 'node_modules/react-native-track-player/android/src/main/java/com/guichaguri/trackplayer/service/metadata'
 const trackPlayerInterfaces = 'node_modules/react-native-track-player/lib/interfaces.d.ts'
+const trackPlayerDrawable = 'node_modules/react-native-track-player/android/src/main/res/drawable/ic_xunyin_notification.xml'
 
 const patchs = [
   // 灵动胶囊 / 原子岛 / 音乐流体云：OEM 的胶囊渲染器只识别声明了媒体按键与传输控制
@@ -160,9 +161,26 @@ const patchs = [
     /new NotificationCompat\.Builder\(this, channel\)\.build\(\)/g,
     [
       'new NotificationCompat.Builder(this, channel)',
-      '                        .setSmallIcon(R.drawable.play)',
+      '                        .setSmallIcon(R.drawable.ic_xunyin_notification)',
       '                        .build()',
     ].join('\n'),
+  ],
+  [
+    path.join(rootPath, trackPlayerService, 'MusicService.java'),
+    /(\.setSmallIcon\()R\.drawable\.play(\))/g,
+    '$1R.drawable.ic_xunyin_notification$2',
+  ],
+  // The service and notification manager build notifications before JS options
+  // arrive, so use the app's status-bar icon as the native fallback too.
+  [
+    path.join(rootPath, trackPlayerMetadata, 'MetadataManager.java'),
+    /(builder\.setSmallIcon\()R\.drawable\.play(\);\r?\n        builder\.setCategory)/,
+    '$1R.drawable.ic_xunyin_notification$2',
+  ],
+  [
+    path.join(rootPath, trackPlayerMetadata, 'MetadataManager.java'),
+    /(builder\.setSmallIcon\(getIcon\(options, "icon", )R\.drawable\.play(\)\);)/,
+    '$1R.drawable.ic_xunyin_notification$2',
   ],
   // Android 12+ requires immutable or mutable flags on every PendingIntent.
   [
@@ -324,6 +342,18 @@ const patchs = [
   ],
 ]
 
+const moduleIconXml = `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M2.5,9.5h1.5v5H2.5z M5.5,7.5h1.5v9H5.5z M8.5,5h1.5v14H8.5z M11.5,3h1.5v18h-1.5z M14.5,5h1.5v14h-1.5z M17.5,7.5h1.5v9h-1.5z M20.5,9.5h1.5v5h-1.5z" />
+</vector>
+`
+
 ;(async() => {
   for (const [filePath, fromStr, toStr] of patchs) {
     const shortPath = filePath.replace(rootPath, '')
@@ -340,5 +370,7 @@ const patchs = [
       console.error(`Patch ${shortPath} failed: ${err.message}`)
     }
   }
+  await fs.promises.mkdir(path.dirname(path.join(rootPath, trackPlayerDrawable)), { recursive: true })
+  await fs.promises.writeFile(path.join(rootPath, trackPlayerDrawable), moduleIconXml)
   console.log('\nDependencies patch finished.\n')
 })()
