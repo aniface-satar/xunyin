@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="160" src="https://github.com/lyswhut/lx-music-mobile/blob/master/doc/images/icon.png" alt="寻音">
+  <img width="160" src="doc/images/icon.png" alt="寻音">
 </p>
 
 <h1 align="center">寻音</h1>
