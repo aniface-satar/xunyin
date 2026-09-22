@@ -1,4 +1,4 @@
-import TrackPlayer, { Capability, Event, RatingType, RepeatMode, State, ResourceObject } from 'react-native-track-player'
+import TrackPlayer, { Capability, Event, RatingType, RepeatMode, State } from 'react-native-track-player'
 import BackgroundTimer from 'react-native-background-timer'
 import { playMusic as handlePlayMusic } from './playList'
 import { existsFile, moveFile, privateStorageDirectoryPath, temporaryDirectoryPath } from '@/utils/fs'
@@ -306,7 +306,8 @@ export const updateOptions = async(options = {
   // stopIcon: require('./stop-icon.png'),
   // previousIcon: require('./previous-icon.png'),
   // nextIcon: require('./next-icon.png'),
-  // icon: notificationIcon, // The notification icon
+  // Use a monochrome Xunyin waveform instead of the track-player default.
+  icon: { uri: 'ic_xunyin_notification' },
 }) => {
   return TrackPlayer.updateOptions(options)
 }
