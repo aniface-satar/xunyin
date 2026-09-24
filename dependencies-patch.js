@@ -11,10 +11,18 @@ const rootPath = path.join(__dirname, './')
 const trackPlayerService = 'node_modules/react-native-track-player/android/src/main/java/com/guichaguri/trackplayer/service'
 const trackPlayerModule = 'node_modules/react-native-track-player/android/src/main/java/com/guichaguri/trackplayer/module'
 const trackPlayerMetadata = 'node_modules/react-native-track-player/android/src/main/java/com/guichaguri/trackplayer/service/metadata'
+const trackPlayerManifest = 'node_modules/react-native-track-player/android/src/main/AndroidManifest.xml'
 const trackPlayerInterfaces = 'node_modules/react-native-track-player/lib/interfaces.d.ts'
 const trackPlayerDrawable = 'node_modules/react-native-track-player/android/src/main/res/drawable/ic_xunyin_notification.xml'
 
 const patchs = [
+  // Some Gradle/AGP combinations used by CI do not synthesize the R class when
+  // this package attribute is missing from the library manifest.
+  [
+    path.join(rootPath, trackPlayerManifest),
+    /(<manifest\s+xmlns:android="[^"]+")\s*>/,
+    '$1\n    package="com.guichaguri.trackplayer"\n>',
+  ],
   // 灵动胶囊 / 原子岛 / 音乐流体云：OEM 的胶囊渲染器只识别声明了媒体按键与传输控制
   // 处理的 MediaSession，track-player 默认只设置了队列命令，这里补齐。
   [
@@ -103,16 +111,28 @@ const patchs = [
     ].join('\n'),
   ],
   // 锁屏 / 胶囊优先读取 display* 元数据，这里与 title/artist/album 保持同步。
+  // Use the raw keys instead of static imports: they are stable constants and
+  // avoid classpath differences between local and CI AndroidX resolutions.
   [
     path.join(rootPath, trackPlayerService, 'models/TrackMetadata.java'),
-    /(builder\.putString\(METADATA_KEY_TITLE, title\);[\s\S]*?builder\.putString\(METADATA_KEY_GENRE, genre\);)(?![\s\S]{0,400}?METADATA_KEY_DISPLAY_TITLE)/,
+    /\r?\n\r?\n[ \t]*\/\/ Display keys are what the lockscreen \/ island \(capsule\) renderers prefer over the raw[\s\S]*?builder\.putString\(METADATA_KEY_DISPLAY_DESCRIPTION, album\);/,
+    '',
+  ],
+  [
+    path.join(rootPath, trackPlayerService, 'models/TrackMetadata.java'),
+    /(builder\.putString\(METADATA_KEY_TITLE, title\);[\s\S]*?builder\.putString\(METADATA_KEY_GENRE, genre\);)(?![\s\S]{0,500}?DISPLAY_TITLE")/,
     [
       '$1',
       '',
-      '        builder.putString(METADATA_KEY_DISPLAY_TITLE, title);',
-      '        builder.putString(METADATA_KEY_DISPLAY_SUBTITLE, artist);',
-      '        builder.putString(METADATA_KEY_DISPLAY_DESCRIPTION, album);',
+      '        builder.putString("android.media.metadata.DISPLAY_TITLE", title);',
+      '        builder.putString("android.media.metadata.DISPLAY_SUBTITLE", artist);',
+      '        builder.putString("android.media.metadata.DISPLAY_DESCRIPTION", album);',
     ].join('\n'),
+  ],
+  [
+    path.join(rootPath, trackPlayerService, 'models/TrackMetadata.java'),
+    /import static android\.support\.v4\.media\.MediaMetadataCompat\.METADATA_KEY_DISPLAY_(TITLE|SUBTITLE|DESCRIPTION);\r?\n/g,
+    '',
   ],
   // The notification's like button uses the remote-like event exposed by this fork.
   [
