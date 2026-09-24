@@ -15,9 +15,6 @@ const init = (callback: () => void | Promise<void>) => {
   if (unRegisterEvent) unRegisterEvent.remove()
 
   Navigation.setDefaultOptions({
-    layout: {
-      orientation: ['portrait'],
-    },
     // animations: {
     //   setRoot: {
     //     waitForRender: true,

@@ -178,10 +178,34 @@ const patchs = [
   // Android 13+ rejects a foreground-service notification without a small icon.
   [
     path.join(rootPath, trackPlayerService, 'MusicService.java'),
+    /(?:    private int getNotificationIcon\(\) \{[\s\S]*?\n    \}\n\n)?    private void onStartForeground\(\) \{/,
+    [
+      '    private int getNotificationIcon() {',
+      '        int icon = com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(this, "ic_xunyin_notification");',
+      '        return icon != 0 ? icon : android.R.drawable.ic_media_play;',
+      '    }',
+      '',
+      '    private void onStartForeground() {',
+    ].join('\n'),
+  ],
+  [
+    path.join(rootPath, trackPlayerMetadata, 'MetadataManager.java'),
+    /(?:    private int getNotificationIcon\(\) \{[\s\S]*?\n    \}\n\n)?    public MediaSessionCompat getSession\(\) \{/,
+    [
+      '    private int getNotificationIcon() {',
+      '        int icon = ResourceDrawableIdHelper.getInstance().getResourceDrawableId(service, "ic_xunyin_notification");',
+      '        return icon != 0 ? icon : android.R.drawable.ic_media_play;',
+      '    }',
+      '',
+      '    public MediaSessionCompat getSession() {',
+    ].join('\n'),
+  ],
+  [
+    path.join(rootPath, trackPlayerService, 'MusicService.java'),
     /new NotificationCompat\.Builder\(this, channel\)\.build\(\)/g,
     [
       'new NotificationCompat.Builder(this, channel)',
-      '                        .setSmallIcon(com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(this, "ic_xunyin_notification"))',
+      '                        .setSmallIcon(getNotificationIcon())',
       '                        .build()',
     ].join('\n'),
   ],
@@ -190,29 +214,29 @@ const patchs = [
   [
     path.join(rootPath, trackPlayerService, 'MusicService.java'),
     /R\.drawable\.ic_xunyin_notification/g,
-    'com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(this, "ic_xunyin_notification")',
+    'getNotificationIcon()',
   ],
   [
     path.join(rootPath, trackPlayerService, 'MusicService.java'),
     /(\.setSmallIcon\()R\.drawable\.play(\))/g,
-    '$1com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(this, "ic_xunyin_notification")$2',
+    '$1getNotificationIcon()$2',
   ],
   // The service and notification manager build notifications before JS options
   // arrive, so use the app's status-bar icon as the native fallback too.
   [
     path.join(rootPath, trackPlayerMetadata, 'MetadataManager.java'),
     /(builder\.setSmallIcon\()R\.drawable\.play(\);\r?\n        builder\.setCategory)/,
-    '$1com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(service, "ic_xunyin_notification")$2',
+    '$1getNotificationIcon()$2',
   ],
   [
     path.join(rootPath, trackPlayerMetadata, 'MetadataManager.java'),
     /(builder\.setSmallIcon\(getIcon\(options, "icon", )R\.drawable\.play(\)\);)/,
-    '$1com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(service, "ic_xunyin_notification")$2',
+    '$1getNotificationIcon()$2',
   ],
   [
     path.join(rootPath, trackPlayerMetadata, 'MetadataManager.java'),
     /R\.drawable\.ic_xunyin_notification/g,
-    'com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(service, "ic_xunyin_notification")',
+    'getNotificationIcon()',
   ],
   // Android 12+ requires immutable or mutable flags on every PendingIntent.
   [
