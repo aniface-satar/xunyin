@@ -80,47 +80,53 @@ const getTargetAbi = async() => {
   }
   return abis[abis.length - 1]
 }
-const getDownloadUrl = async(version) => {
+const getDownloadUrls = async(version) => {
   const abi = await getTargetAbi()
-  return `https://github.com/${repository}/releases/download/v${version}/${name}-v${version}-${abi}.apk`
+  const filePath = `${repository}/releases/download/v${version}/${name}-v${version}-${abi}.apk`
+  return [
+    `https://ghproxy.net/https://github.com/${filePath}`,
+    `https://ghfast.top/https://github.com/${filePath}`,
+    `https://gh-proxy.com/https://github.com/${filePath}`,
+    `https://github.com/${filePath}`,
+  ]
 }
 
-export const getBrowserDownloadUrl = async(version) => getDownloadUrl(version)
+export const getBrowserDownloadUrl = async(version) => (await getDownloadUrls(version))[0]
 
 let downloadJobId = null
 const noop = (total, download) => {}
 let apkSavePath
 
 export const downloadNewVersion = async(version, onDownload = noop) => {
-  const url = await getDownloadUrl(version)
+  const urls = await getDownloadUrls(version)
   let savePath = temporaryDirectoryPath + '/lx-music-mobile.apk'
 
-  if (downloadJobId) stopDownload(downloadJobId)
+  const download = async(index) => {
+    if (downloadJobId) stopDownload(downloadJobId)
 
-  const { jobId, promise } = downloadFile(url, savePath, {
-    progressInterval: 500,
-    connectionTimeout: 20000,
-    readTimeout: 30000,
-    begin({ statusCode, contentLength }) {
-      onDownload(contentLength, 0)
-      // switch (statusCode) {
-      //   case 200:
-      //   case 206:
-      //     break
-      //   default:
-      //     onDownload(null, contentLength, 0)
-      //     break
-      // }
-    },
-    progress({ contentLength, bytesWritten }) {
-      onDownload(contentLength, bytesWritten)
-    },
-  })
-  downloadJobId = jobId
-  return promise.then(() => {
-    apkSavePath = savePath
-    return updateApp()
-  })
+    const { jobId, promise } = downloadFile(urls[index], savePath, {
+      progressInterval: 500,
+      connectionTimeout: 20000,
+      readTimeout: 30000,
+      begin({ contentLength }) {
+        onDownload(contentLength, 0)
+      },
+      progress({ contentLength, bytesWritten }) {
+        onDownload(contentLength, bytesWritten)
+      },
+    })
+    downloadJobId = jobId
+
+    return promise.catch(err => {
+      if (index >= urls.length - 1) throw err
+      return download(index + 1)
+    })
+  }
+
+  await download(0)
+
+  apkSavePath = savePath
+  return updateApp()
 }
 
 export const updateApp = async() => {
