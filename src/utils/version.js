@@ -15,14 +15,12 @@ const abis = [
 const repository = 'aniface-satar/xunyin'
 
 const address = [
-  [`https://raw.githubusercontent.com/${repository}/main/publish/version.json`, 'direct'],
-  ['https://registry.npmjs.org/lx-music-mobile-version-info/latest', 'npm'],
+  [`https://cdn.jsdmirror.cn/gh/${repository}@main/publish/version.json`, 'direct'],
+  [`https://cdn.jsdmirror.com/gh/${repository}@main/publish/version.json`, 'direct'],
   [`https://cdn.jsdelivr.net/gh/${repository}@main/publish/version.json`, 'direct'],
   [`https://fastly.jsdelivr.net/gh/${repository}@main/publish/version.json`, 'direct'],
-  [`https://gcore.jsdelivr.net/gh/${repository}@main/publish/version.json`, 'direct'],
-  ['https://registry.npmmirror.com/lx-music-mobile-version-info/latest', 'npm'],
-  ['https://gitee.com/lyswhut/lx-music-mobile-versions/raw/master/version.json', 'direct'],
-  ['http://cdn.stsky.cn/lx-music/mobile/version.json', 'direct'],
+  [`https://ghproxy.net/https://raw.githubusercontent.com/${repository}/main/publish/version.json`, 'direct'],
+  [`https://raw.githubusercontent.com/${repository}/main/publish/version.json`, 'direct'],
 ]
 
 
