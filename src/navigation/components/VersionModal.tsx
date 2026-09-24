@@ -256,21 +256,19 @@ const styles = createStyle({
     paddingBottom: 10,
   },
   btns: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: 'column',
+    rowGap: 10,
     paddingBottom: 15,
     paddingLeft: 15,
-    // paddingRight: 15,
+    paddingRight: 15,
   },
   btn: {
-    flex: 1,
     paddingTop: 10,
     paddingBottom: 10,
-    paddingLeft: 10,
-    paddingRight: 10,
+    paddingLeft: 12,
+    paddingRight: 12,
     alignItems: 'center',
     borderRadius: 4,
-    marginRight: 15,
   },
 })
 
