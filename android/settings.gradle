@@ -1,8 +1,5 @@
 rootProject.name = 'cn.toside.music.mobile'
 apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesSettingsGradle(settings)
 
-// Windows path limit workaround: keep AGP's fixed .cxx directory under a short path.
-project(':react-native-quick-base64').projectDir = file('C:/qbbproj/android')
-
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
