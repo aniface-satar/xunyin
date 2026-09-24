@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 
 import MusicList, { type MusicListType } from '@/screens/Home/Views/Leaderboard/MusicList'
@@ -27,6 +27,16 @@ export default ({ componentId, source, board, embedded = false, onBack }: {
   onBack?: () => void
 }) => {
   const musicListRef = useRef<MusicListType>(null)
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
+
+  const handleMultiSelectModeChange = useCallback((value: boolean) => {
+    setIsMultiSelectMode(value)
+  }, [])
+
+  const handleToggleMultiSelect = useCallback(() => {
+    if (isMultiSelectMode) musicListRef.current?.exitMultiSelect()
+    else musicListRef.current?.showMultiSelect()
+  }, [isMultiSelectMode])
 
   useEffect(() => {
     if (!embedded) setComponentId(COMPONENT_IDS.leaderboardDetail, componentId)
@@ -38,8 +48,8 @@ export default ({ componentId, source, board, embedded = false, onBack }: {
     return (
       <LeaderboardInfoContext.Provider value={{ source, board }}>
         <View style={styles.content}>
-          <Header componentId={componentId} onBack={onBack} />
-          <MusicList ref={musicListRef} checkHomePagerIdle={false} />
+          <Header componentId={componentId} onBack={onBack} isMultiSelectMode={isMultiSelectMode} onToggleMultiSelect={handleToggleMultiSelect} />
+          <MusicList ref={musicListRef} checkHomePagerIdle={false} multiSelectStyle="mylist" onMultiSelectModeChange={handleMultiSelectModeChange} />
         </View>
       </LeaderboardInfoContext.Provider>
     )
@@ -51,8 +61,8 @@ export default ({ componentId, source, board, embedded = false, onBack }: {
         <StatusBar />
         <LeaderboardInfoContext.Provider value={{ source, board }}>
           <View nativeID={NAV_SHEAR_NATIVE_IDS.leaderboardDetail_content} style={styles.content} collapsable={false}>
-            <Header componentId={componentId} />
-            <MusicList ref={musicListRef} checkHomePagerIdle={false} />
+            <Header componentId={componentId} isMultiSelectMode={isMultiSelectMode} onToggleMultiSelect={handleToggleMultiSelect} />
+            <MusicList ref={musicListRef} checkHomePagerIdle={false} multiSelectStyle="mylist" onMultiSelectModeChange={handleMultiSelectModeChange} />
           </View>
         </LeaderboardInfoContext.Provider>
         <PlayerBar />

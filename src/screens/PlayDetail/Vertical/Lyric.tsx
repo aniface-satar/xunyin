@@ -13,9 +13,11 @@ import { scrollTo } from '@/utils/scroll'
 import PlayLine, { type PlayLineType } from '../components/PlayLine'
 import MusicSummary from './components/MusicSummary'
 import { HEADER_HEIGHT } from './components/Header'
+import { getLyricFallbackDragLineSpacing } from '@/components/player/PlayerOverlay/transition'
 import { getPlayDetailLayout } from './layout'
 import { useStatusbarHeight } from '@/store/common/hook'
 import { useWindowSize } from '@/utils/hooks'
+import { BTN_WIDTH } from './Player/components/MoreBtn/Btn'
 // import { screenkeepAwake } from '@/utils/nativeModules/utils'
 // import { log } from '@/utils/log'
 // import { toast } from '@/utils/tools'
@@ -60,6 +62,10 @@ type FlatListType = FlatListProps<Line>
 //     }
 //   }, [])
 // }
+
+interface LyricProps {
+  showSummary?: boolean
+}
 
 interface LineProps {
   line: Line
@@ -119,7 +125,9 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
 })
 const wait = async() => new Promise(resolve => setTimeout(resolve, 100))
 
-export default () => {
+export default ({
+  showSummary = true,
+}: LyricProps) => {
   const lyricLines = useLrcSet()
   const { line } = useLrcPlay()
   const flatListRef = useRef<FlatList>(null)
@@ -157,6 +165,14 @@ export default () => {
     if (index < 0) return
     if (flatListRef.current) {
       // console.log('handleScrollToActive', index)
+      if (index == 0) {
+        // The measured header is the distance between the summary and the play line.
+        flatListRef.current.scrollToOffset({
+          offset: listLayoutInfoRef.current.spaceHeight || dragLineSpacing,
+          animated: true,
+        })
+        return
+      }
       if (scrollInfoRef.current && lineRef.current.line - lineRef.current.prevLine == 1) {
         let offset = listLayoutInfoRef.current.spaceHeight
         for (let line = 0; line < index; line++) {
@@ -240,7 +256,7 @@ export default () => {
     lineRef.current.line = 0
     if (!flatListRef.current) return
     flatListRef.current.scrollToOffset({
-      offset: 0,
+      offset: listLayoutInfoRef.current.spaceHeight || dragLineSpacing,
       animated: false,
     })
     if (!lyricLines.length) return
@@ -309,6 +325,15 @@ export default () => {
     global.app_event.setProgress(time)
   }, [])
 
+  // Keep the first paint aligned with the play line; async page/summary measurements would show a visible jump.
+  const pageHeight = Math.max(0, winHeight - statusBarHeight - HEADER_HEIGHT)
+  const dragLineSpacing = useMemo(() => getLyricFallbackDragLineSpacing({
+    pageHeight,
+    coverGap,
+    coverSize: 52,
+    buttonWidth: BTN_WIDTH,
+  }), [coverGap, pageHeight])
+
   const renderItem: FlatListType['renderItem'] = ({ item, index }) => {
     return (
       <LrcLine line={item} lineNum={index} activeLine={line} onLayout={handleLineLayout} />
@@ -321,12 +346,15 @@ export default () => {
   ), [])
 
   const headerComponent = useMemo(() => (
-    <View style={styles.header} onLayout={handleSpaceLayout}></View>
-  ), [handleSpaceLayout])
+    <View style={{ ...styles.header, height: dragLineSpacing }} onLayout={handleSpaceLayout}></View>
+  ), [dragLineSpacing, handleSpaceLayout])
 
   return (
-    <>
-      <View style={styles.summary} pointerEvents="box-none">
+    <View style={styles.page}>
+      <View
+        style={[styles.summary, { opacity: showSummary ? 1 : 0 }]}
+        pointerEvents={showSummary ? 'box-none' : 'none'}
+      >
         <MusicSummary coverSize={52} marginTop={coverGap} />
       </View>
       <FlatList
@@ -338,6 +366,7 @@ export default () => {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={headerComponent}
         ListFooterComponent={spaceComponent}
+        contentOffset={{ x: 0, y: dragLineSpacing }}
         onScrollBeginDrag={handleScrollBeginDrag}
         onScrollEndDrag={onScrollEndDrag}
         fadingEdgeLength={100}
@@ -346,7 +375,7 @@ export default () => {
         onScroll={handleScroll}
       />
       { isShowLyricProgressSetting ? <PlayLine ref={playLineRef} onPlayLine={handlePlayLine} /> : null }
-    </>
+    </View>
   )
 }
 
@@ -360,8 +389,10 @@ const styles = createStyle({
   space: {
     paddingTop: '100%',
   },
+  page: {
+    flex: 1,
+  },
   header: {
-    height: 0,
   },
   summary: {
     flexShrink: 0,

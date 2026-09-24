@@ -1,7 +1,7 @@
 {
   "name": "xunyin",
-  "version": "1.0.0",
-  "versionCode": 77,
+  "version": "1.0.1",
+  "versionCode": 78,
   "private": true,
   "scripts": {
     "postinstall": "node dependencies-patch.js",
@@ -11,6 +11,7 @@
     "sc": "react-native start --reset-cache",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/online-list-press.mts",
     "rd": "react-devtools",
     "menu": "adb shell input keyevent 82",
     "bundle-android": "react-native bundle --platform android --dev true --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res",
@@ -36,8 +37,7 @@
     "react-native-app"
   ],
   "author": {
-    "name": "lyswhut",
-    "email": "lyswhut@qq.com"
+    "name": "aniface-satar"
   },
   "license": "Apache-2.0",
   "bugs": {

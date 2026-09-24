@@ -92,17 +92,17 @@ export default {
     if (topList.length) arrUnshift(state.tempPlayList, topList.map(({ musicInfo, listId }) => ({ musicInfo, listId, isTempPlay: true })))
     if (bottomList.length) arrPush(state.tempPlayList, bottomList.map(({ musicInfo, listId }) => ({ musicInfo, listId, isTempPlay: true })))
 
-    global.state_event.playTempPlayListChanged({ ...state.tempPlayList })
+    global.state_event.playTempPlayListChanged([...state.tempPlayList])
   },
   removeTempPlayList(index: number) {
     state.tempPlayList.splice(index, 1)
 
-    global.state_event.playTempPlayListChanged({ ...state.tempPlayList })
+    global.state_event.playTempPlayListChanged([...state.tempPlayList])
   },
   clearTempPlayeList() {
     state.tempPlayList = []
 
-    global.state_event.playTempPlayListChanged({ ...state.tempPlayList })
+    global.state_event.playTempPlayListChanged([...state.tempPlayList])
   },
   setLoadErrorPicUrl(url: string) {
     state.loadErrorPicUrl = url

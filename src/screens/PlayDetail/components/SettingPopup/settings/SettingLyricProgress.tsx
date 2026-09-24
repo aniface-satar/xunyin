@@ -7,7 +7,7 @@ import CheckBox from '@/components/common/CheckBox'
 import styles from './style'
 
 
-export default () => {
+export default ({ compact = false }: { compact?: boolean }) => {
   const t = useI18n()
   const isShowLyricProgressSetting = useSettingValue('playDetail.isShowLyricProgressSetting')
   const setShowLyricProgressSetting = (showLyricProgressSetting: boolean) => {
@@ -15,14 +15,19 @@ export default () => {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, compact && styles.containerCompact]}>
       <View style={styles.content}>
         <View style={styles.content}>
-          <CheckBox marginBottom={3} check={isShowLyricProgressSetting} label={t('play_detail_setting_show_lyric_progress_setting')} onChange={setShowLyricProgressSetting} />
+          <CheckBox
+            marginBottom={compact ? 0 : 3}
+            size={compact ? 0.8 : 1}
+            check={isShowLyricProgressSetting}
+            label={t('play_detail_setting_show_lyric_progress_setting')}
+            onChange={setShowLyricProgressSetting}
+          />
         </View>
       </View>
     </View>
 
   )
 }
-

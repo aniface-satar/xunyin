@@ -10,6 +10,7 @@ import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
+import { buildAddModalLists } from './listOptions'
 
 const styles = createStyle({
   list: {
@@ -50,12 +51,18 @@ const EditListItem = ({ itemWidth }: {
   )
 }
 
-export default ({ musicInfo, onPress }: {
+export default ({ musicInfo, listId = '', isMove = false, onPress }: {
   musicInfo: LX.Music.MusicInfo
+  listId?: string
+  isMove?: boolean
   onPress: (listInfo: LX.List.MyListInfo) => void
 }) => {
   const windowSize = useWindowSize()
-  const allList = useUserLists()
+  const t = useI18n()
+  const userLists = useUserLists()
+  const allList = useMemo(() => {
+    return buildAddModalLists(userLists, t('mylist_favorite'), listId, { isMove })
+  }, [isMove, listId, t, userLists])
   const itemWidth = useMemo(() => {
     let w = Math.floor(windowSize.width * 0.9 - PADDING)
     let n = Math.floor(w / MIN_WIDTH)

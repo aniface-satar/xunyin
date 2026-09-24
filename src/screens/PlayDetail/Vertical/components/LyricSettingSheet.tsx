@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useState } from 'react'
-import { Animated, Modal, ScrollView, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native'
+import { Animated, Modal, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native'
 
 import GlassBackdrop from '@/components/common/GlassBackdrop'
 import Text from '@/components/common/Text'
@@ -90,19 +90,13 @@ const LyricSettingSheet = forwardRef<LyricSettingSheetType>((_, ref) => {
                   <Icon name="close" size={14} color={glassColors.muted} />
                 </TouchableOpacity>
               </View>
-              <ScrollView
-                style={styles.scroll}
-                contentContainerStyle={styles.scrollContent}
-                nestedScrollEnabled
-              >
-                <View onStartShouldSetResponder={() => true}>
-                  <SettingLyricProgress />
-                  <SettingVolume />
-                  <SettingPlaybackRate />
-                  <SettingLrcFontSize direction="vertical" />
-                  <SettingLrcAlign />
-                </View>
-              </ScrollView>
+              <View style={styles.settings} onStartShouldSetResponder={() => true}>
+                <SettingLyricProgress compact />
+                <SettingVolume compact />
+                <SettingPlaybackRate compact />
+                <SettingLrcFontSize compact direction="vertical" />
+                <SettingLrcAlign compact />
+              </View>
             </View>
           </Animated.View>
         </Animated.View>
@@ -121,7 +115,7 @@ const styles = createStyle({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '78%',
+    maxHeight: '100%',
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
     borderTopWidth: 1,
@@ -129,7 +123,10 @@ const styles = createStyle({
   },
   content: {
     flex: 0,
-    flexGrow: 1,
+    flexGrow: 0,
+  },
+  settings: {
+    paddingBottom: 18,
   },
   header: {
     flexDirection: 'row',
@@ -145,12 +142,6 @@ const styles = createStyle({
     width: 44,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  scroll: {
-    flexGrow: 0,
-  },
-  scrollContent: {
-    paddingBottom: 18,
   },
 })
 

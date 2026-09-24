@@ -8,6 +8,10 @@ export default createStyle({
     paddingBottom: 15,
     alignItems: 'flex-start',
   },
+  containerCompact: {
+    paddingTop: 3,
+    paddingBottom: 6,
+  },
   // title: {
 
   // },
@@ -22,11 +26,25 @@ export default createStyle({
     flexWrap: 'nowrap',
     alignItems: 'center',
   },
+  compactRow: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
+  },
+  compactTitle: {
+    flexShrink: 1,
+    marginRight: 10,
+  },
   list: {
     flexGrow: 0,
     flexShrink: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingTop: 5,
+  },
+  compactList: {
+    paddingTop: 0,
   },
 })

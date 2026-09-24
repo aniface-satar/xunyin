@@ -9,7 +9,7 @@ import { useLeaderboardInfo } from './state'
 import { createStyle } from '@/utils/tools'
 import { BorderWidths } from '@/theme'
 
-export default ({ componentId, onBack }: { componentId: string, onBack?: () => void }) => {
+export default ({ componentId, onBack, isMultiSelectMode, onToggleMultiSelect }: { componentId: string, onBack?: () => void, isMultiSelectMode: boolean, onToggleMultiSelect: () => void }) => {
   const statusBarHeight = useStatusbarHeight()
   const theme = useTheme()
   const { board } = useLeaderboardInfo()
@@ -35,7 +35,13 @@ export default ({ componentId, onBack }: { componentId: string, onBack?: () => v
             {board.name}
           </Text>
         </View>
-        <View style={styles.backBtn} />
+        <TouchableOpacity
+          style={styles.multiSelectBtn}
+          activeOpacity={0.8}
+          onPress={onToggleMultiSelect}
+        >
+          <Text size={14} color={theme['c-primary-font']}>{isMultiSelectMode ? '取消' : '多选'}</Text>
+        </TouchableOpacity>
       </View>
     </View>
   )
@@ -58,6 +64,12 @@ const styles = createStyle({
     alignItems: 'flex-start',
     justifyContent: 'center',
     paddingLeft: 10,
+  },
+  multiSelectBtn: {
+    width: 50,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   titleContent: {
     flex: 1,

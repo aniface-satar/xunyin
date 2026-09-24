@@ -306,11 +306,6 @@ declare global {
     'search.isShowHistorySearch': boolean
 
     /**
-       * 是否启用双击列表里的歌曲时自动切换到当前列表播放（仅对歌单、排行榜有效）
-       */
-    'list.isClickPlayList': boolean
-
-    /**
        * 是否显示歌曲来源（仅对我的列表有效）
        */
     'list.isShowSource': boolean

@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import OnlineList, { type OnlineListType, type OnlineListProps } from '@/components/OnlineList'
 import { clearListDetail, getListDetail, setListDetail, setListDetailInfo } from '@/core/songlist'
 import songlistState from '@/store/songlist/state'
@@ -14,6 +14,8 @@ export interface MusicListProps {
 
 export interface MusicListType {
   loadList: (source: LX.OnlineSource, listId: string) => void
+  showMultiSelect: () => void
+  exitMultiSelect: () => void
 }
 
 export default forwardRef<MusicListType, MusicListProps>(({ componentId, embedded, onBack }, ref) => {
@@ -21,6 +23,16 @@ export default forwardRef<MusicListType, MusicListProps>(({ componentId, embedde
   const headerRef = useRef<HeaderType>(null)
   const isUnmountedRef = useRef(false)
   const info = useListInfo()
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
+
+  const handleMultiSelectModeChange = useCallback((value: boolean) => {
+    setIsMultiSelectMode(value)
+  }, [])
+
+  const handleToggleMultiSelect = useCallback(() => {
+    if (isMultiSelectMode) listRef.current?.exitMultiSelect()
+    else listRef.current?.showMultiSelect()
+  }, [isMultiSelectMode])
 
   useImperativeHandle(ref, () => ({
     async loadList(source, id) {
@@ -69,6 +81,12 @@ export default forwardRef<MusicListType, MusicListProps>(({ componentId, embedde
         })
       }
     },
+    showMultiSelect() {
+      listRef.current?.showMultiSelect()
+    },
+    exitMultiSelect() {
+      listRef.current?.exitMultiSelect()
+    },
   }))
 
   useEffect(() => {
@@ -115,17 +133,24 @@ export default forwardRef<MusicListType, MusicListProps>(({ componentId, embedde
     })
   }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const header = useMemo(() => (
-    <Header ref={headerRef} componentId={componentId} embedded={embedded} onBack={onBack} />
-  ), [componentId, embedded, onBack])
-
   return <OnlineList
     ref={listRef}
     onPlayList={handlePlayList}
     onRefresh={handleRefresh}
     onLoadMore={handleLoadMore}
-    ListHeaderComponent={header}
+    ListHeaderComponent={
+      <Header
+        ref={headerRef}
+        componentId={componentId}
+        embedded={embedded}
+        onBack={onBack}
+        isMultiSelectMode={isMultiSelectMode}
+        onToggleMultiSelect={handleToggleMultiSelect}
+      />
+    }
+    multiSelectStyle="mylist"
+    multiSelectBarPosition="header"
+    onMultiSelectModeChange={handleMultiSelectModeChange}
     // progressViewOffset={}
    />
 })

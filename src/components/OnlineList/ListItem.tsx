@@ -10,6 +10,7 @@ import { useTheme } from '@/store/theme/hook'
 import { BorderRadius, BorderWidths } from '@/theme'
 import { scaleSizeH, scaleSizeW } from '@/utils/pixelRatio'
 import { createStyle, type RowInfo } from '@/utils/tools'
+import Checkbox from '@/components/common/CheckBox/Checkbox'
 
 const ITEM_RAW_HEIGHT = scaleSizeH(68)
 // History rows are scaled again by createStyle; keep virtualization aligned with that final height.
@@ -33,7 +34,7 @@ const useQualityTag = (musicInfo: LX.Music.MusicInfoOnline) => {
   return info
 }
 
-export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu, selectedList, rowInfo, isShowAlbumName, isShowInterval }: {
+export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu, selectedList, rowInfo, isShowAlbumName, isShowInterval, isMultiSelectMode }: {
   item: LX.Music.MusicInfoOnline
   index: number
   showSource?: boolean
@@ -44,6 +45,7 @@ export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu
   rowInfo: RowInfo
   isShowAlbumName: boolean
   isShowInterval: boolean
+  isMultiSelectMode: boolean
 }) => {
   const theme = useTheme()
 
@@ -70,7 +72,12 @@ export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu
       borderBottomColor: theme['c-border-background'],
       backgroundColor: isSelected ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)',
     }}>
-      <TouchableOpacity style={styles.listItemLeft} onPress={() => { onPress(item, index) }} onLongPress={() => { onLongPress(item, index) }}>
+      <TouchableOpacity style={[styles.listItemLeft, isMultiSelectMode && styles.listItemLeftMultiSelect]} onPress={() => { onPress(item, index) }} onLongPress={() => { onLongPress(item, index) }}>
+        {
+          isMultiSelectMode
+            ? <Checkbox status={isSelected ? 'checked' : 'unchecked'} disabled tintColors={{ true: theme['c-primary'], false: theme['c-300'] }} size={0.75} />
+            : null
+        }
         <View style={{ ...styles.cover, backgroundColor: theme['c-primary-background'] }}>
           <Image style={styles.coverImage} url={item.meta.picUrl} />
         </View>
@@ -97,6 +104,7 @@ export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu
     prevProps.index === nextProps.index &&
     prevProps.isShowAlbumName === nextProps.isShowAlbumName &&
     prevProps.isShowInterval === nextProps.isShowInterval &&
+    prevProps.isMultiSelectMode === nextProps.isMultiSelectMode &&
     nextProps.selectedList.includes(nextProps.item) == prevProps.selectedList.includes(nextProps.item)
   )
 })
@@ -116,6 +124,9 @@ const styles = createStyle({
     flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  listItemLeftMultiSelect: {
+    paddingLeft: 8,
   },
   cover: {
     width: ITEM_COVER_SIZE,

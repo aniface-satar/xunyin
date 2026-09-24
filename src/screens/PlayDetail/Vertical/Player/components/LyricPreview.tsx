@@ -15,9 +15,10 @@ const PreviewLine = ({ line, color, style }: {
   )
 }
 
-export default ({ onLayout, topGap = true }: {
+export default ({ onLayout, topGap = true, lineCount = 2 }: {
   onLayout?: (event: LayoutChangeEvent) => void
   topGap?: boolean
+  lineCount?: 1 | 2
 } = {}) => {
   const glassColors = useGlassColors()
   const lyricLines = useLrcSet()
@@ -30,11 +31,13 @@ export default ({ onLayout, topGap = true }: {
         color={glassColors.lyricActive}
         style={styles.current}
       />
-      <PreviewLine
-        line={lyricLines[line + 1]}
-        color={glassColors.muted}
-        style={styles.next}
-      />
+      {lineCount == 2 && (
+        <PreviewLine
+          line={lyricLines[line + 1]}
+          color={glassColors.muted}
+          style={styles.next}
+        />
+      )}
     </View>
   )
 }

@@ -15,8 +15,9 @@ import Image from '@/components/common/Image'
 import { Icon } from '@/components/common/Icon'
 import Text from '@/components/common/Text'
 import { getListMusics, removeListMusics, updateListMusicPosition } from '@/core/list'
-import { playList } from '@/core/player/player'
-import { usePlayInfo, usePlayMusicInfo } from '@/store/player/hook'
+import { playList, playTempPlayList } from '@/core/player/player'
+import { removeTempPlayList } from '@/core/player/tempPlayList'
+import { usePlayInfo, usePlayMusicInfo, useTempPlayList } from '@/store/player/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { LIST_ITEM_HEIGHT } from '@/config/constant'
@@ -24,6 +25,8 @@ import { scaleSizeH } from '@/utils/pixelRatio'
 import { createStyle } from '@/utils/tools'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
+import { overlayModalGesture } from '@/components/player/PlayerOverlay/overlayModalGesture'
+import { buildPlaylistQueue, getDragTargetSourceIndex, type PlaylistQueueItem } from './playlistQueue'
 
 export interface PlaylistSheetType {
   show: () => void
@@ -44,13 +47,13 @@ const ITEM_HEIGHT = scaleSizeH(LIST_ITEM_HEIGHT)
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
 interface PlaylistRowProps {
-  item: LX.Music.MusicInfo
+  item: PlaylistQueueItem
   index: number
   active: boolean
   dragging: boolean
-  onPlay: (item: LX.Music.MusicInfo, index: number) => void
-  onRemove: (item: LX.Music.MusicInfo) => void
-  onLongPress: (item: LX.Music.MusicInfo, index: number, event: GestureResponderEvent) => void
+  onPlay: (item: PlaylistQueueItem) => void
+  onRemove: (item: PlaylistQueueItem) => void
+  onLongPress: (item: PlaylistQueueItem, index: number, event: GestureResponderEvent) => void
 }
 
 const PlaylistRow = memo(({
@@ -63,7 +66,8 @@ const PlaylistRow = memo(({
   onLongPress,
 }: PlaylistRowProps) => {
   const glassColors = useGlassColors()
-  const singer = item.singer ? `${item.source.toUpperCase()} · ${item.singer}` : item.source.toUpperCase()
+  const musicInfo = item.musicInfo
+  const singer = musicInfo.singer ? `${musicInfo.source.toUpperCase()} · ${musicInfo.singer}` : musicInfo.source.toUpperCase()
 
   return (
     <View style={{ ...styles.row, opacity: dragging ? 0 : 1 }}>
@@ -72,31 +76,33 @@ const PlaylistRow = memo(({
         activeOpacity={0.65}
         delayLongPress={260}
         onPress={() => {
-          onPlay(item, index)
+          onPlay(item)
         }}
         onLongPress={event => {
-          onLongPress(item, index, event)
+          if (item.route == 'playlist') onLongPress(item, index, event)
         }}
       >
         <View style={styles.number}>
           {
             active
               ? <Icon name="play-outline" size={13} color={glassColors.accent} />
-              : <Text size={13} color={glassColors.muted}>{index + 1}</Text>
+              : item.route == 'playLater'
+                ? <Icon name="nextMusic" size={12} color={glassColors.accent} />
+                : <Text size={13} color={glassColors.muted}>{index + 1}</Text>
           }
         </View>
-        <Image style={styles.cover} url={item.meta.picUrl} />
+        <Image style={styles.cover} url={musicInfo.meta.picUrl} />
         <View style={styles.info}>
           <Text numberOfLines={1} size={14} color={active ? glassColors.accent : glassColors.text}>
-            {item.name}
+            {musicInfo.name}
           </Text>
           <Text numberOfLines={1} size={11} color={active ? glassColors.accent : glassColors.muted} style={styles.singer}>
             {singer}
           </Text>
         </View>
         {
-          item.interval
-            ? <Text numberOfLines={1} size={12} color={glassColors.muted} style={styles.interval}>{item.interval}</Text>
+          musicInfo.interval
+            ? <Text numberOfLines={1} size={12} color={glassColors.muted} style={styles.interval}>{musicInfo.interval}</Text>
             : null
         }
       </TouchableOpacity>
@@ -115,16 +121,18 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
   const t = useI18n()
   const playInfo = usePlayInfo()
   const playMusicInfo = usePlayMusicInfo()
+  const tempPlayList = useTempPlayList()
   const listId = playInfo.playerListId ?? playMusicInfo.listId
 
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
-  const [items, setItems] = useState<LX.Music.MusicInfo[]>([])
+  const [playlistItems, setPlaylistItems] = useState<LX.Music.MusicInfo[]>([])
+  const [draggingItems, setDraggingItems] = useState<PlaylistQueueItem[] | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const slide = useSheetSlideAnimation()
 
   const listIdRef = useRef(listId)
-  const itemsRef = useRef(items)
+  const itemsRef = useRef<PlaylistQueueItem[]>([])
   const dragInfoRef = useRef<DragInfo | null>(null)
   const scrollOffsetRef = useRef(0)
   const viewportRef = useRef({ top: 0, left: 0, width: 0 })
@@ -138,16 +146,13 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
   const refreshList = useCallback(() => {
     const currentListId = listIdRef.current
     if (!currentListId) {
-      itemsRef.current = []
-      setItems([])
+      setPlaylistItems([])
       return
     }
 
     void getListMusics(currentListId).then(musics => {
       if (currentListId != listIdRef.current || dragInfoRef.current) return
-      const nextList = [...musics]
-      itemsRef.current = nextList
-      setItems(nextList)
+      setPlaylistItems([...musics])
     }).catch(() => {})
   }, [])
 
@@ -163,6 +168,7 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
 
     dragInfoRef.current = null
     setDragId(null)
+    setDraggingItems(null)
     const currentListId = listIdRef.current
     if (currentListId && info.currentIndex != info.originalIndex) {
       void updateListMusicPosition(currentListId, info.currentIndex, [info.id]).catch(() => {
@@ -179,34 +185,36 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
     dragTop.setValue(top)
 
     const contentY = top - viewportRef.current.top + scrollOffsetRef.current
-    const targetIndex = clamp(Math.round(contentY / ITEM_HEIGHT), 0, itemsRef.current.length - 1)
+    const targetVisibleIndex = clamp(Math.round(contentY / ITEM_HEIGHT), 0, itemsRef.current.length - 1)
+    const targetIndex = getDragTargetSourceIndex(itemsRef.current, targetVisibleIndex, info.originalIndex)
     if (targetIndex == info.currentIndex) return
 
     const nextItems = [...itemsRef.current]
-    const [movedItem] = nextItems.splice(info.currentIndex, 1)
-    nextItems.splice(targetIndex, 0, movedItem)
+    const movedVisibleIndex = nextItems.findIndex(queueItem => queueItem.route == 'playlist' && queueItem.index == info.currentIndex)
+    const [movedItem] = nextItems.splice(movedVisibleIndex, 1)
+    nextItems.splice(targetVisibleIndex, 0, movedItem)
     itemsRef.current = nextItems
-    setItems(nextItems)
+    setDraggingItems(nextItems)
     info.currentIndex = targetIndex
   }, [dragTop])
 
-  const startDrag = useCallback((item: LX.Music.MusicInfo, index: number, event: GestureResponderEvent) => {
+  const startDrag = useCallback((item: PlaylistQueueItem, index: number, event: GestureResponderEvent) => {
     if (dragInfoRef.current != null || listIdRef.current == null) return
     const rowView = event.currentTarget as unknown as View | null
     rowView?.measureInWindow((x, y, width) => {
       dragInfoRef.current = {
-        id: item.id,
+        id: item.musicInfo.id,
         top: y,
         left: x,
         width,
         startPageY: event.nativeEvent.pageY,
-        originalIndex: index,
-        currentIndex: index,
+        originalIndex: item.index,
+        currentIndex: item.index,
       }
       dragTop.setValue(y)
       dragLeft.setValue(x)
       dragWidth.setValue(width)
-      setDragId(item.id)
+      setDragId(item.musicInfo.id)
     })
   }, [dragLeft, dragTop, dragWidth])
 
@@ -238,12 +246,30 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
     }
   }, [refreshList])
 
+  const derivedItems = useMemo(() => buildPlaylistQueue(
+    playlistItems,
+    tempPlayList,
+    currentMusicId,
+  ), [playlistItems, tempPlayList, currentMusicId])
+
+  const items = draggingItems ?? derivedItems
+
   useEffect(() => {
     itemsRef.current = items
   }, [items])
 
+  useEffect(() => {
+    if (!visible) return
+
+    overlayModalGesture.active = true
+    return () => {
+      overlayModalGesture.active = false
+    }
+  }, [visible])
+
   useImperativeHandle(ref, () => ({
     show() {
+      scrollOffsetRef.current = 0
       setMounted(true)
       slide.show()
       requestAnimationFrame(() => {
@@ -261,25 +287,39 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
     })
   }, [endDrag, slide])
 
-  const handlePlay = useCallback((item: LX.Music.MusicInfo, index: number) => {
+  const handlePlay = useCallback((item: PlaylistQueueItem) => {
+    if (dragInfoRef.current) return
+    if (item.route == 'playLater') {
+      void playTempPlayList(item.index)
+      return
+    }
+
     const currentListId = listIdRef.current
-    if (!currentListId || dragInfoRef.current) return
-    void playList(currentListId, index)
+    if (!currentListId) return
+    void playList(currentListId, item.index)
   }, [])
 
-  const handleRemove = useCallback((item: LX.Music.MusicInfo) => {
-    const currentListId = listIdRef.current
-    if (!currentListId || dragInfoRef.current) return
-    void removeListMusics(currentListId, [item.id])
-  }, [])
+  const handleRemove = useCallback((item: PlaylistQueueItem) => {
+    if (dragInfoRef.current) return
+    if (item.route == 'playLater') {
+      removeTempPlayList(item.index)
+      return
+    }
 
-  const renderItem = useCallback(({ item, index }: { item: LX.Music.MusicInfo, index: number }) => {
+    const currentListId = listIdRef.current
+    if (!currentListId) return
+    void removeListMusics(currentListId, [item.musicInfo.id]).then(() => {
+      refreshList()
+    })
+  }, [refreshList])
+
+  const renderItem = useCallback(({ item, index }: { item: PlaylistQueueItem, index: number }) => {
     return (
       <PlaylistRow
         item={item}
         index={index}
-        active={currentMusicId == item.id}
-        dragging={dragId == item.id}
+        active={currentMusicId == item.musicInfo.id}
+        dragging={dragId == item.musicInfo.id}
         onPlay={handlePlay}
         onRemove={handleRemove}
         onLongPress={startDrag}
@@ -287,7 +327,7 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
     )
   }, [currentMusicId, dragId, handlePlay, handleRemove, startDrag])
 
-  const dragItem = dragId ? items.find(item => item.id == dragId) : null
+  const dragItem = dragId ? items.find(item => item.musicInfo.id == dragId) : null
 
   if (!mounted) return null
 
@@ -305,10 +345,15 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
         if (!visible) setMounted(false)
       }}
     >
-      <TouchableWithoutFeedback onPress={() => {
-        hide()
-      }}>
-        <Animated.View style={[styles.mask, { opacity: slide.maskOpacity }]}>
+      <Animated.View
+        style={[styles.mask, { opacity: slide.maskOpacity }]}
+      >
+        <TouchableWithoutFeedback onPress={() => {
+          hide()
+        }}>
+          <View style={styles.backdrop} />
+        </TouchableWithoutFeedback>
+        <>
           <Animated.View
             style={[
               styles.sheet,
@@ -319,7 +364,6 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
               { transform: [{ translateY: slide.sheetY }] },
             ]}
             onLayout={slide.onSheetLayout}
-            onStartShouldSetResponder={() => true}
           >
             <GlassBackdrop
               blurRadius={24}
@@ -345,7 +389,6 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
               <View
                 ref={viewportViewRef}
                 style={styles.listViewport}
-                {...panResponder.panHandlers}
                 onLayout={() => {
                   measureViewport()
                 }}
@@ -355,7 +398,7 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
                     ? (
                       <FlatList
                         data={items}
-                        keyExtractor={item => item.id}
+                        keyExtractor={item => `${item.route}_${item.index}_${item.musicInfo.id}`}
                         renderItem={renderItem}
                         getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
                         contentContainerStyle={styles.listContent}
@@ -386,11 +429,11 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
                     <View style={styles.number}>
                       <Icon name="dots-vertical" size={13} color={glassColors.accent} />
                     </View>
-                    <Image style={styles.cover} url={dragItem.meta.picUrl} />
+                    <Image style={styles.cover} url={dragItem.musicInfo.meta.picUrl} />
                     <View style={styles.info}>
-                      <Text numberOfLines={1} size={14} color={glassColors.text}>{dragItem.name}</Text>
+                      <Text numberOfLines={1} size={14} color={glassColors.text}>{dragItem.musicInfo.name}</Text>
                       <Text numberOfLines={1} size={11} color={glassColors.accent} style={styles.singer}>
-                        {dragItem.singer}
+                        {dragItem.musicInfo.singer}
                       </Text>
                     </View>
                   </View>
@@ -398,8 +441,8 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
                 )
               : null
           }
-        </Animated.View>
-      </TouchableWithoutFeedback>
+        </>
+      </Animated.View>
     </Modal>
   )
 })
@@ -408,6 +451,13 @@ const styles = createStyle({
   mask: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  backdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
   },
   sheet: {
     position: 'absolute',
@@ -421,8 +471,7 @@ const styles = createStyle({
     overflow: 'hidden',
   },
   content: {
-    flex: 0,
-    flexGrow: 1,
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -443,7 +492,7 @@ const styles = createStyle({
     transform: [{ rotate: '90deg' }],
   },
   listViewport: {
-    flexGrow: 0,
+    flex: 1,
   },
   listContent: {
     paddingBottom: 14,

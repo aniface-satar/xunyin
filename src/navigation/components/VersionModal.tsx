@@ -4,8 +4,8 @@ import { View, ScrollView } from 'react-native'
 import { compareVer, sizeFormate } from '@/utils'
 
 import Button from '@/components/common/Button'
-import { updateApp } from '@/utils/version'
-import { createStyle } from '@/utils/tools'
+import { getBrowserDownloadUrl, updateApp } from '@/utils/version'
+import { createStyle, openUrl } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import { type VersionInfo } from '@/store/version/state'
 import Text from '@/components/common/Text'
@@ -73,7 +73,7 @@ const Content = memo(({ title, newVersionInfo }: {
   )
 })
 
-const currentVer = process.versions.app
+const currentVer = String(process.versions.app)
 const VersionModal = ({ componentId }: { componentId: string }) => {
   const theme = useTheme()
   const t = useI18n()
@@ -173,6 +173,12 @@ const VersionModal = ({ componentId }: { componentId: string }) => {
     }
   }
 
+  const handleBrowserDownload = async() => {
+    const version = versionInfo.newVersion?.version
+    if (!version) return
+    await openUrl(await getBrowserDownloadUrl(version))
+  }
+
   return (
     <ModalContent>
       <Content title={title} newVersionInfo={versionInfo.newVersion} />
@@ -183,6 +189,15 @@ const VersionModal = ({ componentId }: { componentId: string }) => {
             ? (
                 <Button disabled={ignoreBtn.disabled} style={{ ...styles.btn, backgroundColor: theme['c-button-background'] }} onPress={handleIgnore}>
                   <Text color={theme['c-button-font']}>{ignoreBtn.text}</Text>
+                </Button>
+              )
+            : null
+        }
+        {
+          versionInfo.newVersion?.version && !versionInfo.isLatest
+            ? (
+                <Button style={{ ...styles.btn, backgroundColor: theme['c-button-background'] }} onPress={handleBrowserDownload}>
+                  <Text color={theme['c-button-font']}>{t('version_btn_browser')}</Text>
                 </Button>
               )
             : null
@@ -260,4 +275,3 @@ const styles = createStyle({
 })
 
 export default VersionModal
-

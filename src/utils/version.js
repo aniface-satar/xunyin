@@ -1,5 +1,5 @@
 import { httpGet } from '@/utils/request'
-import { author, name } from '../../package.json'
+import { name } from '../../package.json'
 import { downloadFile, stopDownload, temporaryDirectoryPath } from '@/utils/fs'
 import { getSupportedAbis, installApk } from '@/utils/nativeModules/utils'
 import { APP_PROVIDER_NAME } from '@/config/constant'
@@ -12,12 +12,14 @@ const abis = [
   'universal',
 ]
 
+const repository = 'aniface-satar/xunyin'
+
 const address = [
-  [`https://raw.githubusercontent.com/${author.name}/${name}/master/publish/version.json`, 'direct'],
+  [`https://raw.githubusercontent.com/${repository}/main/publish/version.json`, 'direct'],
   ['https://registry.npmjs.org/lx-music-mobile-version-info/latest', 'npm'],
-  [`https://cdn.jsdelivr.net/gh/${author.name}/${name}/publish/version.json`, 'direct'],
-  [`https://fastly.jsdelivr.net/gh/${author.name}/${name}/publish/version.json`, 'direct'],
-  [`https://gcore.jsdelivr.net/gh/${author.name}/${name}/publish/version.json`, 'direct'],
+  [`https://cdn.jsdelivr.net/gh/${repository}@main/publish/version.json`, 'direct'],
+  [`https://fastly.jsdelivr.net/gh/${repository}@main/publish/version.json`, 'direct'],
+  [`https://gcore.jsdelivr.net/gh/${repository}@main/publish/version.json`, 'direct'],
   ['https://registry.npmmirror.com/lx-music-mobile-version-info/latest', 'npm'],
   ['https://gitee.com/lyswhut/lx-music-mobile-versions/raw/master/version.json', 'direct'],
   ['http://cdn.stsky.cn/lx-music/mobile/version.json', 'direct'],
@@ -80,13 +82,19 @@ const getTargetAbi = async() => {
   }
   return abis[abis.length - 1]
 }
+const getDownloadUrl = async(version) => {
+  const abi = await getTargetAbi()
+  return `https://github.com/${repository}/releases/download/v${version}/${name}-v${version}-${abi}.apk`
+}
+
+export const getBrowserDownloadUrl = async(version) => getDownloadUrl(version)
+
 let downloadJobId = null
 const noop = (total, download) => {}
 let apkSavePath
 
 export const downloadNewVersion = async(version, onDownload = noop) => {
-  const abi = await getTargetAbi()
-  const url = `https://github.com/${author.name}/${name}/releases/download/v${version}/${name}-v${version}-${abi}.apk`
+  const url = await getDownloadUrl(version)
   let savePath = temporaryDirectoryPath + '/lx-music-mobile.apk'
 
   if (downloadJobId) stopDownload(downloadJobId)

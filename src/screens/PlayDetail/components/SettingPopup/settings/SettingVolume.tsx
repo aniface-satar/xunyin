@@ -11,7 +11,7 @@ import styles from './style'
 import { setVolume } from '@/plugins/player'
 
 
-const Volume = () => {
+const Volume = ({ compact = false }: { compact?: boolean }) => {
   const theme = useTheme()
   const volume = Math.trunc(useSettingValue('player.volume') * 100)
   const [sliderSize, setSliderSize] = useState(volume)
@@ -34,20 +34,42 @@ const Volume = () => {
   }
 
   return (
-    <View style={styles.container}>
-      <Text>{t('play_detail_setting_volume')}</Text>
-      <View style={styles.content}>
-        <Text style={styles.label} color={theme['c-font-label']}>{isSliding ? sliderSize : volume}</Text>
-        <Slider
-          minimumValue={0}
-          maximumValue={100}
-          onSlidingComplete={handleSlidingComplete}
-          onValueChange={handleValueChange}
-          onSlidingStart={handleSlidingStart}
-          step={1}
-          value={volume}
-        />
-      </View>
+    <View style={[styles.container, compact && styles.containerCompact]}>
+      {
+        compact
+          ? (
+            <View style={[styles.content, styles.compactRow]}>
+              <Text style={styles.compactTitle}>{t('play_detail_setting_volume')}</Text>
+              <Text style={styles.label} color={theme['c-font-label']}>{isSliding ? sliderSize : volume}</Text>
+              <Slider
+                minimumValue={0}
+                maximumValue={100}
+                onSlidingComplete={handleSlidingComplete}
+                onValueChange={handleValueChange}
+                onSlidingStart={handleSlidingStart}
+                step={1}
+                value={volume}
+              />
+            </View>
+            )
+          : (
+            <>
+              <Text>{t('play_detail_setting_volume')}</Text>
+              <View style={styles.content}>
+                <Text style={styles.label} color={theme['c-font-label']}>{isSliding ? sliderSize : volume}</Text>
+                <Slider
+                  minimumValue={0}
+                  maximumValue={100}
+                  onSlidingComplete={handleSlidingComplete}
+                  onValueChange={handleValueChange}
+                  onSlidingStart={handleSlidingStart}
+                  step={1}
+                  value={volume}
+                />
+              </View>
+            </>
+            )
+      }
     </View>
   )
 }

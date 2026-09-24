@@ -38,7 +38,7 @@ const defaultSetting: LX.AppSetting = {
   'playDetail.style.align': 'left',
   'playDetail.vertical.style.lrcFontSize': 210,
   'playDetail.horizontal.style.lrcFontSize': 220,
-  'playDetail.isShowLyricProgressSetting': false,
+  'playDetail.isShowLyricProgressSetting': true,
 
   'desktopLyric.enable': false,
   'desktopLyric.isLock': false,
@@ -59,7 +59,6 @@ const defaultSetting: LX.AppSetting = {
   'search.isShowHotSearch': false,
   'search.isShowHistorySearch': false,
 
-  'list.isClickPlayList': false,
   'list.isShowSource': true,
   'list.isShowAlbumName': false,
   'list.isShowInterval': true,
@@ -70,6 +69,7 @@ const defaultSetting: LX.AppSetting = {
 
   'sync.enable': false,
 
+  'list.isClickPlayList': false,
   // 'theme.id': 'blue_plus',
   'theme.id': 'cyan',
   'theme.lightId': 'cyan',

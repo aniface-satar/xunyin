@@ -79,11 +79,14 @@ export default forwardRef<MusicMultiAddModalType, MusicMultiAddModalProps>(({ on
         selectInfo.selectedList.length
           ? (<>
               <Title selectedList={selectInfo.selectedList} isMove={selectInfo.isMove} />
-              <List listId={selectInfo.listId} onPress={handleSelect} />
+              <List
+                listId={selectInfo.listId}
+                isMove={selectInfo.isMove}
+                onPress={handleSelect}
+              />
             </>)
           : null
       }
     </Dialog>
   )
 })
-

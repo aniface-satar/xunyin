@@ -40,6 +40,19 @@ export const usePlayInfo = () => {
   return value
 }
 
+export const useTempPlayList = () => {
+  const [value, update] = useState(state.tempPlayList)
+
+  useEffect(() => {
+    global.state_event.on('playTempPlayListChanged', update)
+    return () => {
+      global.state_event.off('playTempPlayListChanged', update)
+    }
+  }, [])
+
+  return value
+}
+
 export const useStatusText = () => {
   const [value, update] = useState(state.statusText)
 

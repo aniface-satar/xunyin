@@ -22,17 +22,27 @@ const useActive = (id: Align_Type) => {
   return isActive
 }
 
-const Item = ({ id, name, change }: {
+const Item = ({ compact = false, id, name, change }: {
+  compact?: boolean
   id: Align_Type
   name: string
   change: (id: Align_Type) => void
 }) => {
   const isActive = useActive(id)
   // const [toggleCheckBox, setToggleCheckBox] = useState(false)
-  return <CheckBox marginBottom={3} check={isActive} label={name} onChange={() => { change(id) }} need />
+  return (
+    <CheckBox
+      marginBottom={compact ? 0 : 3}
+      size={compact ? 0.8 : 1}
+      check={isActive}
+      label={name}
+      onChange={() => { change(id) }}
+      need
+    />
+  )
 }
 
-export default () => {
+export default ({ compact = false }: { compact?: boolean }) => {
   const t = useI18n()
   const list = useMemo(() => {
     return ALIGN_LIST.map(id => ({ id, name: t(`play_detail_setting_lrc_align_${id}`) }))
@@ -43,15 +53,32 @@ export default () => {
   }
 
   return (
-    <View style={styles.container}>
-      <Text>{t('play_detail_setting_lrc_align')}</Text>
-      <View style={styles.content}>
-        <View style={styles.list}>
-          {
-            list.map(({ id, name }) => <Item name={name} id={id} key={id} change={setPosition} />)
-          }
-        </View>
-      </View>
+    <View style={[styles.container, compact && styles.containerCompact]}>
+      {
+        compact
+          ? (
+            <View style={styles.compactRow}>
+              <Text style={styles.compactTitle}>{t('play_detail_setting_lrc_align')}</Text>
+              <View style={[styles.list, styles.compactList]}>
+                {
+                  list.map(({ id, name }) => <Item compact name={name} id={id} key={id} change={setPosition} />)
+                }
+              </View>
+            </View>
+            )
+          : (
+            <>
+              <Text>{t('play_detail_setting_lrc_align')}</Text>
+              <View style={styles.content}>
+                <View style={styles.list}>
+                  {
+                    list.map(({ id, name }) => <Item name={name} id={id} key={id} change={setPosition} />)
+                  }
+                </View>
+              </View>
+            </>
+            )
+      }
     </View>
   )
 }

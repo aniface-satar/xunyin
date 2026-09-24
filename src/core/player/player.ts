@@ -523,6 +523,17 @@ export const playNext = async(isAutoToggle = false): Promise<void> => {
 }
 
 /**
+ * 播放稍后播放队列内的歌曲
+ */
+export const playTempPlayList = async(index: number): Promise<void> => {
+  const playMusicInfo = playerState.tempPlayList[index]
+  if (!playMusicInfo?.musicInfo) return
+
+  removeTempPlayList(index)
+  await handlePlayNext(playMusicInfo)
+}
+
+/**
  * 上一曲
  */
 export const playPrev = async(isAutoToggle = false): Promise<void> => {

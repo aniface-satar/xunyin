@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef } from 'react'
-import { TouchableOpacity, View } from 'react-native'
+import { StyleSheet, TouchableOpacity, View } from 'react-native'
 
 import Text from '@/components/common/Text'
 import { LoveIcon } from '@/components/common/LoveIcon'
@@ -11,6 +11,7 @@ import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import SynchronizedMarquee, { useSynchronizedMarquee } from '@/components/common/SynchronizedMarquee'
 import { collectMusic, uncollectMusic } from '@/core/player/player'
 import { createStyle } from '@/utils/tools'
+import { scaleSizeH, scaleSizeW, setSpText } from '@/utils/pixelRatio'
 import { BTN_ICON_SIZE, BTN_WIDTH, DOTS_VERTICAL_ALIGNMENT_OFFSET } from '../Player/components/MoreBtn/Btn'
 import { FULL_COVER_RADIUS, getPlayDetailLayout } from '../layout'
 import { useStatusbarHeight } from '@/store/common/hook'
@@ -52,12 +53,12 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
         url={musicInfo.pic}
         style={{ ...styles.cover, width: coverSize, height: coverSize }}
       />
-      <View style={styles.textColumn}>
+      <View style={textStyles.textColumn}>
         <SynchronizedMarquee id="title" controller={marquee}>
-          <Text color={glassColors.text} style={styles.title} numberOfLines={1}>{musicInfo.name}</Text>
+          <Text color={glassColors.text} style={textStyles.title} numberOfLines={1}>{musicInfo.name}</Text>
         </SynchronizedMarquee>
-        <SynchronizedMarquee id="artist" controller={marquee} style={styles.artistMask}>
-          <Text color={glassColors.muted} style={styles.artist}>{musicInfo.singer}</Text>
+        <SynchronizedMarquee id="artist" controller={marquee} style={textStyles.artistMask}>
+          <Text color={glassColors.muted} style={textStyles.artist}>{musicInfo.singer}</Text>
         </SynchronizedMarquee>
       </View>
       <View style={styles.actionRow}>
@@ -65,7 +66,7 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
           activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           onPress={handleToggleLove}
-          style={styles.loveBtn}
+          style={actionStyles.loveBtn}
         >
           <LoveIcon filled={isLove} size={BTN_ICON_SIZE} color={isLove ? glassColors.accent : glassColors.muted} />
         </TouchableOpacity>
@@ -75,7 +76,7 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
           onPress={() => {
             moreSheetRef.current?.show()
           }}
-          style={styles.moreBtn}
+          style={actionStyles.moreBtn}
         >
           <Icon
             name="dots-vertical"
@@ -102,24 +103,37 @@ const styles = createStyle({
     height: 72,
     width: 72,
   },
+  actionRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexShrink: 0,
+  },
+})
+
+// Keep the transition layer and this summary on the same scaled metrics.
+const textStyles = StyleSheet.create({
   textColumn: {
     flex: 1,
     minWidth: 0,
-    paddingLeft: 16,
+    paddingLeft: scaleSizeW(16),
   },
   title: {
-    fontSize: 20,
+    fontSize: setSpText(20),
     includeFontPadding: false,
-    lineHeight: 26,
+    lineHeight: setSpText(26),
   },
   artist: {
-    fontSize: 15,
+    fontSize: setSpText(15),
     includeFontPadding: false,
-    lineHeight: 20,
+    lineHeight: setSpText(20),
   },
   artistMask: {
-    marginTop: 5,
+    marginTop: scaleSizeH(5),
   },
+})
+
+// BTN_WIDTH is already scaled; createStyle would scale these buttons a second time.
+const actionStyles = StyleSheet.create({
   loveBtn: {
     alignItems: 'center',
     height: BTN_WIDTH,
@@ -130,12 +144,7 @@ const styles = createStyle({
     alignItems: 'center',
     height: BTN_WIDTH,
     justifyContent: 'center',
-    marginLeft: 2,
+    marginLeft: scaleSizeW(2),
     width: BTN_WIDTH,
-  },
-  actionRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexShrink: 0,
   },
 })

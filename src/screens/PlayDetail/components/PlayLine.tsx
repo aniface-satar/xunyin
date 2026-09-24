@@ -70,7 +70,8 @@ export default forwardRef<PlayLineType, PlayLineProps>(({ onPlayLine }, ref) => 
   }
 
   if (!scrollInfo || !visible) return null
-  const offset = scrollInfo.contentOffset.y + scrollInfo.layoutMeasurement.height * 0.4
+  // spaceHeight is the visible distance between the lyric list top and the fixed play line.
+  const offset = scrollInfo.contentOffset.y + listLayoutInfo.spaceHeight
   let lineOffset = listLayoutInfo.spaceHeight
   let targetLineNum = -1
   for (let line = 0; line < listLayoutInfo.lineHeights.length; line++) {

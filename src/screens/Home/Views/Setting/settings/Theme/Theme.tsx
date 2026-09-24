@@ -76,6 +76,7 @@ const initInfo: ThemeInfo = { themes: [], userThemes: [], dataPath: '' }
 export default memo(() => {
   const [showAll, setShowAll] = useState(false)
   const t = useI18n()
+  const theme = useTheme()
   const [themeInfo, setThemeInfo] = useState(initInfo)
   const setThemeId = useCallback((id: string) => {
     requestAnimationFrame(() => {
@@ -89,6 +90,9 @@ export default memo(() => {
 
   return (
     <SubTitle title={t('setting_basic_theme')}>
+      <Text style={styles.tip} size={12} color={theme['c-font-label']}>
+        {t('setting_basic_theme_non_solid_tip')}
+      </Text>
       <View style={styles.list}>
         {
           themeInfo.themes.map(({ id, config }) => {
@@ -124,6 +128,9 @@ const ITEM_HEIGHT = 62
 const COLOR_ITEM_HEIGHT = 36
 const IMAGE_HEIGHT = 29
 const styles = createStyle({
+  tip: {
+    marginBottom: 5,
+  },
   list: {
     flexDirection: 'row',
     flexWrap: 'wrap',

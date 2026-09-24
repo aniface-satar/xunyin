@@ -17,7 +17,7 @@ import settingState from '@/store/setting/state'
 const MIN_VALUE = 60
 const MAX_VALUE = 200
 
-export default () => {
+export default ({ compact = false }: { compact?: boolean }) => {
   const theme = useTheme()
   const playbackRate = Math.trunc(useSettingValue('player.playbackRate') * 100)
   const [sliderSize, setSliderSize] = useState(playbackRate)
@@ -51,11 +51,9 @@ export default () => {
     updateSetting({ 'player.playbackRate': 1 })
   }
 
-  return (
-    <View style={styles.container}>
-      <Text>{t('play_detail_setting_playback_rate')}</Text>
-      <View style={styles.content}>
-        <Text style={styles.label} color={theme['c-font-label']}>{`${((isSliding ? sliderSize : playbackRate) / 100).toFixed(2)}x`}</Text>
+  const slider = (
+    <View style={styles.content}>
+      <Text style={styles.label} color={theme['c-font-label']}>{`${((isSliding ? sliderSize : playbackRate) / 100).toFixed(2)}x`}</Text>
         <Slider
           minimumValue={MIN_VALUE}
           maximumValue={MAX_VALUE}
@@ -66,8 +64,31 @@ export default () => {
           value={playbackRate}
         />
       </View>
-      <ButtonPrimary onPress={handleReset}>{t('play_detail_setting_playback_rate_reset')}</ButtonPrimary>
+  )
+
+  const resetButton = (
+    <ButtonPrimary onPress={handleReset}>{t('play_detail_setting_playback_rate_reset')}</ButtonPrimary>
+  )
+
+  return (
+    <View style={[styles.container, compact && styles.containerCompact]}>
+      {
+        compact
+          ? (
+            <View style={styles.compactRow}>
+              <Text style={styles.compactTitle}>{t('play_detail_setting_playback_rate')}</Text>
+              {slider}
+              {resetButton}
+            </View>
+            )
+          : (
+            <>
+              <Text>{t('play_detail_setting_playback_rate')}</Text>
+              {slider}
+              {resetButton}
+            </>
+            )
+      }
     </View>
   )
 }
-

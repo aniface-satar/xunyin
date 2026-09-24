@@ -5,21 +5,19 @@ import boardState from '@/store/leaderboard/state'
 import { handlePlay } from './listAction'
 import { useLeaderboardInfo } from '@/screens/LeaderboardDetail/state'
 
-// export type MusicListProps = Pick<OnlineListProps,
-// 'onLoadMore'
-// | 'onPlayList'
-// | 'onRefresh'
-// >
-
 export interface MusicListType {
   loadList: (source: LX.OnlineSource, listId: string) => void
+  showMultiSelect: () => void
+  exitMultiSelect: () => void
 }
 
 export interface MusicListProps {
   checkHomePagerIdle?: boolean
+  multiSelectStyle?: OnlineListProps['multiSelectStyle']
+  onMultiSelectModeChange?: OnlineListProps['onMultiSelectModeChange']
 }
 
-export default forwardRef<MusicListType, MusicListProps>(({ checkHomePagerIdle: checkHomePager = true }, ref) => {
+export default forwardRef<MusicListType, MusicListProps>(({ checkHomePagerIdle: checkHomePager = true, multiSelectStyle, onMultiSelectModeChange }, ref) => {
   const listRef = useRef<OnlineListType>(null)
   const isUnmountedRef = useRef(false)
   const { board } = useLeaderboardInfo()
@@ -47,6 +45,12 @@ export default forwardRef<MusicListType, MusicListProps>(({ checkHomePagerIdle: 
           listRef.current?.setStatus('error')
         })
       }
+    },
+    showMultiSelect() {
+      listRef.current?.showMultiSelect()
+    },
+    exitMultiSelect() {
+      listRef.current?.exitMultiSelect()
     },
   }), [])
 
@@ -97,5 +101,7 @@ export default forwardRef<MusicListType, MusicListProps>(({ checkHomePagerIdle: 
     onLoadMore={handleLoadMore}
     checkHomePagerIdle={checkHomePager}
     rowType='medium'
+    multiSelectStyle={multiSelectStyle}
+    onMultiSelectModeChange={onMultiSelectModeChange}
    />
 })

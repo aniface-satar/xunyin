@@ -1,6 +1,6 @@
 /**
  * 基于 lyswhut/lx-music-mobile 修改（Apache License 2.0）。
- * 启动流程仅保留初始化与深链处理，不自动检查应用更新。
+ * 启动流程完成初始化与深链处理后检查应用更新。
  * 原项目：https://github.com/lyswhut/lx-music-mobile
  */
 
@@ -13,6 +13,7 @@ import initPlayer from './player'
 import dataInit from './dataInit'
 import initSync from './sync'
 import { initDeeplink } from './deeplink'
+import { checkUpdate } from '@/core/version'
 import { setApiSource } from '@/core/apiSource'
 import commonActions from '@/store/common/action'
 import settingState from '@/store/setting/state'
@@ -26,6 +27,7 @@ const handlePushedHomeScreen = async() => {
     if (isFirstPush) {
       isFirstPush = false
       void initDeeplink()
+      void checkUpdate()
     }
   } else {
     if (isFirstPush) isFirstPush = false

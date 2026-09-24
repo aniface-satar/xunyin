@@ -15,6 +15,7 @@ var _Player = _interopRequireDefault(require("../../../screens/PlayDetail/Vertic
 var _Pic = _interopRequireDefault(require("../../../screens/PlayDetail/Vertical/Pic"));
 var _Lyric = _interopRequireDefault(require("../../../screens/PlayDetail/Vertical/Lyric"));
 var _reactNativePagerView = _interopRequireDefault(require("react-native-pager-view"));
+var _overlayModalGesture = require("./overlayModalGesture");
 var _Image = _interopRequireDefault(require("../../common/Image"));
 var _ImageBackground = _interopRequireDefault(require("../../common/ImageBackground"));
 var _state = _interopRequireDefault(require("../../../store/common/state"));
@@ -48,11 +49,12 @@ function _interopRequireWildcard(e, t) {
 }
 var LYRIC_PAGE = 1;
 var LyricPage = function LyricPage(_ref) {
-  var activeIndex = _ref.activeIndex;
+  var activeIndex = _ref.activeIndex,
+    showSummary = _ref.showSummary;
   var initedRef = (0, _react.useRef)(false);
   var lyric = (0, _react.useMemo)(function () {
-    return <_Lyric.default />;
-  }, []);
+    return <_Lyric.default showSummary={showSummary} />;
+  }, [showSummary]);
   switch (activeIndex) {
     case LYRIC_PAGE:
       if (!initedRef.current) initedRef.current = true;
@@ -150,7 +152,7 @@ var OverlayBackdrop = function OverlayBackdrop(_refBackdrop) {
   });
 };
 var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
-  var _measuredActionLayout, _measuredActionLayout2, _measuredActionLayout3, _progressTarget$heigh, _source$bar$y, _source$bar$height, _source$bar$x, _source$bar$width, _source$progress, _source$bar$x2, _source$bar$width2, _source$bar$y2, _source$bar$height2, _source$bar$width3, _source$controls, _source$pic$y, _source$pic$height, _source$pic$height2, _source$pic$width, _source$pic$y2, _source$title$y, _source$bar$x3, _source$bar$y3, _source$bar$width4, _source$bar$height3, _source$pic$x, _source$pic$x2, _source$title, _source$artist, _musicInfoLayout$titl, _musicInfoLayout$arti;
+  var _measuredActionLayout, _measuredActionLayout2, _measuredActionLayout3, _progressTarget$heigh, _source$bar$y, _source$bar$height, _source$bar$x, _source$bar$width, _source$progress, _source$bar$x2, _source$bar$width2, _source$bar$y2, _source$bar$height2, _source$bar$width3, _source$controls, _source$pic$y, _source$pic$height, _source$pic$height2, _source$pic$width, _source$pic$y2, _source$title$y, _source$pic$x, _source$pic$x2, _source$title, _source$artist, _musicInfoLayout$titl, _musicInfoLayout$arti;
   var progress = _ref2.progress,
     onSourceVisibilityChange = _ref2.onSourceVisibilityChange,
     onBarSettledChange = _ref2.onBarSettledChange;
@@ -226,11 +228,17 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var gestureEnabledRef = (0, _react.useRef)(false);
   var targetLayoutsSettledRef = (0, _react.useRef)(false);
   var targetMeasurementEpochRef = (0, _react.useRef)(0);
+  var closeGestureStartDyRef = (0, _react.useRef)(0);
   var closeGestureAreaRef = (0, _react.useRef)({
     top: 0,
     bottom: 0,
     left: 0,
     right: 0
+  });
+  console.log('[PAGE_DEBUG] PlayerOverlay render', {
+    mounted,
+    pageIndex,
+    remembered: (0, require("./transition").getLastOverlayPage)()
   });
   var pagerRef = (0, _react.useRef)(null);
   var headerHeight = statusBarHeight + _Header.HEADER_HEIGHT;
@@ -247,20 +255,29 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var coverY = headerHeight + coverGap;
   var coverRight = coverX + coverSize;
   var transitionDistance = Math.max(winHeight * 0.36, 250);
+  var closeGestureActivationThreshold = (0, require("./transition").getCloseGestureActivationThreshold)();
   // 歌词页顶部的小封面摘要：收起动画从这里出发才能和静态布局无缝衔接
   var lyricSummary = (0, require("./transition").getLyricSummaryLayout)({
     headerHeight: headerHeight,
     coverGap: coverGap,
     contentWidth: contentWidth,
-    buttonWidth: _Btn.BTN_WIDTH
+    buttonWidth: _Btn.BTN_WIDTH,
+    metrics: {
+      paddingLeft: (0, require("../../../utils/pixelRatio").scaleSizeW)(20),
+      coverTextGap: (0, require("../../../utils/pixelRatio").scaleSizeW)(16),
+      actionGap: (0, require("../../../utils/pixelRatio").scaleSizeW)(2),
+      titleFontSize: (0, require("../../../utils/pixelRatio").setSpText)(20),
+      titleLineHeight: (0, require("../../../utils/pixelRatio").setSpText)(26),
+      artistFontSize: (0, require("../../../utils/pixelRatio").setSpText)(15),
+      artistLineHeight: (0, require("../../../utils/pixelRatio").setSpText)(20),
+      artistGap: (0, require("../../../utils/pixelRatio").scaleSizeH)(5)
+    }
   });
   var isLyricOrigin = transitionOrigin == 'lyric';
-  closeGestureAreaRef.current = pageIndex == LYRIC_PAGE ? {
-    top: lyricSummary.cover.y,
-    bottom: lyricSummary.cover.y + lyricSummary.cover.height,
-    left: lyricSummary.cover.x,
-    right: lyricSummary.cover.x + lyricSummary.cover.width
-  } : {
+  closeGestureAreaRef.current = pageIndex == LYRIC_PAGE ? (0, require("./transition").getLyricCloseGestureArea)({
+    coverBottom: lyricSummary.cover.y + lyricSummary.cover.height,
+    windowWidth: winWidth
+  }) : {
     top: coverY,
     bottom: coverY + coverSize,
     left: coverX,
@@ -393,6 +410,7 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   };
   (0, _react.useEffect)(function () {
     pageIndexRef.current = pageIndex;
+    (0, require("./transition").setLastOverlayPage)(pageIndex);
   }, [pageIndex]);
   var setSourceLayout = (0, _react.useCallback)(function (nextSource) {
     var _rootRef$current;
@@ -485,6 +503,7 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     onSourceVisibilityChange(toValue == 1);
     onBarSettledChange == null ? void 0 : onBarSettledChange(false);
     if (toValue == 1) setFullscreenMounted(false);
+    if (toValue == 0) setFullscreenMounted(true);
     if (toValue == 1) {
       syncTransitionOriginFromPage();
       // 歌词页收起时保持当前页，动画结束后再复位，避免中途切换页面导致闪跳
@@ -531,7 +550,6 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
       }
       if (toValue == 1) {
         onBarSettledChange == null ? void 0 : onBarSettledChange(true);
-        if (transitionOriginRef.current == 'lyric') setPageIndex(0);
         setMounted(false);
       }
       if (toValue == 1 && _state.default.componentIds.playDetail == _state.default.componentIds.home) {
@@ -542,10 +560,14 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   }, [invalidateTargetMeasurements, onBarSettledChange, onSourceVisibilityChange, progress, syncTransitionOriginFromPage]);
   var open = (0, _react.useCallback)(function () {
     if (!sourceRef.current) return;
+    var restoredPage = (0, require("./transition").getLastOverlayPage)();
+    console.log('[PAGE_DEBUG] open', restoredPage);
     onSourceVisibilityChange(false);
     setMounted(true);
     setTransitionPic(musicInfo.pic);
-    applyTransitionOrigin('pic');
+    pageIndexRef.current = restoredPage;
+    setPageIndex(restoredPage);
+    applyTransitionOrigin((0, require("./transition").getTransitionOrigin)(restoredPage, LYRIC_PAGE));
     progress.setValue(1);
     progressRef.current = 1;
     animateTo(0);
@@ -553,11 +575,15 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var startGesture = (0, _react.useCallback)(function () {
     var _animationRef$current2;
     if (!sourceRef.current) return;
+    var restoredPage = (0, require("./transition").getLastOverlayPage)();
+    console.log('[PAGE_DEBUG] startGesture', restoredPage);
     (_animationRef$current2 = animationRef.current) == null ? void 0 : _animationRef$current2.stop();
     onSourceVisibilityChange(false);
     setMounted(true);
     setTransitionPic(musicInfo.pic);
-    applyTransitionOrigin('pic');
+    pageIndexRef.current = restoredPage;
+    setPageIndex(restoredPage);
+    applyTransitionOrigin((0, require("./transition").getTransitionOrigin)(restoredPage, LYRIC_PAGE));
     setIsOpen(false);
     isOpenRef.current = false;
     isTransitioningRef.current = false;
@@ -581,6 +607,7 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     var _animationRef$current3;
     (_animationRef$current3 = animationRef.current) == null ? void 0 : _animationRef$current3.stop();
     syncTransitionOriginFromPage();
+    closeGestureStartDyRef.current = arguments.length > 1 ? arguments[1].dy : 0;
     onSourceVisibilityChange(true);
     invalidateTargetMeasurements();
     setGestureEnabled(false);
@@ -653,34 +680,28 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     onMoveShouldSetPanResponderCapture: function onMoveShouldSetPanResponderCapture(_event, gestureState) {
       var gestureArea = closeGestureAreaRef.current;
       var inGestureArea = gestureState.x0 >= gestureArea.left && gestureState.x0 <= gestureArea.right && gestureState.y0 >= gestureArea.top && gestureState.y0 <= gestureArea.bottom;
-      return isOpenRef.current && gestureState.dy > 8 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) && (pageIndexRef.current != LYRIC_PAGE || inGestureArea);
+      return isOpenRef.current && !_overlayModalGesture.overlayModalGesture.active && gestureState.dy > closeGestureActivationThreshold && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) && (pageIndexRef.current != LYRIC_PAGE || inGestureArea);
     },
     onPanResponderGrant: startCloseGesture,
     onPanResponderMove: function onPanResponderMove(_event, gestureState) {
-      updateCloseGesture(gestureState.dy);
+      updateCloseGesture((0, require("./transition").getCloseGestureDistance)(gestureState.dy, closeGestureStartDyRef.current));
     },
     onPanResponderRelease: function onPanResponderRelease(_event, gestureState) {
-      endCloseGesture(gestureState.dy, gestureState.vy);
+      endCloseGesture((0, require("./transition").getCloseGestureDistance)(gestureState.dy, closeGestureStartDyRef.current), gestureState.vy);
     },
     onPanResponderTerminate: function onPanResponderTerminate(_event, gestureState) {
-      endCloseGesture(gestureState.dy, gestureState.vy);
+      endCloseGesture((0, require("./transition").getCloseGestureDistance)(gestureState.dy, closeGestureStartDyRef.current), gestureState.vy);
     }
   })).current;
-  var cardLeft = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, (_source$bar$x3 = source == null ? void 0 : source.bar.x) != null ? _source$bar$x3 : 0]
-  });
-  var cardTop = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, (_source$bar$y3 = source == null ? void 0 : source.bar.y) != null ? _source$bar$y3 : winHeight]
-  });
-  var cardWidth = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [winWidth, (_source$bar$width4 = source == null ? void 0 : source.bar.width) != null ? _source$bar$width4 : winWidth]
-  });
-  var cardHeight = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [winHeight, (_source$bar$height3 = source == null ? void 0 : source.bar.height) != null ? _source$bar$height3 : winHeight]
+  var cardMorphTransform = (0, require("./transition").getCardMorphTransformRange)({
+    bar: source == null ? {
+      x: 0,
+      y: winHeight,
+      width: winWidth,
+      height: winHeight
+    } : source.bar,
+    windowHeight: winHeight,
+    windowWidth: winWidth
   });
   var cardRadius = progress.interpolate({
     inputRange: [0, 1],
@@ -691,18 +712,18 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     outputRange: [0, 1, 1, 0]
   });
   // ghost 元素只在接近全屏时淡入、离开全屏时立刻淡出，避免手势刚开始时闪现
-  var heartOpacity = progress.interpolate({
-    inputRange: [0, 0.04, 0.9, 0.96],
-    outputRange: [1, 0, 0, 0]
-  });
+  var ghostFadeConfig = (0, require("./transition").getGhostFadeConfig)();
+  var heartOpacity = progress.interpolate(ghostFadeConfig);
   var coverShadowOpacity = isLyricOrigin ? progress.interpolate({
-    inputRange: [0, textMoveThreshold, 1],
-    outputRange: [0, 0.78, 1]
+    inputRange: [0, require("./transition").LYRIC_FADE_OUT_END],
+    outputRange: [0, 1],
+    extrapolate: 'clamp'
   }) : 1;
   // 歌词页摘要里的小封面本身没有描边，收起时再淡入，避免进度 0 时多出一圈边框
   var coverBorderWidth = isLyricOrigin ? progress.interpolate({
-    inputRange: [0, textMoveThreshold, 1],
-    outputRange: [0, require("../../../theme").BorderWidths.normal, require("../../../theme").BorderWidths.normal]
+    inputRange: [0, require("./transition").LYRIC_FADE_OUT_END],
+    outputRange: [0, require("../../../theme").BorderWidths.normal, require("../../../theme").BorderWidths.normal],
+    extrapolate: 'clamp'
   }) : require("../../../theme").BorderWidths.normal;
   // 收起动画的封面起点：歌曲页是大封面，歌词页是顶部小封面摘要
   var coverStart = isLyricOrigin ? lyricSummary.cover : {
@@ -904,37 +925,77 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     showMorphContent = _getOverlayTransition.showMorphContent,
     staticTransitionVisible = _getOverlayTransition.showStaticContent;
   var showStaticContent = staticTransitionVisible && fullscreenMounted;
+  var showLyricPager = (0, require("./transition").getLyricPagerVisibility)({
+    isLyricOrigin: isLyricOrigin,
+    isTransitioning: isTransitioning,
+    gestureEnabled: gestureEnabled
+  });
   var showCoverMorph = showMorphContent || !fullscreenMounted;
+  // 与歌曲页一致：静态头部/底部播放器过渡期间不可见，动画结束时与 morph/ghost 层原子切换，
+  // 避免它们在末端与 morph 进度条/控制按钮、ghost 头部/操作行同时渐显造成重影
   var staticOpacityStyle = {
     opacity: showStaticContent ? 1 : 0
   };
-  // 歌词页收起时让歌词列表淡出，避免手势一开始整页文字瞬间消失
-  var lyricContentFade = progress.interpolate({
-    inputRange: [0, require("./transition").LYRIC_FADE_OUT_END],
-    outputRange: [1, 0],
-    extrapolate: 'clamp'
-  });
   var pagerOpacityStyle = {
-    opacity: showStaticContent ? 1 : isLyricOrigin ? lyricContentFade : 0
+    opacity: showStaticContent ? 1 : showLyricPager ? progress.interpolate((0, require("./transition").getLyricPagerFadeConfig)()) : 0
   };
+  var showLyricPreview = (0, require("./transition").shouldRenderLyricCurrentPreview)(isLyricOrigin);
   var handlePageSelected = function handlePageSelected(_ref4) {
     var nativeEvent = _ref4.nativeEvent;
+    console.log('[PAGE_DEBUG] pager event', nativeEvent.position, (0, require("./transition").getLastOverlayPage)());
     setPageIndex(nativeEvent.position);
   };
   var cardStyle = {
-    left: cardLeft,
-    top: cardTop,
-    width: cardWidth,
-    height: cardHeight,
+    left: 0,
+    top: 0,
+    width: winWidth,
+    height: winHeight,
     borderRadius: cardRadius,
     overflow: 'hidden',
-    backgroundColor: theme['c-content-background']
+    backgroundColor: theme['c-content-background'],
+    transform: [{
+      translateX: progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [cardMorphTransform.from.translateX, cardMorphTransform.to.translateX]
+      })
+    }, {
+      translateY: progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [cardMorphTransform.from.translateY, cardMorphTransform.to.translateY]
+      })
+    }, {
+      scaleX: progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [cardMorphTransform.from.scaleX, cardMorphTransform.to.scaleX]
+      })
+    }, {
+      scaleY: progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [cardMorphTransform.from.scaleY, cardMorphTransform.to.scaleY]
+      })
+    }]
   };
   var separatorStyle = {
-    left: cardLeft,
-    top: cardTop,
-    width: cardWidth,
-    opacity: separatorOpacity
+    left: 0,
+    top: 0,
+    width: winWidth,
+    opacity: separatorOpacity,
+    transform: [{
+      translateX: progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, cardMorphTransform.to.translateX]
+      })
+    }, {
+      translateY: progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, source == null ? winHeight : source.bar.y]
+      })
+    }, {
+      scaleX: progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [1, cardMorphTransform.to.scaleX]
+      })
+    }]
   };
   var coverStyle = {
     left: coverLeft,
@@ -982,8 +1043,7 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     left: contentLeft,
     top: (0, require("./transition").getGhostLyricTop)(fullTitleTop, musicInfoLayout == null ? void 0 : musicInfoLayout.lyricY, fallbackLyricOffsetY),
     width: textWidth,
-    // 歌词页收起时摘要行右侧没有歌词预览，不要补一个假元素进去
-    opacity: isLyricOrigin ? 0 : heartOpacity
+    opacity: heartOpacity
   };
   var ghostActionRowStyle = {
     left: contentLeft,
@@ -1010,16 +1070,16 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
             winWidth: winWidth,
             winHeight: winHeight
           })
-        }), showStaticContent && <_reactNative.View pointerEvents="auto" style={styles.content}>{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+        }), (fullscreenMounted || showLyricPager) && <_reactNative.View pointerEvents={showStaticContent ? 'auto' : 'none'} style={styles.content}>{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
             style: staticOpacityStyle,
             children: <_Header.default onBack={close} pageIndex={pageIndex} onPageSelected={function onPageSelected(page) {
               var _pagerRef$current2;
               return (_pagerRef$current2 = pagerRef.current) == null ? void 0 : _pagerRef$current2.setPage(page);
             }} />
-          })}{showStaticContent && (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+          })}{(fullscreenMounted || showLyricPager) && (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
             style: [styles.pagerView, pagerOpacityStyle],
-            children: <_reactNativePagerView.default ref={pagerRef} initialPage={0} onPageSelected={handlePageSelected} style={styles.pagerViewInner}><_reactNative.View collapsable={false}><_Pic.default onMusicInfoLayout={handleMusicInfoLayout} marqueeActive={showStaticContent} /></_reactNative.View><_reactNative.View collapsable={false}><LyricPage activeIndex={pageIndex} /></_reactNative.View></_reactNativePagerView.default>
-          })}{showStaticContent && (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+            children: <_reactNativePagerView.default ref={pagerRef} initialPage={pageIndex} onPageSelected={handlePageSelected} style={styles.pagerViewInner}><_reactNative.View collapsable={false}><_Pic.default onMusicInfoLayout={handleMusicInfoLayout} marqueeActive={showStaticContent} /></_reactNative.View><_reactNative.View collapsable={false}><LyricPage activeIndex={pageIndex} showSummary={showStaticContent} /></_reactNative.View></_reactNativePagerView.default>
+          })}{(fullscreenMounted || showLyricPager) && (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
             style: [styles.bottom, staticOpacityStyle],
             children: <_Player.default showMusicInfo={false} onProgressLayout={setProgressTargetLayout} onControlLayout={setControlTargetLayout} />
           })}</_reactNative.View>]
@@ -1085,11 +1145,11 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
             var _pagerRef$current3;
             return (_pagerRef$current3 = pagerRef.current) == null ? void 0 : _pagerRef$current3.setPage(page);
           }} />
-        })}{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+        })}{showLyricPreview ? (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
           pointerEvents: "none",
           style: [styles.ghostLyric, ghostLyricStyle],
-          children: <_LyricPreview.default topGap={false} />
-        })}{(0, _jsxRuntime.jsxs)(_reactNative.Animated.View, {
+          children: <_LyricPreview.default topGap={false} lineCount={2} />
+        }) : null}{(0, _jsxRuntime.jsxs)(_reactNative.Animated.View, {
           pointerEvents: "none",
           style: [styles.ghostActionRow, ghostActionRowStyle],
           children: [<_PlayModeBtn.default />, <_TimeoutExitBtn.default />, <_CommentBtn.default />, <_Btn.default icon="list-order" onPress={function onPress() {}} />]

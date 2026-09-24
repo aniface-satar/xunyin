@@ -61,6 +61,8 @@ export interface HeaderProps {
   componentId: string
   embedded?: boolean
   onBack?: () => void
+  isMultiSelectMode?: boolean
+  onToggleMultiSelect?: () => void
 }
 
 export interface HeaderType {
@@ -73,7 +75,7 @@ export interface DetailInfo {
   imgUrl?: string
 }
 
-export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onBack }: { componentId: string, embedded?: boolean, onBack?: () => void }, ref) => {
+export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onBack, isMultiSelectMode = false, onToggleMultiSelect }: { componentId: string, embedded?: boolean, onBack?: () => void, isMultiSelectMode?: boolean, onToggleMultiSelect?: () => void }, ref) => {
   const fullStatusBarHeight = useStatusbarHeight()
   const theme = useTheme()
   const t = useI18n()
@@ -140,6 +142,19 @@ export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onB
           >
             <LoveIcon filled={isLoved} size={19} color={theme['c-font']} />
           </TouchableOpacity>
+          {
+            onToggleMultiSelect
+              ? (
+                <TouchableOpacity
+                  style={styles.multiSelectBtn}
+                  activeOpacity={0.7}
+                  onPress={onToggleMultiSelect}
+                >
+                  <Text size={14} color={theme['c-primary']}>{t(isMultiSelectMode ? 'list_select_cancel' : 'mylist_multi_select')}</Text>
+                </TouchableOpacity>
+                )
+              : null
+          }
         </View>
       </View>
       <View style={{ ...styles.infoRow, paddingLeft: 10, paddingRight: 10, paddingBottom: 10 }}>
@@ -196,6 +211,13 @@ const styles = createStyle({
     width: 34,
     height: 28,
     marginLeft: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  multiSelectBtn: {
+    height: 28,
+    marginLeft: 2,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },

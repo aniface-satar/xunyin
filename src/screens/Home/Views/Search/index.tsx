@@ -15,6 +15,7 @@ import TipList, { type TipListType } from './TipList'
 import List, { type ListType } from './List'
 import { addHistoryWord, setSearchText } from '@/core/search/search'
 import SearchTypeSelector from './SearchTypeSelector'
+import { shouldShowSearchType } from './searchTypeVisibility'
 
 
 interface SearchInfo {
@@ -28,7 +29,7 @@ export default () => {
   const searchTipListRef = useRef<TipListType>(null)
   const listRef = useRef<ListType>(null)
   const layoutHeightRef = useRef<number>(0)
-  const [showSearchType, setShowSearchType] = useState(Boolean(searchState.searchText))
+  const [showSearchType, setShowSearchType] = useState(shouldShowSearchType(searchState.searchText))
   const searchInfo = useRef<SearchInfo>({ temp_source: 'kw', source: 'kw', searchType: 'music' })
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -57,7 +58,7 @@ export default () => {
     }
     const handleHomeTabReset = () => {
       searchTipListRef.current?.hide()
-      setShowSearchType(false)
+      setShowSearchType(shouldShowSearchType(searchState.searchText))
     }
     global.app_event.on('searchTypeChanged', handleTypeChange)
     global.app_event.on('homeTabReset', handleHomeTabReset)
@@ -94,7 +95,7 @@ export default () => {
     setSearchText(text)
     handleHideTipList()
     searchTipListRef.current?.search(text, layoutHeightRef.current)
-    setShowSearchType(Boolean(text))
+    setShowSearchType(shouldShowSearchType(text))
     headerBarRef.current?.setText(text)
     headerBarRef.current?.blur()
     void addHistoryWord(text)
