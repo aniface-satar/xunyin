@@ -181,26 +181,38 @@ const patchs = [
     /new NotificationCompat\.Builder\(this, channel\)\.build\(\)/g,
     [
       'new NotificationCompat.Builder(this, channel)',
-      '                        .setSmallIcon(R.drawable.ic_xunyin_notification)',
+      '                        .setSmallIcon(com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(this, "ic_xunyin_notification"))',
       '                        .build()',
     ].join('\n'),
+  ],
+  // Resolve the custom icon from app resources at runtime. The library R class
+  // is not reliable here because it is generated before the app source set.
+  [
+    path.join(rootPath, trackPlayerService, 'MusicService.java'),
+    /R\.drawable\.ic_xunyin_notification/g,
+    'com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(this, "ic_xunyin_notification")',
   ],
   [
     path.join(rootPath, trackPlayerService, 'MusicService.java'),
     /(\.setSmallIcon\()R\.drawable\.play(\))/g,
-    '$1R.drawable.ic_xunyin_notification$2',
+    '$1com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(this, "ic_xunyin_notification")$2',
   ],
   // The service and notification manager build notifications before JS options
   // arrive, so use the app's status-bar icon as the native fallback too.
   [
     path.join(rootPath, trackPlayerMetadata, 'MetadataManager.java'),
     /(builder\.setSmallIcon\()R\.drawable\.play(\);\r?\n        builder\.setCategory)/,
-    '$1R.drawable.ic_xunyin_notification$2',
+    '$1com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(service, "ic_xunyin_notification")$2',
   ],
   [
     path.join(rootPath, trackPlayerMetadata, 'MetadataManager.java'),
     /(builder\.setSmallIcon\(getIcon\(options, "icon", )R\.drawable\.play(\)\);)/,
-    '$1R.drawable.ic_xunyin_notification$2',
+    '$1com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(service, "ic_xunyin_notification")$2',
+  ],
+  [
+    path.join(rootPath, trackPlayerMetadata, 'MetadataManager.java'),
+    /R\.drawable\.ic_xunyin_notification/g,
+    'com.facebook.react.views.imagehelper.ResourceDrawableIdHelper.getInstance().getResourceDrawableId(service, "ic_xunyin_notification")',
   ],
   // Android 12+ requires immutable or mutable flags on every PendingIntent.
   [
