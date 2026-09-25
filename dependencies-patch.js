@@ -23,6 +23,13 @@ const patchs = [
     /(<manifest\s+xmlns:android="[^"]+")\s*>/,
     '$1\n    package="com.guichaguri.trackplayer"\n>',
   ],
+  // Android 16 rejects startForeground when targetSdk is 35+ and the service
+  // does not declare a foregroundServiceType in the merged manifest.
+  [
+    path.join(rootPath, trackPlayerManifest),
+    /(<service\s+android:name="\.service\.MusicService"\s+android:enabled="true"\s+android:exported="true")(?!\s+android:foregroundServiceType=)/,
+    '$1\n            android:foregroundServiceType="mediaPlayback"',
+  ],
   // 灵动胶囊 / 原子岛 / 音乐流体云：OEM 的胶囊渲染器只识别声明了媒体按键与传输控制
   // 处理的 MediaSession，track-player 默认只设置了队列命令，这里补齐。
   [
