@@ -1,12 +1,16 @@
 {
   "schemaVersion": 1,
-  "version": "1.0.5",
-  "desc": "新增应用内公告：无需更新版本也能收到最新通知",
+  "version": "1.0.6",
+  "desc": "更新应用图标",
   "notice": {
     "id": 1,
     "text": "周末快乐"
   },
   "history": [
+    {
+      "version": "1.0.5",
+      "desc": "新增应用内公告：无需更新版本也能收到最新通知"
+    },
     {
       "version": "1.0.4",
       "desc": "Friday night"
