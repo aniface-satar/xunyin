@@ -42,6 +42,11 @@ const request = async(url) => {
 
 let remoteInfo = null
 
+const parseNotice = notice => {
+  if (!notice || typeof notice.id != 'number' || typeof notice.text != 'string' || !notice.text) return null
+  return { id: notice.id, text: notice.text }
+}
+
 const parseInfo = info => {
   if (!info || typeof info.version != 'string' || !info.version) throw new Error('failed')
   return {
@@ -49,6 +54,7 @@ const parseInfo = info => {
     desc: typeof info.desc == 'string' ? info.desc : '',
     history: Array.isArray(info.history) ? info.history : [],
     downloadUrls: info.downloadUrls,
+    notice: parseNotice(info.notice),
   }
 }
 

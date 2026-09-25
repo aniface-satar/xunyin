@@ -1,6 +1,7 @@
 import { Navigation } from 'react-native-navigation'
 import {
   VERSION_MODAL,
+  NOTICE_MODAL,
   PACT_MODAL,
   SYNC_MODE_MODAL,
 } from './screenNames'
@@ -108,6 +109,34 @@ export const showVersionModal = () => {
         //     },
         //   },
         // },
+      },
+    },
+  })
+}
+
+export const showNoticeModal = (text: string) => {
+  const theme = themeState.theme
+
+  void Navigation.showOverlay({
+    component: {
+      name: NOTICE_MODAL,
+      passProps: { text },
+      options: {
+        layout: {
+          componentBackgroundColor: 'transparent',
+        },
+        overlay: {
+          interceptTouchOutside: true,
+        },
+        statusBar: {
+          drawBehind: true,
+          visible: true,
+          style: getStatusBarStyle(theme.isDark),
+          backgroundColor: 'transparent',
+        },
+        navigationBar: {
+          backgroundColor: theme['c-content-background'],
+        },
       },
     },
   })

@@ -195,6 +195,8 @@
   "nav_setting": "Settings",
   "nav_songlist": "Playlists",
   "nav_top": "Charts",
+  "notice_btn_confirm": "OK",
+  "notice_title": "Notice",
   "never_show": "Never show again",
   "no_item": "The list is empty...",
   "notifications_check_tip": "You have not allowed Xunyin to show notifications, or the \"MusicService\" notification category in the Xunyin notification settings is disabled, which prevents you from using the notification for actions such as pausing, switching songs, and so on. Do you want to enable it?",

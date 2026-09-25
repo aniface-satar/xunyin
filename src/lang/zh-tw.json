@@ -195,6 +195,8 @@
   "nav_setting": "設定",
   "nav_songlist": "歌單",
   "nav_top": "排行榜",
+  "notice_btn_confirm": "知道了",
+  "notice_title": "公告",
   "never_show": "不再提醒",
   "no_item": "清單竟然是空的...",
   "notifications_check_tip": "你沒有允許寻音顯示通知，或寻音通知設定裡的「MusicService」通知被停用，這將無法使用通知欄進行暫停、切歌等操作，是否去開啟？",

@@ -2,8 +2,8 @@ import { compareVer } from '@/utils'
 import { downloadNewVersion, getVersionInfo } from '@/utils/version'
 import versionActions from '@/store/version/action'
 import versionState, { type InitState } from '@/store/version/state'
-import { getIgnoreVersion, getIgnoreVersionFailTipTime, saveIgnoreVersion, saveIgnoreVersionFailTipTime } from '@/utils/data'
-import { showVersionModal } from '@/navigation'
+import { getIgnoreVersion, getIgnoreVersionFailTipTime, getNoticeId, saveIgnoreVersion, saveIgnoreVersionFailTipTime, saveNoticeId } from '@/utils/data'
+import { showNoticeModal, showVersionModal } from '@/navigation'
 import { Navigation } from 'react-native-navigation'
 import { toast } from '@/utils/tools'
 
@@ -19,11 +19,31 @@ export const hideModal = (componentId: string) => {
   void Navigation.dismissOverlay(componentId)
 }
 
+let pendingNoticeId: number | null = null
+
+export const hideNoticeModal = async(componentId: string) => {
+  await Navigation.dismissOverlay(componentId)
+  if (pendingNoticeId != null) {
+    saveNoticeId(pendingNoticeId)
+    pendingNoticeId = null
+  }
+}
+
+const checkNotice = async(notice: { id: number, text: string } | null) => {
+  if (!notice) return
+  const readId = await getNoticeId()
+  if (notice.id <= readId) return
+  pendingNoticeId = notice.id
+  showNoticeModal(notice.text)
+}
+
 export const checkUpdate = async() => {
   versionActions.setVersionInfo({ status: 'checking' })
   let versionInfo: InitState['versionInfo'] = { ...versionState.versionInfo }
+  let notice: { id: number, text: string } | null = null
   try {
-    const { version, desc, history } = await getVersionInfo()
+    const { version, desc, history, notice: remoteNotice } = await getVersionInfo()
+    notice = remoteNotice ?? null
     versionInfo.newVersion = {
       version,
       desc,
@@ -62,8 +82,10 @@ export const checkUpdate = async() => {
       toast(global.i18n.t('version_tip_unknown'))
     } else if (versionInfo.newVersion.version != await getIgnoreVersion()) {
       showModal()
+      return
     }
   }
+  void checkNotice(notice)
   // console.log(compareVer(process.versions.app, versionInfo.version))
   // console.log(process.versions.app, versionInfo.version)
 }

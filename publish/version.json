@@ -1,12 +1,16 @@
 {
   "schemaVersion": 1,
-  "version": "1.0.4",
-  "desc": "Friday night",
+  "version": "1.0.5",
+  "desc": "新增应用内公告：无需更新版本也能收到最新通知",
   "notice": {
     "id": 1,
     "text": "周末快乐"
   },
   "history": [
+    {
+      "version": "1.0.4",
+      "desc": "Friday night"
+    },
     {
       "version": "1.0.3",
       "desc": "修复 Android 12+ 媒体通知 PendingIntent 标志缺失导致的启动闪退"

@@ -19,6 +19,7 @@ const listScrollPositionKey = storageDataPrefix.listScrollPosition
 const listUpdateInfoKey = storageDataPrefix.listUpdateInfo
 const ignoreVersionKey = storageDataPrefix.ignoreVersion
 const ignoreVersionFailTipTimeKey = storageDataPrefix.ignoreVersionFailTipTimeKey
+const noticeIdKey = storageDataPrefix.noticeId
 const searchSettingKey = storageDataPrefix.searchSetting
 const searchHistoryListKey = storageDataPrefix.searchHistoryList
 const songListSettingKey = storageDataPrefix.songListSetting
@@ -210,6 +211,18 @@ export const getIgnoreVersionFailTipTime = async() => {
   // eslint-disable-next-line require-atomic-updates
   if (ignoreVersionFailTipTime === undefined) ignoreVersionFailTipTime = (await getData<number | null>(ignoreVersionFailTipTimeKey))
   return ignoreVersionFailTipTime ?? 0
+}
+
+let noticeId: number
+export const saveNoticeId = (id: number) => {
+  noticeId = id
+  void saveData(noticeIdKey, id)
+}
+// 获取已读公告的 id
+export const getNoticeId = async() => {
+  // eslint-disable-next-line require-atomic-updates
+  if (noticeId === undefined) noticeId = (await getData<number>(noticeIdKey)) ?? 0
+  return noticeId
 }
 
 let openStoragePath: string | null = ''
