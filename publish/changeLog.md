@@ -1,1 +1,1 @@
-修复了非常多的bug,中秋节快乐!
+修复 Android 12+ 媒体通知 PendingIntent 标志缺失导致的启动闪退

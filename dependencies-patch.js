@@ -248,11 +248,11 @@ const patchs = [
   // Android 12+ requires immutable or mutable flags on every PendingIntent.
   [
     path.join(rootPath, trackPlayerMetadata, 'MetadataManager.java'),
-    /[ \t]*PendingIntent contentIntent = PendingIntent\.getActivity\(context, 0, openApp, PendingIntent\.FLAG_CANCEL_CURRENT\);/,
+    /([ \t]*)(?:builder\.setContentIntent\(|PendingIntent contentIntent = )PendingIntent\.getActivity\(context, 0, openApp, PendingIntent\.FLAG_CANCEL_CURRENT(\)\)?);/,
     [
-      '        int contentFlags = PendingIntent.FLAG_CANCEL_CURRENT;',
-      '        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) contentFlags |= PendingIntent.FLAG_IMMUTABLE;',
-      '        PendingIntent contentIntent = PendingIntent.getActivity(context, 0, openApp, contentFlags);',
+      '$1int contentFlags = PendingIntent.FLAG_CANCEL_CURRENT;',
+      '$1if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) contentFlags |= PendingIntent.FLAG_IMMUTABLE;',
+      '$1builder.setContentIntent(PendingIntent.getActivity(context, 0, openApp, contentFlags));',
     ].join('\n'),
   ],
   [
