@@ -3,6 +3,7 @@ import { name } from '../../package.json'
 import { downloadFile, stopDownload, temporaryDirectoryPath } from '@/utils/fs'
 import { getSupportedAbis, installApk } from '@/utils/nativeModules/utils'
 import { APP_PROVIDER_NAME } from '@/config/constant'
+import { compareVer } from '@/utils'
 
 const abis = [
   'arm64-v8a',
@@ -14,63 +15,55 @@ const abis = [
 
 const repository = 'aniface-satar/xunyin'
 
-const address = [
-  [`https://cdn.jsdmirror.cn/gh/${repository}@main/publish/version.json`, 'direct'],
-  [`https://cdn.jsdmirror.com/gh/${repository}@main/publish/version.json`, 'direct'],
-  [`https://cdn.jsdelivr.net/gh/${repository}@main/publish/version.json`, 'direct'],
-  [`https://fastly.jsdelivr.net/gh/${repository}@main/publish/version.json`, 'direct'],
-  [`https://ghproxy.net/https://raw.githubusercontent.com/${repository}/main/publish/version.json`, 'direct'],
-  [`https://raw.githubusercontent.com/${repository}/main/publish/version.json`, 'direct'],
+const getVersionInfoUrls = () => [
+  `https://aniface-satar.github.io/xunyin/version.json?t=${Date.now()}`,
+  `https://gitee.com/aniface-satar/xunyin/raw/main/publish/version.json?t=${Date.now()}`,
+  `https://cdn.jsdmirror.cn/gh/${repository}@main/publish/version.json`,
+  `https://cdn.jsdmirror.com/gh/${repository}@main/publish/version.json`,
+  `https://cdn.jsdelivr.net/gh/${repository}@main/publish/version.json`,
+  `https://fastly.jsdelivr.net/gh/${repository}@main/publish/version.json`,
+  `https://ghproxy.net/https://raw.githubusercontent.com/${repository}/main/publish/version.json`,
+  `https://raw.githubusercontent.com/${repository}/main/publish/version.json`,
 ]
 
 
-const request = async(url, retryNum = 0) => {
+const request = async(url) => {
   return new Promise((resolve, reject) => {
     httpGet(url, {
-      timeout: 10000,
+      timeout: 5000,
     }, (err, resp, body) => {
       if (err || resp.statusCode != 200) {
-        ++retryNum >= 3
-          ? reject(err || new Error(resp.statusMessage || resp.statusCode))
-          : request(url, retryNum).then(resolve).catch(reject)
+        reject(err || new Error(resp.statusMessage || resp.statusCode))
       } else resolve(body)
     })
   })
 }
 
-const getDirectInfo = async(url) => {
-  return request(url).then(info => {
-    if (info.version == null) throw new Error('failed')
-    return info
-  })
+let remoteInfo = null
+
+const parseInfo = info => {
+  if (!info || typeof info.version != 'string' || !info.version) throw new Error('failed')
+  return {
+    version: info.version,
+    desc: typeof info.desc == 'string' ? info.desc : '',
+    history: Array.isArray(info.history) ? info.history : [],
+    downloadUrls: info.downloadUrls,
+  }
 }
 
-const getNpmPkgInfo = async(url) => {
-  return request(url).then(json => {
-    if (!json.versionInfo) throw new Error('failed')
-    const info = JSON.parse(json.versionInfo)
-    if (info.version == null) throw new Error('failed')
-    return info
-  })
-}
-
-export const getVersionInfo = async(index = 0) => {
-  const [url, source] = address[index]
-  let promise
-  switch (source) {
-    case 'direct':
-      promise = getDirectInfo(url)
-      break
-    case 'npm':
-      promise = getNpmPkgInfo(url)
-      break
+export const getVersionInfo = async() => {
+  const results = await Promise.allSettled(getVersionInfoUrls().map(async url => {
+    return parseInfo(await request(url))
+  }))
+  const infos = results.flatMap(result => result.status == 'fulfilled' ? [result.value] : [])
+  if (!infos.length) {
+    throw results[0].status == 'rejected' ? results[0].reason : new Error('failed')
   }
 
-  return promise.catch(async(err) => {
-    index++
-    if (index >= address.length) throw err
-    return getVersionInfo(index)
-  })
+  // A CDN may briefly return stale data; prefer the newest manifest across sources.
+  const info = infos.reduce((latest, item) => compareVer(item.version, latest.version) > 0 ? item : latest)
+  remoteInfo = info
+  return info
 }
 
 const getTargetAbi = async() => {
@@ -80,13 +73,29 @@ const getTargetAbi = async() => {
   }
   return abis[abis.length - 1]
 }
+
+const getCustomDownloadUrls = async(version) => {
+  const info = remoteInfo?.version == version ? remoteInfo : await getVersionInfo().catch(() => null)
+  const urls = info?.downloadUrls
+  if (!urls) return []
+
+  const abi = await getTargetAbi()
+  const customUrls = Array.isArray(urls)
+    ? urls
+    : [urls[abi], urls.universal].flat()
+  return customUrls.filter(url => typeof url == 'string' && url.startsWith('https://'))
+}
+
 const getDownloadUrls = async(version) => {
   const abi = await getTargetAbi()
   const filePath = `${repository}/releases/download/v${version}/${name}-v${version}-${abi}.apk`
+  const customUrls = await getCustomDownloadUrls(version)
   return [
+    ...customUrls,
     `https://ghproxy.net/https://github.com/${filePath}`,
     `https://ghfast.top/https://github.com/${filePath}`,
     `https://gh-proxy.com/https://github.com/${filePath}`,
+    `https://gitee.com/${repository}/releases/download/v${version}/${name}-v${version}-${abi}.apk`,
     `https://github.com/${filePath}`,
   ]
 }
