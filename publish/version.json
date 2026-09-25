@@ -1,1 +1,23 @@
-{"version":"1.0.4","desc":"Friday night","history":[{"version":"1.0.3","desc":"修复 Android 12+ 媒体通知 PendingIntent 标志缺失导致的启动闪退"},{"version":"1.0.2","desc":"中秋节快乐"},{"version":"1.0.1","desc":"修复了非常多的bug"},{"version":"1.0.0","desc":"基于 lx-music-mobile 的界面重构版，未修改核心内核；支持导入 LX Music 导出的歌单，常用入口更直观、更容易上手。"}]}
+{
+  "schemaVersion": 1,
+  "version": "1.0.4",
+  "desc": "Friday night",
+  "history": [
+    {
+      "version": "1.0.3",
+      "desc": "修复 Android 12+ 媒体通知 PendingIntent 标志缺失导致的启动闪退"
+    },
+    {
+      "version": "1.0.2",
+      "desc": "中秋节快乐"
+    },
+    {
+      "version": "1.0.1",
+      "desc": "修复了非常多的bug"
+    },
+    {
+      "version": "1.0.0",
+      "desc": "基于 lx-music-mobile 的界面重构版，未修改核心内核；支持导入 LX Music 导出的歌单，常用入口更直观、更容易上手。"
+    }
+  ]
+}
