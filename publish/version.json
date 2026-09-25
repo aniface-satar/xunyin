@@ -1,34 +1,8 @@
 {
   "schemaVersion": 1,
-  "version": "1.0.5",
-  "desc": "周末快乐",
-  "downloadUrls": {
-    "arm64-v8a": [
-      "https://ghproxy.net/https://github.com/aniface-satar/xunyin/releases/download/v1.0.4/xunyin-v1.0.4-arm64-v8a.apk",
-      "https://github.com/aniface-satar/xunyin/releases/download/v1.0.4/xunyin-v1.0.4-arm64-v8a.apk"
-    ],
-    "armeabi-v7a": [
-      "https://ghproxy.net/https://github.com/aniface-satar/xunyin/releases/download/v1.0.4/xunyin-v1.0.4-armeabi-v7a.apk",
-      "https://github.com/aniface-satar/xunyin/releases/download/v1.0.4/xunyin-v1.0.4-armeabi-v7a.apk"
-    ],
-    "x86_64": [
-      "https://ghproxy.net/https://github.com/aniface-satar/xunyin/releases/download/v1.0.4/xunyin-v1.0.4-x86_64.apk",
-      "https://github.com/aniface-satar/xunyin/releases/download/v1.0.4/xunyin-v1.0.4-x86_64.apk"
-    ],
-    "x86": [
-      "https://ghproxy.net/https://github.com/aniface-satar/xunyin/releases/download/v1.0.4/xunyin-v1.0.4-x86.apk",
-      "https://github.com/aniface-satar/xunyin/releases/download/v1.0.4/xunyin-v1.0.4-x86.apk"
-    ],
-    "universal": [
-      "https://ghproxy.net/https://github.com/aniface-satar/xunyin/releases/download/v1.0.4/xunyin-v1.0.4-universal.apk",
-      "https://github.com/aniface-satar/xunyin/releases/download/v1.0.4/xunyin-v1.0.4-universal.apk"
-    ]
-  },
+  "version": "1.0.4",
+  "desc": "Friday night",
   "history": [
-    {
-      "version": "1.0.4",
-      "desc": "Friday night"
-    },
     {
       "version": "1.0.3",
       "desc": "修复 Android 12+ 媒体通知 PendingIntent 标志缺失导致的启动闪退"
