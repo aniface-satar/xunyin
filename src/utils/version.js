@@ -14,10 +14,11 @@ const abis = [
 ]
 
 const repository = 'aniface-satar/xunyin'
+const giteeRepository = 'not-a-chanci/xunyin'
 
 const getVersionInfoUrls = () => [
   `https://aniface-satar.github.io/xunyin/version.json?t=${Date.now()}`,
-  `https://gitee.com/aniface-satar/xunyin/raw/main/publish/version.json?t=${Date.now()}`,
+  `https://gitee.com/${giteeRepository}/raw/main/publish/version.json?t=${Date.now()}`,
   `https://cdn.jsdmirror.cn/gh/${repository}@main/publish/version.json`,
   `https://cdn.jsdmirror.com/gh/${repository}@main/publish/version.json`,
   `https://cdn.jsdelivr.net/gh/${repository}@main/publish/version.json`,
@@ -95,7 +96,7 @@ const getDownloadUrls = async(version) => {
     `https://ghproxy.net/https://github.com/${filePath}`,
     `https://ghfast.top/https://github.com/${filePath}`,
     `https://gh-proxy.com/https://github.com/${filePath}`,
-    `https://gitee.com/${repository}/releases/download/v${version}/${name}-v${version}-${abi}.apk`,
+    `https://gitee.com/${giteeRepository}/releases/download/v${version}/${name}-v${version}-${abi}.apk`,
     `https://github.com/${filePath}`,
   ]
 }

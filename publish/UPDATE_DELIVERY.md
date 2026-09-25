@@ -7,7 +7,7 @@ The app treats the version manifest and the APK download as separate links.
 The app requests these sources concurrently and uses the highest successful version:
 
 1. `https://aniface-satar.github.io/xunyin/version.json`
-2. `https://gitee.com/aniface-satar/xunyin/raw/main/publish/version.json`
+2. `https://gitee.com/not-a-chanci/xunyin/raw/main/publish/version.json`
 3. jsDelivr and jsdmirror mirrors
 4. GitHub raw mirrors and direct GitHub raw
 
