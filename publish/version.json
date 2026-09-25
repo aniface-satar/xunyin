@@ -2,6 +2,10 @@
   "schemaVersion": 1,
   "version": "1.0.4",
   "desc": "Friday night",
+  "notice": {
+    "id": 1,
+    "text": "周末快乐"
+  },
   "history": [
     {
       "version": "1.0.3",
