@@ -161,6 +161,17 @@ declare global {
     'player.isEnableAudioOffload': boolean
 
     /**
+       * 是否启用音量均衡（缩小不同歌曲之间的音量差异，依赖系统音频音效，
+       * 启用时会自动关闭音频卸载，且需要重启应用后生效）
+       */
+    'player.isEnableVolumeBalancer': boolean
+
+    /**
+       * 音量均衡的强度档位
+       */
+    'player.volumeBalancerLevel': 'low' | 'mid' | 'high'
+
+    /**
        * 是否显示歌词翻译
        */
     'player.isShowLyricTranslation': boolean

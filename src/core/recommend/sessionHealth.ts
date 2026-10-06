@@ -1,5 +1,5 @@
 import { recommendationConfig } from './config.ts'
-import type { SessionPreference, SessionTrack } from './types.ts'
+import type { RadioMode, SessionPreference, SessionTrack } from './types.ts'
 
 export interface SessionHealth {
   /** 最近连续负反馈（早切/低完成度/不喜欢）条数。 */
@@ -140,4 +140,29 @@ export const shouldDeferQueuedItem = (
   for (const artist of artistKeys ?? []) maxArtist = Math.max(maxArtist, penalties.artistPenalty[artist] ?? 0)
   const maxPlaylist = playlistId ? penalties.playlistPenalty[playlistId] ?? 0 : 0
   return maxArtist >= config.deferPenaltyThreshold || maxPlaylist >= config.deferPenaltyThreshold
+}
+
+type RadioExplorationConfig = typeof recommendationConfig.radioExploration
+
+export interface RadioExplorationInput {
+  mode: RadioMode
+  /** 会话健康度算出的探索额度缩放（>1 表示撞新放大）。 */
+  explorationFactor: number
+  /** 相邻两个探索曲目之间要求插入的非探索曲目数。 */
+  explorationGap: number
+}
+
+/**
+ * 探索额度的唯一收敛点：电台恒定偏熟悉（额度封顶、间隔有下限），
+ * 探索未知卡主打撞新（额度原样放行、间隔取消）。
+ */
+export const resolveRadioExploration = (
+  input: RadioExplorationInput,
+  config: RadioExplorationConfig = recommendationConfig.radioExploration,
+): { explorationFactor: number, explorationGap: number } => {
+  if (input.mode == 'explore') return { explorationFactor: input.explorationFactor, explorationGap: 0 }
+  return {
+    explorationFactor: Math.min(input.explorationFactor, config.factorCap),
+    explorationGap: Math.max(input.explorationGap, config.gap),
+  }
 }

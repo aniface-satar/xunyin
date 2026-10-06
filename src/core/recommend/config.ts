@@ -244,15 +244,12 @@ export const recommendationConfig = {
   },
 
   /**
-   * 用户探索偏好三档（recommend.exploreBias 设置）在 radio 模式下的效果。
-   * familiar：探索额度封顶、探索间隔加大；explore：探索额度保底放大、间隔取消；
-   * balanced：完全交给会话健康度自动调节。
+   * 电台模式的"偏熟悉"约束：探索额度封顶、相邻探索曲目之间至少隔这么多首非探索曲目。
+   * 只作用于 radio 模式；探索未知卡主打撞新，不受此约束。
    */
-  exploreBias: {
-    familiarFactorCap: 0.6,
-    familiarGap: 2,
-    exploreFactorFloor: 1.25,
-    exploreGap: 0,
+  radioExploration: {
+    factorCap: 0.6,
+    gap: 2,
   },
 
   /**

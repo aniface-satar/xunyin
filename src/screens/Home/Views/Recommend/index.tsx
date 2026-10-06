@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, ScrollView, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, ScrollView, TouchableOpacity } from 'react-native'
 
 import Text from '@/components/common/Text'
 import { useTheme } from '@/store/theme/hook'
 import { useTempPlayList } from '@/store/player/hook'
 import { useI18n } from '@/lang'
-import { useSettingValue } from '@/store/setting/hook'
-import { updateSetting } from '@/core/common'
 import { getRadioMode, getRadioQueueSummary, getRadioStatus, isRadioActive, startRadio } from '@/core/recommend/radio'
 import { createStyle } from '@/utils/tools'
 import type { RadioMode } from '@/core/recommend/types'
@@ -27,45 +25,6 @@ const COPY = {
     playing: 'recommend_explore_playing',
   },
 } as const
-
-const BIAS_OPTIONS = ['familiar', 'balanced', 'explore'] as const
-
-const BiasColumn = () => {
-  const theme = useTheme()
-  const t = useI18n()
-  const bias = useSettingValue('recommend.exploreBias')
-  const labels: Record<typeof BIAS_OPTIONS[number], string> = {
-    familiar: t('recommend_bias_familiar'),
-    balanced: t('recommend_bias_balanced'),
-    explore: t('recommend_bias_explore'),
-  }
-  return (
-    <View style={styles.biasColumn}>
-      {
-        BIAS_OPTIONS.map(option => {
-          const active = bias == option
-          return (
-            <TouchableOpacity
-              key={option}
-              style={{
-                ...styles.biasOption,
-                backgroundColor: active ? theme['c-primary-background-hover'] : 'transparent',
-              }}
-              activeOpacity={0.7}
-              onPress={() => {
-                updateSetting({ 'recommend.exploreBias': option })
-              }}
-            >
-              <Text size={12} color={active ? theme['c-primary-font-active'] : theme['c-font-label']}>
-                {labels[option]}
-              </Text>
-            </TouchableOpacity>
-          )
-        })
-      }
-    </View>
-  )
-}
 
 const useRadioCard = (mode: RadioMode) => {
   const tempPlayList = useTempPlayList()
@@ -138,13 +97,8 @@ const Recommend = () => {
           void radio.handlePress()
         }}
       >
-        <View style={styles.cardInner}>
-          <View style={styles.cardMain}>
-            <CardBody mode="radio" status={radio.status} upcoming={radio.upcoming} />
-            {radio.status == 'loading' ? <ActivityIndicator color={theme['c-primary-font-active']} style={styles.spinner} /> : null}
-          </View>
-          <BiasColumn />
-        </View>
+        <CardBody mode="radio" status={radio.status} upcoming={radio.upcoming} />
+        {radio.status == 'loading' ? <ActivityIndicator color={theme['c-primary-font-active']} style={styles.spinner} /> : null}
       </TouchableOpacity>
       <TouchableOpacity
         style={{ ...styles.card, backgroundColor: theme['c-primary-background-active'] }}
@@ -186,24 +140,6 @@ const styles = createStyle({
     position: 'absolute',
     right: 20,
     top: 20,
-  },
-  cardInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  cardMain: {
-    flex: 1,
-  },
-  biasColumn: {
-    marginLeft: 10,
-    gap: 4,
-  },
-  biasOption: {
-    borderRadius: 8,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    minWidth: 72,
   },
 })
 

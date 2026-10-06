@@ -1,7 +1,6 @@
 /* eslint-disable require-atomic-updates */
 import { AppState } from 'react-native'
 import playerState from '@/store/player/state'
-import settingState from '@/store/setting/state'
 import { getPlayHistory } from '@/utils/data'
 
 import { getUserLists, userLists } from '@/utils/listManage'
@@ -22,7 +21,7 @@ import { buildFinalQueueItems, filterPoolCandidates, mergePoolCandidates, poolSt
 import { computePlaylistAudioAffinity, enqueueAudioAnalysis } from './audioFeature.ts'
 import { refreshExternalCandidates, type CatalogRefreshParams, type KnownExternalPlaylist } from './candidate.ts'
 import { applyExplicitFeedback, beginRadioPlay, creditImportedOrigins, finishRadioPlay, getPlayRecord, getRecentRadioTrackKeys, isSourceCoolingDown, removeTrackFromCandidates, setSourceCooldown } from './behavior.ts'
-import { buildSessionPenalties, computeSessionHealth, type SessionHealth } from './sessionHealth.ts'
+import { buildSessionPenalties, computeSessionHealth, resolveRadioExploration, type SessionHealth } from './sessionHealth.ts'
 import { selectDeferredTrackKeys } from './queueDeferral.ts'
 import { startRadioPlaybackTracking, finishRadioPlaybackTracking, cancelRadioPlaybackTracking } from './playbackTracker.ts'
 import type { DislikeRules, ExclusionContext } from './filter.ts'
@@ -436,19 +435,12 @@ class RecommendationEngine {
       ...this.queue.snapshot().items.map(item => item.channel),
     ]
     const coldStart = this.isColdStart(profile)
-    // 用户探索偏好（三档）在 radio 模式下调制健康度输出；explore 模式本身主打撞新不干预
-    let explorationFactor = health.explorationFactor
-    let explorationGap = this.radioMode == 'explore' ? 0 : cfg.antiRepeat.explorationGap
-    if (this.radioMode == 'radio') {
-      const bias = settingState.setting['recommend.exploreBias']
-      if (bias == 'familiar') {
-        explorationFactor = Math.min(explorationFactor, cfg.exploreBias.familiarFactorCap)
-        explorationGap = Math.max(explorationGap, cfg.exploreBias.familiarGap)
-      } else if (bias == 'explore') {
-        explorationFactor = Math.max(explorationFactor, cfg.exploreBias.exploreFactorFloor)
-        explorationGap = cfg.exploreBias.exploreGap
-      }
-    }
+    // 电台恒定偏熟悉（额度封顶、间隔有下限）；探索未知卡主打撞新，不干预
+    const { explorationFactor, explorationGap } = resolveRadioExploration({
+      mode: this.radioMode,
+      explorationFactor: health.explorationFactor,
+      explorationGap: cfg.antiRepeat.explorationGap,
+    })
     const plan = planChannelQuotas(target, recentChannels, availability, {
       coldStart,
       mode: this.radioMode,

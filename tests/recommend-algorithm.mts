@@ -16,7 +16,7 @@ import { migrateRecommendationState, createDefaultState } from '../src/core/reco
 import { computeBackoffMs, runWithRetry, withTimeout } from '../src/core/recommend/requestPolicy.ts'
 import { mergePoolCandidates, createPoolCandidate, buildFinalQueueItems, filterPoolCandidates, planRefreshBudget } from '../src/core/recommend/candidatePool.ts'
 import { upsertObservedPlaylist, computeWeakThemeScore } from '../src/core/recommend/playlistIndex.ts'
-import { computeSessionHealth, buildSessionPenalties, sessionPenaltyScore, sessionPenaltyFactor, shouldDeferQueuedItem, mapNegativeRateToFactor } from '../src/core/recommend/sessionHealth.ts'
+import { computeSessionHealth, buildSessionPenalties, sessionPenaltyScore, sessionPenaltyFactor, shouldDeferQueuedItem, mapNegativeRateToFactor, resolveRadioExploration } from '../src/core/recommend/sessionHealth.ts'
 import { tokenizeTrackName } from '../src/core/recommend/tokenize.ts'
 import { applyNameTokenFeedback, nameTokenFactor, getLearnedStyleTokens } from '../src/core/recommend/tokenFeedback.ts'
 import { applyArtistStatsFeedback, artistPriorFactor } from '../src/core/recommend/artistPrior.ts'
@@ -1637,4 +1637,24 @@ test('playlist audio affinity ignores vectors from another model generation', ()
 
   assert.notEqual(audioModelId('1x187x96', '1x50', 50), audioModelId('1x187x96', '1x188', 188))
   assert.equal(audioModelId('1x187x96', '1x50', 50), 'in1x187x96-out1x50-d50')
+})
+
+test('radio always leans familiar and explore mode is never modulated', () => {
+  const { factorCap, gap } = recommendationConfig.radioExploration
+
+  // 正反馈连击把探索额度放大到 1.4 时，电台仍必须被压回偏熟悉上限
+  assert.deepEqual(
+    resolveRadioExploration({ mode: 'radio', explorationFactor: 1.4, explorationGap: 0 }),
+    { explorationFactor: factorCap, explorationGap: gap },
+  )
+  // 已经比上限更保守时不得被反向抬高
+  assert.deepEqual(
+    resolveRadioExploration({ mode: 'radio', explorationFactor: 0.2, explorationGap: gap + 3 }),
+    { explorationFactor: 0.2, explorationGap: gap + 3 },
+  )
+  // 探索未知卡主打撞新：因子原样通过，间隔清零
+  assert.deepEqual(
+    resolveRadioExploration({ mode: 'explore', explorationFactor: 1.4, explorationGap: gap }),
+    { explorationFactor: 1.4, explorationGap: 0 },
+  )
 })
