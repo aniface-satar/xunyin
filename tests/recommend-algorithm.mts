@@ -1572,3 +1572,44 @@ test('playback failures and app destroy never count as taste feedback', () => {
   assert.equal(disliked.excludeTrackKey, 'kw_2', 'explicit dislike keeps the permanent exclusion contract')
   assert.ok(disliked.track!.scoreDelta < earlySkip.track!.scoreDelta, 'explicit dislike must outweigh an early skip')
 })
+
+test('deferral view spans the engine queue and tracks already handed to the player', () => {
+  const penalties = buildSessionPenalties({
+    recentTracks: [
+      mkSessionTrack({ trackKey: 'a', listenRatio: 0.1, artistKeys: ['skipped'], sourcePlaylistId: 'p1' }),
+      mkSessionTrack({ trackKey: 'b', listenRatio: 0.2, artistKeys: ['skipped'] }),
+    ],
+  }, new Set())
+  const queue = createRadioQueue()
+  const version = queue.getVersion()
+  const queueItem = {
+    musicInfo: mkMusic('kw_q', 'queued', 'skipped', 'kw'),
+    source: 'related' as const,
+    channel: 'A' as const,
+    sourcePlaylistId: 'p1',
+    batchId: 1,
+  }
+  const handedOff = {
+    musicInfo: mkMusic('kw_h', 'handed-off', 'skipped', 'kw'),
+    source: 'related' as const,
+    channel: 'A' as const,
+    sourcePlaylistId: 'p2',
+    batchId: 1,
+  }
+  queue.enqueue([queueItem, handedOff], version)
+  // 模拟 radio.ts：两首都已移交给播放器，引擎队列因此为空
+  const pendingProvider = () => queue.shift(2, version)
+  const handedOffItems = pendingProvider()
+  assert.equal(queue.snapshot().items.length, 0, 'handed-off tracks leave the engine queue')
+
+  const deferred = selectDeferredTrackKeys(
+    [...queue.snapshot().items, ...handedOffItems],
+    penalties,
+    {},
+  )
+  assert.equal(deferred.length, 2, 'safe mode must see the handed-off batch')
+
+  const removed = queue.removeMany(new Set(deferred), queue.getVersion())
+  assert.equal(removed, 0, 'nothing is left in the engine queue to remove')
+  assert.equal(handedOffItems.filter(item => deferred.includes(buildTrackKey(item.musicInfo))).length, 2)
+})
