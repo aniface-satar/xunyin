@@ -197,6 +197,8 @@ dependencies {
     // implementation "androidx.javascriptengine:javascriptengine:1.0.0-alpha07"
     // implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     implementation 'wang.harlon.quickjs:wrapper-android:2.4.0'
+    // On-device music embeddings for the recommendation engine (JS owns the DSP; this runs the tflite model)
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
 
   if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

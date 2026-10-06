@@ -12,9 +12,11 @@ import java.util.List;
 import cn.toside.music.mobile.cache.CachePackage;
 import cn.toside.music.mobile.crypto.CryptoPackage;
 import cn.toside.music.mobile.island.IslandPackage;
+import cn.toside.music.mobile.audioFeature.AudioFeaturePackage;
 import cn.toside.music.mobile.lyric.LyricPackage;
 import cn.toside.music.mobile.userApi.UserApiPackage;
 import cn.toside.music.mobile.utils.UtilsPackage;
+import cn.toside.music.mobile.volumeBalancer.VolumeBalancerPackage;
 
 public class MainApplication extends NavigationApplication {
 
@@ -37,6 +39,8 @@ public class MainApplication extends NavigationApplication {
           packages.add(new IslandPackage());
           packages.add(new CryptoPackage());
           packages.add(new UserApiPackage());
+          packages.add(new VolumeBalancerPackage());
+          packages.add(new AudioFeaturePackage());
           return packages;
         }
 
