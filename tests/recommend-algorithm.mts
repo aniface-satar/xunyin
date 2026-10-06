@@ -1500,3 +1500,35 @@ test('safe mode deferral covers handed-off tracks and respects the cap', () => {
 
   assert.deepEqual(selectDeferredTrackKeys([queueItem], undefined, {}), [], 'no penalties means no deferral')
 })
+
+test('quality gate stops a flood of low-score candidates from outvoting the best one', () => {
+  const cfg = recommendationConfig.softmax
+  const mkItem = (key: string, weight: number): FinalQueueItem => ({
+    key,
+    channels: ['A'],
+    channelWeights: { A: weight },
+    primaryArtist: `artist-${key}`,
+    artistKeys: [`artist-${key}`],
+    albumKey: `album-${key}`,
+    exposureCount: 0,
+    weight,
+  })
+  const strong = mkItem('strong', 0.8)
+  const weak = Array.from({ length: 10 }, (_, i) => mkItem(`weak-${i}`, 0.2))
+  const plan = planChannelQuotas(1, [], { A: 11, B: 0, C: 0, D: 0 })
+
+  let strongPicks = 0
+  const runs = 400
+  for (let seed = 1; seed <= runs; seed++) {
+    const result = selectFinalQueue([strong, ...weak], { target: 1, channelPlan: plan, rng: seedRandom(seed) })
+    if (result.items[0]?.item.key == 'strong') strongPicks += 1
+  }
+  const rate = strongPicks / runs
+  assert.ok(rate > 0.9, `weak candidates below the gate must not win, strong rate=${rate}`)
+
+  const allWeak = Array.from({ length: 5 }, (_, i) => mkItem(`w-${i}`, 0.2))
+  const fallback = selectFinalQueue(allWeak, { target: 1, channelPlan: plan, rng: seedRandom(7) })
+  assert.equal(fallback.items.length, 1, 'when nothing passes the gate the unfiltered pool is used')
+
+  assert.ok(cfg.qualityGateRatio > 0 && cfg.qualityGateRatio <= 1, 'gate ratio stays inside (0, 1]')
+})
