@@ -1532,3 +1532,43 @@ test('quality gate stops a flood of low-score candidates from outvoting the best
 
   assert.ok(cfg.qualityGateRatio > 0 && cfg.qualityGateRatio <= 1, 'gate ratio stays inside (0, 1]')
 })
+
+test('playback failures and app destroy never count as taste feedback', () => {
+  const mkRecord = (endReason: string, listenedMs: number, durationMs: number): any => ({
+    playId: `p-${endReason}-${listenedMs}`,
+    trackKey: 'kw_1',
+    channel: 'A',
+    sourcePlaylistId: 'pl-settle-test',
+    startedAt: 1,
+    endedAt: 2,
+    intervals: [{ from: 0, to: listenedMs }],
+    listenedMs,
+    wallClockMs: listenedMs,
+    durationMs,
+    coverage: durationMs ? listenedMs / durationMs : 0,
+    endReason,
+    seekedToEnd: false,
+  })
+  const duration = 200000
+
+  for (const endReason of ['play_error', 'load_error', 'app_destroy']) {
+    const result = settlePlayRecord(mkRecord(endReason, 5000, duration))
+    assert.equal(result.track, undefined, `${endReason} must not create a track effect`)
+    assert.equal(result.playlist, undefined, `${endReason} must not create a playlist effect`)
+    assert.equal(result.ledgerEntry.implicitSettled, true)
+    assert.deepEqual(result.reasons, [`neutral_end:${endReason}`])
+  }
+
+  const earlySkip = settlePlayRecord(mkRecord('user_next', 5000, duration))
+  assert.ok(earlySkip.ledgerEntry.earlySkip, 'a 5s skip is an early skip')
+  assert.ok(earlySkip.track!.scoreDelta < 0)
+  assert.ok(earlySkip.playlist!.negativeDelta > 0)
+
+  const fullListen = settlePlayRecord(mkRecord('natural_end', 190000, duration))
+  assert.ok(fullListen.ledgerEntry.completion, '95% coverage on natural end is a completion')
+  assert.ok(fullListen.track!.scoreDelta > 0)
+
+  const disliked = settleExplicitFeedback({ trackKey: 'kw_2', type: 'dislike', timestamp: 3 })
+  assert.equal(disliked.excludeTrackKey, 'kw_2', 'explicit dislike keeps the permanent exclusion contract')
+  assert.ok(disliked.track!.scoreDelta < earlySkip.track!.scoreDelta, 'explicit dislike must outweigh an early skip')
+})
