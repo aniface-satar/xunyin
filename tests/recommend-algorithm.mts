@@ -23,7 +23,7 @@ import { applyArtistStatsFeedback, artistPriorFactor } from '../src/core/recomme
 import { pickChartBoard } from '../src/core/recommend/profile.ts'
 import { getTimeSlot, computeTimeSlotAffinity } from '../src/core/recommend/timeSlot.ts'
 import { computeLogMelFrames, buildPatches, cosine } from '../src/core/recommend/melSpectrogram.ts'
-import { quantizeEmbedding, dequantizeEmbedding, getTasteCentroid, computePlaylistAudioAffinity, bytesToBase64, base64ToBytes } from '../src/core/recommend/audioEmbedding.ts'
+import { quantizeEmbedding, dequantizeEmbedding, getTasteCentroid, computePlaylistAudioAffinity, audioModelId, bytesToBase64, base64ToBytes } from '../src/core/recommend/audioEmbedding.ts'
 import { updateChannelBandit, thompsonMultiplier } from '../src/core/recommend/bandit.ts'
 import { buildSessionCoOccurrence } from '../src/core/recommend/similarity.ts'
 import type { FinalQueueItem } from '../src/core/recommend/diversity.ts'
@@ -1612,4 +1612,29 @@ test('deferral view spans the engine queue and tracks already handed to the play
   const removed = queue.removeMany(new Set(deferred), queue.getVersion())
   assert.equal(removed, 0, 'nothing is left in the engine queue to remove')
   assert.equal(handedOffItems.filter(item => deferred.includes(buildTrackKey(item.musicInfo))).length, 2)
+})
+
+test('playlist audio affinity ignores vectors from another model generation', () => {
+  const embeddings = {
+    'kw_like-1': { ...quantizeEmbedding(new Float32Array([1, 0, 0])), dim: 3, modelId: 'gen-a', analyzedAt: 1 },
+    'kw_like-2': { ...quantizeEmbedding(new Float32Array([0.9, 0.1, 0])), dim: 3, modelId: 'gen-a', analyzedAt: 1 },
+    'kw_old-1': { ...quantizeEmbedding(new Float32Array([0, 0, 1])), dim: 3, modelId: 'gen-b', analyzedAt: 1 },
+    'kw_old-2': { ...quantizeEmbedding(new Float32Array([0, 0, 1])), dim: 3, modelId: 'gen-b', analyzedAt: 1 },
+  } as any
+  const playlists = {
+    'pl-mixed': { id: 'pl-mixed', fetchedTracks: ['kw_like-1', 'kw_like-2', 'kw_old-1', 'kw_old-2'] },
+  } as any
+
+  const affinity = computePlaylistAudioAffinity(embeddings, playlists, 0.3)
+  assert.ok(affinity['pl-mixed'] > 0.8, `stale-model vectors must not drag the score down, got ${affinity['pl-mixed']}`)
+
+  const onlyStale = computePlaylistAudioAffinity(
+    embeddings,
+    { 'pl-stale': { id: 'pl-stale', fetchedTracks: ['kw_old-1', 'kw_old-2'] } } as any,
+    0.3,
+  )
+  assert.deepEqual(onlyStale, {}, 'a playlist with no current-generation samples gets no score')
+
+  assert.notEqual(audioModelId('1x187x96', '1x50', 50), audioModelId('1x187x96', '1x188', 188))
+  assert.equal(audioModelId('1x187x96', '1x50', 50), 'in1x187x96-out1x50-d50')
 })
