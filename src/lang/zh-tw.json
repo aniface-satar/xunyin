@@ -479,6 +479,7 @@
   "storage_permission_tip_disagree": "你個騙紙，剛剛問你，你都說同意的，最後又拒絕，哼 🥺",
   "storage_permission_tip_disagree_ask_again": "該功能無法使用，因為你已經永久拒絕寻音訪問手機儲存😫。\n若想繼續，你需要去👉系統權限管理👈將寻音的儲存權限設定為「允許」",
   "storage_permission_tip_request": "使用該功能需要允許寻音訪問手機儲存，是否同意並繼續？",
+  "storage_public_dir_blocked_tip": "（安卓 13 及以上系統不允許應用寫入公共目錄，可先用桌面版備份）",
   "sync__dislike_mode_merge_tip_desc": "合併兩邊清單內容並去重",
   "sync__dislike_mode_other_tip_desc": "「取消同步」將不使用「不喜歡的歌曲」清單同步功能",
   "sync__dislike_mode_overwrite_tip_desc": "被覆蓋者的清單將被取代成覆蓋者的清單",

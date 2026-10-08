@@ -479,6 +479,7 @@
   "storage_permission_tip_disagree": "The user rejects it!",
   "storage_permission_tip_disagree_ask_again": "The feature is unavailable because you have permanently denied Xunyin access to the internal storage.\n\nTo continue, you need to navigate to Xunyin's \"Permissions\" option in the system settings and allow Xunyin to access the files.",
   "storage_permission_tip_request": "To use this feature you need to allow Xunyin to access the internal storage, do you agree and continue?",
+  "storage_public_dir_blocked_tip": " (Android 13+ blocks apps from writing into shared folders; you can back up with the desktop app instead)",
   "sync__dislike_mode_merge_tip_desc": "Merge the content of the two lists and remove the duplicates.",
   "sync__dislike_mode_other_tip_desc": "\"Cancel Sync\" will not sync the \"dislike song\" list.",
   "sync__dislike_mode_overwrite_tip_desc": "The list of overwritten parties will be replaced with the list of overwriting parties.",

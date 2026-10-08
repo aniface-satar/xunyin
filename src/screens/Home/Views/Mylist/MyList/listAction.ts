@@ -1,5 +1,5 @@
 import { addListMusics, getListMusics, removeListMusics, removeUserList, setFetchingListStatus, updateListMusics } from '@/core/list'
-import { confirmDialog, handleReadFile, handleSaveFile, showImportTip, toast } from '@/utils/tools'
+import { confirmDialog, handleReadFile, handleSaveFile, isLegacyStorageBlocked, showImportTip, toast } from '@/utils/tools'
 import syncSourceList from '@/core/syncSourceList'
 import { log } from '@/utils/log'
 import { filterFileName, filterMusicList, formatPlayTime2, toNewMusicInfo } from '@/utils'
@@ -70,7 +70,8 @@ export const handleExport = (listInfo: LX.List.MyListInfo, path: string) => {
     toast(global.i18n.t('setting_backup_part_export_list_tip_success'))
   }).catch((err: any) => {
     log.error(err.message)
-    toast(global.i18n.t('setting_backup_part_export_list_tip_failed') + ': ' + (err.message as string))
+    toast(global.i18n.t('setting_backup_part_export_list_tip_failed') + ': ' + (err.message as string) +
+      (isLegacyStorageBlocked ? global.i18n.t('storage_public_dir_blocked_tip') : ''))
   })
 }
 

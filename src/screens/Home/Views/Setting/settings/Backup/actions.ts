@@ -2,7 +2,7 @@ import { LIST_IDS } from '@/config/constant'
 import { createList, getListMusics, overwriteList, overwriteListFull, overwriteListMusics } from '@/core/list'
 import { filterMusicList, fixNewMusicInfoQuality, toNewMusicInfo } from '@/utils'
 import { log } from '@/utils/log'
-import { confirmDialog, handleReadFile, handleSaveFile, showImportTip, toast } from '@/utils/tools'
+import { confirmDialog, handleReadFile, handleSaveFile, isLegacyStorageBlocked, showImportTip, toast } from '@/utils/tools'
 import listState from '@/store/list/state'
 
 
@@ -199,6 +199,7 @@ export const handleExportList = (path: string) => {
     toast(global.i18n.t('setting_backup_part_export_list_tip_success'))
   }).catch((err: any) => {
     log.error(err.message)
-    toast(global.i18n.t('setting_backup_part_export_list_tip_failed') + ': ' + (err.message as string))
+    toast(global.i18n.t('setting_backup_part_export_list_tip_failed') + ': ' + (err.message as string) +
+      (isLegacyStorageBlocked ? global.i18n.t('storage_public_dir_blocked_tip') : ''))
   })
 }

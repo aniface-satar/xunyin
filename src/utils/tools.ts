@@ -56,7 +56,13 @@ export const TEMP_FILE_PATH = temporaryDirectoryPath + '/tempFile'
 //   // return windowSize
 // }
 
-export const checkStoragePermissions = async() => PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE)
+/** 安卓 13 起旧版存储权限已被系统永久收回（RESTRICTION_INSTALLER_EXEMPT），系统设置里也没有对应开关 */
+export const isLegacyStorageBlocked = Platform.OS == 'android' && typeof Platform.Version == 'number' && Platform.Version >= 33
+
+export const checkStoragePermissions = async() => {
+  if (isLegacyStorageBlocked) return true
+  return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE)
+}
 
 export const requestStoragePermission = async() => {
   const isGranted = await checkStoragePermissions()
