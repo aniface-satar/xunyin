@@ -20,6 +20,9 @@ const baseRule = {
 
 module.exports = {
   root: true,
+  globals: {
+    __DEV__: 'readonly',
+  },
   extends: [
     'standard',
     'plugin:react/recommended',
