@@ -235,11 +235,13 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     left: 0,
     right: 0
   });
-  console.log('[PAGE_DEBUG] PlayerOverlay render', {
-    mounted,
-    pageIndex,
-    remembered: (0, require("./transition").getLastOverlayPage)()
-  });
+  if (__DEV__) {
+    console.log('[PAGE_DEBUG] PlayerOverlay render', {
+      mounted,
+      pageIndex,
+      remembered: (0, require("./transition").getLastOverlayPage)()
+    });
+  }
   var pagerRef = (0, _react.useRef)(null);
   var headerHeight = statusBarHeight + _Header.HEADER_HEIGHT;
   var _getPlayDetailLayout = (0, require("../../../screens/PlayDetail/Vertical/layout").getPlayDetailLayout)(winWidth, winHeight, headerHeight),
@@ -401,11 +403,13 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   }, []);
   var handleToggleLove = function handleToggleLove() {
     if (!playMusicInfo.musicInfo) return;
-    console.log('[LOVE_DEBUG] PlayerOverlay.handleToggleLove', {
-      isLove: isLove,
-      id: playMusicInfo.musicInfo.id,
-      stack: new Error().stack && new Error().stack.split('\n').slice(1, 12).join(' <- ')
-    });
+    if (__DEV__) {
+      console.log('[LOVE_DEBUG] PlayerOverlay.handleToggleLove', {
+        isLove: isLove,
+        id: playMusicInfo.musicInfo.id,
+        stack: new Error().stack && new Error().stack.split('\n').slice(1, 12).join(' <- ')
+      });
+    }
     if (isLove) (0, require("../../../core/player/player").uncollectMusic)();else (0, require("../../../core/player/player").collectMusic)();
   };
   (0, _react.useEffect)(function () {
@@ -561,7 +565,9 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var open = (0, _react.useCallback)(function () {
     if (!sourceRef.current) return;
     var restoredPage = (0, require("./transition").getLastOverlayPage)();
-    console.log('[PAGE_DEBUG] open', restoredPage);
+    if (__DEV__) {
+      console.log('[PAGE_DEBUG] open', restoredPage);
+    }
     onSourceVisibilityChange(false);
     setMounted(true);
     setTransitionPic(musicInfo.pic);
@@ -576,7 +582,9 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     var _animationRef$current2;
     if (!sourceRef.current) return;
     var restoredPage = (0, require("./transition").getLastOverlayPage)();
-    console.log('[PAGE_DEBUG] startGesture', restoredPage);
+    if (__DEV__) {
+      console.log('[PAGE_DEBUG] startGesture', restoredPage);
+    }
     (_animationRef$current2 = animationRef.current) == null ? void 0 : _animationRef$current2.stop();
     onSourceVisibilityChange(false);
     setMounted(true);
@@ -942,7 +950,9 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var showLyricPreview = (0, require("./transition").shouldRenderLyricCurrentPreview)(isLyricOrigin);
   var handlePageSelected = function handlePageSelected(_ref4) {
     var nativeEvent = _ref4.nativeEvent;
-    console.log('[PAGE_DEBUG] pager event', nativeEvent.position, (0, require("./transition").getLastOverlayPage)());
+    if (__DEV__) {
+      console.log('[PAGE_DEBUG] pager event', nativeEvent.position, (0, require("./transition").getLastOverlayPage)());
+    }
     setPageIndex(nativeEvent.position);
   };
   var cardStyle = {

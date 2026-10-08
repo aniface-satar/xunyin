@@ -85,12 +85,16 @@ const registerPlaybackService = async() => {
   })
 
   TrackPlayer.addEventListener(TPEvent.RemoteSetRating, async({ rating }) => {
-    console.log('[LOVE_DEBUG] RemoteSetRating', { rating })
+    if (__DEV__) {
+      console.log('[LOVE_DEBUG] RemoteSetRating', { rating })
+    }
     await setMusicCollected(rating === true)
   })
 
   TrackPlayer.addEventListener(TPEvent.RemoteLike, () => {
-    console.log('[LOVE_DEBUG] RemoteLike')
+    if (__DEV__) {
+      console.log('[LOVE_DEBUG] RemoteLike')
+    }
     void (async() => {
       await setMusicCollected(!(await isMusicCollected()))
     })()

@@ -137,7 +137,9 @@ const List = forwardRef<ListType, ListProps>(({ onShowMenu, onMuiltSelectMode, o
           selectedListRef.current = []
           setSelectedList([])
           onSelectedListChangeRef.current([])
-          console.log('[LIST_DEBUG] ui load', { id, length: list.length, ids: list.slice(0, 8).map(item => item.id) })
+          if (__DEV__) {
+            console.log('[LIST_DEBUG] ui load', { id, length: list.length, ids: list.slice(0, 8).map(item => item.id) })
+          }
           setList([...list])
           requestAnimationFrame(() => {
             isUpdateingList = false
@@ -164,7 +166,9 @@ const List = forwardRef<ListType, ListProps>(({ onShowMenu, onMuiltSelectMode, o
         selectedListRef.current = []
         setSelectedList([])
         onSelectedListChangeRef.current([])
-        console.log('[LIST_DEBUG] ui change', { id, length: list.length, ids: list.slice(0, 8).map(item => item.id) })
+        if (__DEV__) {
+          console.log('[LIST_DEBUG] ui change', { id, length: list.length, ids: list.slice(0, 8).map(item => item.id) })
+        }
         setList([...list])
       })
     }
@@ -254,13 +258,15 @@ const List = forwardRef<ListType, ListProps>(({ onShowMenu, onMuiltSelectMode, o
     requestAnimationFrame(() => {
       // console.log(global.lx.homePagerIdle)
       if (!global.lx.homePagerIdle) return
-      console.log('[PLAY_DEBUG] mylist press', {
-        listId: listState.activeListId,
-        index,
-        id: item.id,
-        name: item.name,
-        singer: item.singer,
-      })
+      if (__DEV__) {
+        console.log('[PLAY_DEBUG] mylist press', {
+          listId: listState.activeListId,
+          index,
+          id: item.id,
+          name: item.name,
+          singer: item.singer,
+        })
+      }
       if (isMultiSelectModeRef.current) {
         handleSelect(item, index)
       } else {

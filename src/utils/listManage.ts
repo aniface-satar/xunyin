@@ -23,11 +23,13 @@ export const setUserLists = (lists: LX.List.UserListInfo[]) => {
 export const setMusicList = (listId: string, musicList: LX.Music.MusicInfo[]): LX.Music.MusicInfo[] => {
   const safeMusicList = sanitizeMusicList(musicList)
   if (listId === LIST_IDS.LOVE) {
-    console.log('[LIST_DEBUG] setMusicList', {
-      length: safeMusicList.length,
-      ids: safeMusicList.slice(0, 8).map(item => item.id),
-      stack: new Error().stack?.split('\n').slice(1, 8).join(' <- '),
-    })
+    if (__DEV__) {
+      console.log('[LIST_DEBUG] setMusicList', {
+        length: safeMusicList.length,
+        ids: safeMusicList.slice(0, 8).map(item => item.id),
+        stack: new Error().stack?.split('\n').slice(1, 8).join(' <- '),
+      })
+    }
   }
   allMusicList.set(listId, safeMusicList)
   return safeMusicList
@@ -225,11 +227,13 @@ export const getListMusics = async(listId: string): Promise<LX.Music.MusicInfo[]
   if (allMusicList.has(listId)) return allMusicList.get(listId)!
   const list = await getListMusicsFromStore(listId)
   if (listId === LIST_IDS.LOVE) {
-    console.log('[LIST_DEBUG] getListMusics load', {
-      length: list.length,
-      ids: list.slice(0, 8).map(item => item.id),
-      stack: new Error().stack?.split('\n').slice(1, 8).join(' <- '),
-    })
+    if (__DEV__) {
+      console.log('[LIST_DEBUG] getListMusics load', {
+        length: list.length,
+        ids: list.slice(0, 8).map(item => item.id),
+        stack: new Error().stack?.split('\n').slice(1, 8).join(' <- '),
+      })
+    }
   }
   return setMusicList(listId, list)
 }

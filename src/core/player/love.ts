@@ -21,12 +21,14 @@ export const isMusicCollected = async(musicId?: string | null) => {
 
 export const setMusicCollected = async(isCollected: boolean) => {
   const musicInfo = getCurrentMusicInfo()
-  console.log('[LOVE_DEBUG] set', {
-    isCollected,
-    id: musicInfo?.id,
-    name: musicInfo?.name,
-    stack: new Error().stack?.split('\n').slice(1, 6).join(' <- '),
-  })
+  if (__DEV__) {
+    console.log('[LOVE_DEBUG] set', {
+      isCollected,
+      id: musicInfo?.id,
+      name: musicInfo?.name,
+      stack: new Error().stack?.split('\n').slice(1, 6).join(' <- '),
+    })
+  }
   if (!musicInfo || await isMusicCollected(musicInfo.id) == isCollected) return
 
   if (isCollected) {

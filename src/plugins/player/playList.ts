@@ -157,20 +157,24 @@ const handlePlayMusic = async(musicInfo: LX.Player.PlayMusic, url: string, time:
   const track = tracks[0]
   // await updateMusicInfo(track)
   const currentTrackIndex = await TrackPlayer.getCurrentTrack()
-  console.log('[PLAY_DEBUG] native prepare', {
-    musicId: musicInfo.id,
-    name: formatMusicInfo(musicInfo).name,
-    currentTrackIndex,
-    time,
-  })
+  if (__DEV__) {
+    console.log('[PLAY_DEBUG] native prepare', {
+      musicId: musicInfo.id,
+      name: formatMusicInfo(musicInfo).name,
+      currentTrackIndex,
+      time,
+    })
+  }
   await TrackPlayer.add(tracks).then(() => list.push(...tracks))
   const queue = await TrackPlayer.getQueue() as LX.Player.Track[]
   const targetIndex = queue.findIndex(t => t.id == track.id)
-  console.log('[PLAY_DEBUG] native queue after add', {
-    currentTrackIndex,
-    targetIndex,
-    queue: queue.map(item => ({ id: item.id, musicId: item.musicId, title: item.title, duration: item.duration })),
-  })
+  if (__DEV__) {
+    console.log('[PLAY_DEBUG] native queue after add', {
+      currentTrackIndex,
+      targetIndex,
+      queue: queue.map(item => ({ id: item.id, musicId: item.musicId, title: item.title, duration: item.duration })),
+    })
+  }
   await TrackPlayer.skip(queue.findIndex(t => t.id == track.id))
 
   if (currentTrackIndex == null) {
@@ -198,7 +202,9 @@ const handlePlayMusic = async(musicInfo: LX.Player.PlayMusic, url: string, time:
   if (queue.length > 2) {
     void TrackPlayer.remove(Array(queue.length - 2).fill(null).map((_, i) => i)).then(() => {
       list.splice(0, list.length - 2)
-      console.log('[PLAY_DEBUG] native queue cleanup', { list: list.map(item => item.musicId) })
+      if (__DEV__) {
+        console.log('[PLAY_DEBUG] native queue cleanup', { list: list.map(item => item.musicId) })
+      }
     })
   }
 }

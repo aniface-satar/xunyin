@@ -78,12 +78,14 @@ export class ListEvent extends Event {
   async list_data_overwrite(listData: MakeOptional<LX.List.ListDataFull, 'tempList'>, isRemote: boolean = false) {
     fixListIdType(listData.userList)
     if (listData.loveList) {
-      console.log('[LIST_DEBUG] list_data_overwrite', {
-        isRemote,
-        loveLength: listData.loveList.length,
-        loveIds: listData.loveList.slice(0, 8).map(item => item.id),
-        stack: new Error().stack?.split('\n').slice(1, 8).join(' <- '),
-      })
+      if (__DEV__) {
+        console.log('[LIST_DEBUG] list_data_overwrite', {
+          isRemote,
+          loveLength: listData.loveList.length,
+          loveIds: listData.loveList.slice(0, 8).map(item => item.id),
+          stack: new Error().stack?.split('\n').slice(1, 8).join(' <- '),
+        })
+      }
     }
     const oldIds = userLists.map(l => l.id)
     const changedIds = listDataOverwrite(listData)
@@ -163,12 +165,14 @@ export class ListEvent extends Event {
    */
   async list_music_overwrite(listId: string, musicInfos: LX.Music.MusicInfo[], isRemote: boolean = false) {
     if (listId === LIST_IDS.LOVE) {
-      console.log('[LIST_DEBUG] list_music_overwrite', {
-        isRemote,
-        length: musicInfos.length,
-        ids: musicInfos.slice(0, 8).map(item => item.id),
-        stack: new Error().stack?.split('\n').slice(1, 8).join(' <- '),
-      })
+      if (__DEV__) {
+        console.log('[LIST_DEBUG] list_music_overwrite', {
+          isRemote,
+          length: musicInfos.length,
+          ids: musicInfos.slice(0, 8).map(item => item.id),
+          stack: new Error().stack?.split('\n').slice(1, 8).join(' <- '),
+        })
+      }
     }
     const changedIds = await listMusicOverwrite(listId, musicInfos)
     await checkUpdateList(changedIds)
@@ -184,12 +188,14 @@ export class ListEvent extends Event {
    */
   async list_music_add(listId: string, musicInfos: LX.Music.MusicInfo[], addMusicLocationType: LX.AddMusicLocationType, isRemote: boolean = false) {
     if (listId === LIST_IDS.LOVE) {
-      console.log('[LIST_DEBUG] list_music_add', {
-        isRemote,
-        length: musicInfos.length,
-        ids: musicInfos.map(item => item.id),
-        stack: new Error().stack?.split('\n').slice(1, 8).join(' <- '),
-      })
+      if (__DEV__) {
+        console.log('[LIST_DEBUG] list_music_add', {
+          isRemote,
+          length: musicInfos.length,
+          ids: musicInfos.map(item => item.id),
+          stack: new Error().stack?.split('\n').slice(1, 8).join(' <- '),
+        })
+      }
     }
     const changedIds = await listMusicAdd(listId, musicInfos, addMusicLocationType)
     await checkUpdateList(changedIds)

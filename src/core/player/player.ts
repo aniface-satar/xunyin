@@ -298,14 +298,16 @@ export const playListById = async(listId: string, id: string) => {
 export const playList = async(listId: string, index: number) => {
   const prevListId = playerState.playInfo.playerListId
   const targetList = getList(listId)
-  console.log('[PLAY_DEBUG] playList', {
-    listId,
-    index,
-    listLength: targetList.length,
-    target: targetList[index] && { id: targetList[index].id, name: targetList[index].name },
-    prevListId,
-    prevState: { ...playerState.playMusicInfo },
-  })
+  if (__DEV__) {
+    console.log('[PLAY_DEBUG] playList', {
+      listId,
+      index,
+      listLength: targetList.length,
+      target: targetList[index] && { id: targetList[index].id, name: targetList[index].name },
+      prevListId,
+      prevState: { ...playerState.playMusicInfo },
+    })
+  }
   setPlayListId(listId)
   setPlayMusicInfo(listId, getList(listId)[index])
   if (settingState.setting['player.isAutoCleanPlayedList'] || prevListId != listId) clearPlayedList()
@@ -666,7 +668,9 @@ export const togglePlay = () => {
  */
 export const collectMusic = () => {
   if (!playerState.playMusicInfo.musicInfo) return
-  console.log('[LOVE_DEBUG] collectMusic', new Error().stack?.split('\n').slice(1, 16).join(' <- '))
+  if (__DEV__) {
+    console.log('[LOVE_DEBUG] collectMusic', new Error().stack?.split('\n').slice(1, 16).join(' <- '))
+  }
   void addListMusics(LIST_IDS.LOVE, [
     'progress' in playerState.playMusicInfo.musicInfo
       ? playerState.playMusicInfo.musicInfo.metadata.musicInfo
@@ -679,7 +683,9 @@ export const collectMusic = () => {
  */
 export const uncollectMusic = () => {
   if (!playerState.playMusicInfo.musicInfo) return
-  console.log('[LOVE_DEBUG] uncollectMusic', new Error().stack?.split('\n').slice(1, 16).join(' <- '))
+  if (__DEV__) {
+    console.log('[LOVE_DEBUG] uncollectMusic', new Error().stack?.split('\n').slice(1, 16).join(' <- '))
+  }
   void removeListMusics(LIST_IDS.LOVE, [
     'progress' in playerState.playMusicInfo.musicInfo
       ? playerState.playMusicInfo.musicInfo.metadata.musicInfo.id
