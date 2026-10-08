@@ -19,22 +19,17 @@ export const hideModal = (componentId: string) => {
   void Navigation.dismissOverlay(componentId)
 }
 
-let pendingNoticeId: number | null = null
-
 export const hideNoticeModal = async(componentId: string) => {
   await Navigation.dismissOverlay(componentId)
-  if (pendingNoticeId != null) {
-    saveNoticeId(pendingNoticeId)
-    pendingNoticeId = null
-  }
 }
 
 const checkNotice = async(notice: { id: number, text: string } | null) => {
   if (!notice) return
   const readId = await getNoticeId()
   if (notice.id <= readId) return
-  pendingNoticeId = notice.id
   showNoticeModal(notice.text)
+  // 弹出即记已读：不点「知道了」也不该下次再弹
+  saveNoticeId(notice.id)
 }
 
 export const checkUpdate = async() => {
