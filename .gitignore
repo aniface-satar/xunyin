@@ -100,3 +100,13 @@ android/.gradle-home/
 /index.android.bundle
 /tools/platform-tools/
 /tools/platform-tools-latest-windows.zip
+/tools/*.pb
+
+# Root-level scratch dirs (repo copy, tool caches, screenshot dumps, gradle asset copies)
+/lx-music-mobile/
+/.mimosa/
+/android/.mimosa/
+/frames_open/
+/frames_close/
+/frames_close2/
+/res/
