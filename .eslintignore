@@ -1,0 +1,16 @@
+node_modules/
+build/
+dist/
+coverage/
+
+# Nested upstream reference checkout (17k JS/TS files — it OOM-killed eslint).
+# Mirrors the Metro blockList in metro.config.js.
+lx-music-mobile/
+lx-music-sync-server/
+
+# Archived engine snapshots, tool state, and generated asset output.
+_archive/
+.mimosa/
+res/
+android/app/build/
+ios/

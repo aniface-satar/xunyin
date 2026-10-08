@@ -1,7 +1,7 @@
 {
   "name": "xunyin",
-  "version": "1.0.6",
-  "versionCode": 83,
+  "version": "1.1.0",
+  "versionCode": 88,
   "private": true,
   "scripts": {
     "postinstall": "node dependencies-patch.js",
@@ -11,7 +11,7 @@
     "sc": "react-native start --reset-cache",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
-    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/online-list-press.mts",
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/online-list-press.mts tests/recommend-algorithm.mts tests/recommend-playlist-cooldown.mts tests/recommend-onboarding.mts tests/player-prev-history.mts tests/radio-temp-queue-order.mts tests/overlayFullscreenActionTop.test.mts tests/overlayBarSeparatorMorph.test.mts tests/overlayCoverShadowFade.test.mts tests/overlayArtistFade.test.mts",
     "rd": "react-devtools",
     "menu": "adb shell input keyevent 82",
     "bundle-android": "react-native bundle --platform android --dev true --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res",
@@ -66,7 +66,8 @@
     "react-native-quick-base64": "^2.2.2",
     "react-native-quick-md5": "^3.0.9",
     "react-native-track-player": "github:lyswhut/react-native-track-player#bfe33933793460e7588d4d8f38eddf7910806f29",
-    "react-native-vector-icons": "10.2.0"
+    "react-native-vector-icons": "10.2.0",
+    "segmentit": "^2.0.3"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

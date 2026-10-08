@@ -20,5 +20,5 @@
       // "@utils": ["src/utils"],
     }
   },
-  "exclude": ["node_modules", "build", "dist"]
+  "exclude": ["node_modules", "build", "dist", "lx-music-mobile", "lx-music-sync-server", "_archive", ".mimosa", "res", "android/app/build", "ios"]
 }

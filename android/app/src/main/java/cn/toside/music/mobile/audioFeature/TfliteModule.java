@@ -68,7 +68,7 @@ public class TfliteModule extends ReactContextBaseJavaModule {
           result.putString("outputShape", joinShape(outShape));
           promise.resolve(result);
         }
-      } catch (Exception e) {
+      } catch (Throwable e) {
         synchronized (this) {
           interpreter = null;
           loadedModelId = null;
@@ -120,7 +120,7 @@ public class TfliteModule extends ReactContextBaseJavaModule {
         WritableMap result = Arguments.createMap();
         result.putArray("output", toArray(flat));
         promise.resolve(result);
-      } catch (Exception e) {
+      } catch (Throwable e) {
         promise.reject("ERUN", e.getMessage() == null ? "inference failed" : e.getMessage(), e);
       }
     });
