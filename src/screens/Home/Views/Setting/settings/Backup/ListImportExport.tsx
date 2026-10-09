@@ -57,6 +57,7 @@ export default forwardRef<ListImportExportType, {}>((props, ref) => {
         choosePathRef.current?.show({
           title: global.i18n.t('list_export_part_desc'),
           dirOnly: true,
+          saveToDir: true,
           filter: LXM_FILE_EXT_RXP,
         })
       } else {
@@ -65,6 +66,7 @@ export default forwardRef<ListImportExportType, {}>((props, ref) => {
           choosePathRef.current?.show({
             title: global.i18n.t('list_export_part_desc'),
             dirOnly: true,
+            saveToDir: true,
             filter: LXM_FILE_EXT_RXP,
           })
         })

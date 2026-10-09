@@ -1,5 +1,6 @@
 import { addListMusics, getListMusics, removeListMusics, removeUserList, setFetchingListStatus, updateListMusics } from '@/core/list'
 import { confirmDialog, handleReadFile, handleSaveFile, isLegacyStorageBlocked, showImportTip, toast } from '@/utils/tools'
+import { joinSavePath } from '@/utils/savePath'
 import syncSourceList from '@/core/syncSourceList'
 import { log } from '@/utils/log'
 import { filterFileName, filterMusicList, formatPlayTime2, toNewMusicInfo } from '@/utils'
@@ -62,7 +63,7 @@ const exportList = async(listInfo: LX.List.MyListInfo, path: string) => {
       list: await getListMusics(listInfo.id),
     },
   }))
-  await handleSaveFile(`${path}/lx_list_part_${filterFileName(listInfo.name)}.lxmc`, data)
+  await handleSaveFile(joinSavePath(path, `lx_list_part_${filterFileName(listInfo.name)}.lxmc`), data)
 }
 export const handleExport = (listInfo: LX.List.MyListInfo, path: string) => {
   toast(global.i18n.t('setting_backup_part_export_list_tip_zip'))

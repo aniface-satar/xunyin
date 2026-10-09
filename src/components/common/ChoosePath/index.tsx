@@ -1,4 +1,5 @@
 import { useState, useRef, forwardRef, useImperativeHandle } from 'react'
+import { Platform } from 'react-native'
 // import { StyleSheet, View, Text, StatusBar, ScrollView } from 'react-native'
 
 // import { useGetter, useDispatch } from '@/store'
@@ -7,7 +8,7 @@ import List, { type ListType } from './List'
 import ConfirmAlert, { type ConfirmAlertType } from '@/components/common/ConfirmAlert'
 import { toast, TEMP_FILE_PATH, checkStoragePermissions, requestStoragePermission, confirmDialog } from '@/utils/tools'
 import { useI18n } from '@/lang'
-import { selectFile, unlink } from '@/utils/fs'
+import { selectFile, selectManagedFolder, unlink } from '@/utils/fs'
 import { useUnmounted } from '@/utils/hooks'
 import settingState from '@/store/setting/state'
 import { log } from '@/utils/log'
@@ -18,6 +19,8 @@ export interface ReadOptions {
   isPersist?: boolean
   dirOnly?: boolean
   filter?: string[]
+  /** 目标目录用于写文件：安卓改走系统文件夹选择器，避开公共目录不可写 */
+  saveToDir?: boolean
 }
 const initReadOptions = {}
 
@@ -52,6 +55,17 @@ export default forwardRef<ChoosePathType, ChoosePathProps>(({
 
   useImperativeHandle(ref, () => ({
     show(options) {
+      if (options.saveToDir && Platform.OS == 'android') {
+        void selectManagedFolder(true).then(dir => {
+          if (!dir || isUnmounted.current) return
+          onConfirm(dir.path)
+        }).catch((err: any) => {
+          if (isUnmounted.current) return
+          log.warn('open document tree failed: ' + err.message)
+          toast(t('open_storage_select_managed_folder_failed_tip', { msg: err.message as string }), 'long')
+        })
+        return
+      }
       if (!settingState.setting['common.useSystemFileSelector'] || options.dirOnly) {
         // if (options.isPersist) {
         void handleOpenExternalStorage(options)

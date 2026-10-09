@@ -3,6 +3,7 @@ import { createList, getListMusics, overwriteList, overwriteListFull, overwriteL
 import { filterMusicList, fixNewMusicInfoQuality, toNewMusicInfo } from '@/utils'
 import { log } from '@/utils/log'
 import { confirmDialog, handleReadFile, handleSaveFile, isLegacyStorageBlocked, showImportTip, toast } from '@/utils/tools'
+import { joinSavePath } from '@/utils/savePath'
 import listState from '@/store/list/state'
 
 
@@ -191,7 +192,7 @@ const exportAllList = async(path: string) => {
     data: await getAllLists(),
   }))
 
-  await handleSaveFile(path + '/lx_list.lxmc', data)
+  await handleSaveFile(joinSavePath(path, 'lx_list.lxmc'), data)
 }
 export const handleExportList = (path: string) => {
   toast(global.i18n.t('setting_backup_part_export_list_tip_zip'))
