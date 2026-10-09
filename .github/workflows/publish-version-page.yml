@@ -24,6 +24,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate version JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('publish/version.json', 'utf8'))"
       - uses: actions/configure-pages@v5
         with:
           enablement: true
