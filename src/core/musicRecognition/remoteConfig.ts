@@ -65,17 +65,31 @@ const sanitizeEngine = (value: unknown): EngineConfig | null => {
   return { id, enabled: engine.enabled !== false, endpoint: String(engine.endpoint) }
 }
 
+// 两种失败方向相反，不能混：
+// - 读不出结构（不是对象、engines 不是数组）→ 退回 DEFAULT_CONFIG。配置是尽力而为的旁路，
+//   镜像全挂也不该让识曲功能瘫痪。
+// - 读得出结构（engines 是数组）→ 尊重运营方发出来的东西：哪怕每条都被白名单丢掉、
+//   哪怕每条都 enabled:false，空数组就是「全部关闭」。这是紧急关停的唯一通道，
+//   拿 DEFAULT_CONFIG 顶掉它等于把关停拨回 ON。
 export const sanitizeConfig = (raw: unknown): RecognitionConfig => {
   const config = asRecord(raw)
   if (!config || !Array.isArray(config.engines)) return DEFAULT_CONFIG
-  const engines = config.engines.map(sanitizeEngine).filter((item): item is EngineConfig => item != null)
-  if (!engines.length) return DEFAULT_CONFIG
+  const engines: EngineConfig[] = []
+  const sanitized = config.engines.map(sanitizeEngine).filter((item): item is EngineConfig => item != null)
+  for (const engine of sanitized) {
+    // 按 id 收敛，每个 id 只留第一条：远端塞 200 条 ncm 就是 200 倍打到网易，
+    // 而本期唯一的防打靶手段是每日限流，不该被配置文件本身绕开。
+    if (engines.some(kept => kept.id == engine.id)) continue
+    engines.push(engine)
+  }
   return {
     version: typeof config.version == 'number' ? config.version : DEFAULT_CONFIG.version,
     engines,
   }
 }
 
+// 传输层全失败（每个镜像都取不到、或响应体不是 JSON）才落到这里的 DEFAULT_CONFIG；
+// 只要有任何一个镜像给出读得出结构的内容，就按 sanitizeConfig 的结果返回（含关停）。
 export const fetchRemoteConfig = async(fetchImpl: FetchImpl, urls: string[] = CONFIG_URLS): Promise<RecognitionConfig> => {
   for (const url of urls) {
     try {
