@@ -42,10 +42,12 @@ export default ({ engine }: { engine: EngineInfo }) => {
   const [remain, setRemain] = useState(LISTEN_SECONDS)
   const [song, setSong] = useState<RecognizedSong | null>(null)
   // 'denied' 是面板自己的状态（麦克风没给权限），不属于 provider 的 RecognizeReason；
-  // 两者各用各的文案：权限缺失要教用户去设置里开，运营关停只该说「暂时不可用」。
+  // 两者各用各的文案：权限缺失要教用户去设置里开，服务侧的失败只说「暂时没响应」。
   const [reason, setReason] = useState<RecognizeReason | 'denied' | null>(null)
   const tickRef = useRef<NodeJS.Timeout | null>(null)
-  const cancelledRef = useRef(false)
+  // 作废在途识别用的是「只增不减的批次号」，不是一个布尔开关：布尔量会被下一轮开头清零，
+  // 上一轮迟到的结果就能在新一轮录音进行中把 phase 与 song 抢过去。
+  const runSeqRef = useRef(0)
   const isUnmountedRef = useRef(false)
 
   const clearTick = () => {
@@ -66,7 +68,8 @@ export default ({ engine }: { engine: EngineInfo }) => {
   }, [])
 
   const reset = () => {
-    cancelledRef.current = true
+    // 作废当前这一轮：它回来时发现自己的批次号落后了，就不会再动任何状态
+    runSeqRef.current += 1
     clearTick()
     cancelRecord()
     setSong(null)
@@ -82,7 +85,9 @@ export default ({ engine }: { engine: EngineInfo }) => {
       case 'denied':
         return t('music_recognition_denied')
       case 'unsupported':
-        return t('music_recognition_not_ready')
+        // 到这里只剩两种来源：运营把引擎全关、这台设备的桥起不来。两者都是「现在不通、
+        // 过会儿再试」；「识别还没接入」描述的是功能不存在，说给已经接入的引擎听是假话。
+        return t('music_recognition_failed')
       case 'no_match':
         return t('music_recognition_no_match')
       default:
@@ -91,25 +96,34 @@ export default ({ engine }: { engine: EngineInfo }) => {
   }
 
   const run = async() => {
+    // 未接入的引擎标签留在它自己的 not_ready 画面上：那里除了同一句文案，还带着
+    // music_recognition_not_ready_desc 的解释行。点一下圆盘不该把「有说明的状态」变成「没说明的错误」。
+    if (!engine.implemented) return
+    // 没有原生采集通路的设备上 requestRecordPermission() 回 false 的原因和「用户拒绝」是同一个，
+    // 不先分辨就会说出一句永远照不做的「去系统设置里允许」。挂载时已经知道真相，这里照实退回。
+    if (!isAudioRecordSupported()) {
+      setPhase('not_ready')
+      return
+    }
     // 桥没就绪时连录音都别开始。顺序很关键：provider 是先 `guard.onAttempt()` 扣掉每日额度、
     // 再让引擎去 `fingerprintFromWasm` 抛「not ready」的。在那种 WebView 起不来的设备上
     // （被厂商禁用、系统 WebView 过旧、资产缺失），用户每次都要白等 8 秒录音、白扣 1/30 额度，
-    // 最后只看到一句「识曲服务暂时没响应」。这里提前拒，把「这台设备用不了」说清楚，一克额度都不花。
-    // 唯一误伤是「刚进页 1 秒内就点」——注入还没回 ready，会看到「识别还没接入」，再点一次就好；
+    // 最后只看到一句「识曲服务暂时没响应」。这里提前拒，同一句话不用等 8 秒、一克额度都不花。
+    // 唯一误伤是「刚进页 1 秒内就点」——注入还没回 ready，会看到「暂时没响应」，再点一次就好；
     // 不要为此加轮询重试，那会把闸门挪到识别路径上去。
     if (!isWasmReady()) {
       setReason('unsupported')
       setPhase('error')
       return
     }
-    cancelledRef.current = false
+    const seq = ++runSeqRef.current
     setSong(null)
     setReason(null)
     setPhase('listening')
     setRemain(LISTEN_SECONDS)
 
     const granted = await requestRecordPermission()
-    if (isUnmountedRef.current || cancelledRef.current) return
+    if (isUnmountedRef.current || seq !== runSeqRef.current) return
     if (!granted) {
       setReason('denied')
       setPhase('error')
@@ -128,33 +142,33 @@ export default ({ engine }: { engine: EngineInfo }) => {
       pcm = (await recordPcm(LISTEN_SECONDS)).pcm
     } catch {
       clearTick()
-      if (!isUnmountedRef.current && !cancelledRef.current) {
+      if (!isUnmountedRef.current && seq === runSeqRef.current) {
         setReason('failed')
         setPhase('error')
       }
       return
     }
     clearTick()
-    if (isUnmountedRef.current || cancelledRef.current) return
+    if (isUnmountedRef.current || seq !== runSeqRef.current) return
 
     setPhase('matching')
     // 一次采集多路输出：这里抽成引擎约定的 8kHz 识别窗口
     const window8k = decimateTo8k(pcm, NCM_SAMPLE_RATE, WINDOW_FROM_SECONDS, WINDOW_LEN_SECONDS)
     let outcome: RecognizeOutcome
     try {
-      // Ruling T5b/T7a：运营把 ncm 关掉时数组必须真的是空，让 provider 回 unsupported（页内说「暂时不可用」），
+      // Ruling T5b/T7a：运营把 ncm 关掉时数组必须真的是空，让 provider 回 unsupported（页内说「暂时没响应」），
       // 既不能把关掉的引擎照样发出去，也不能伪装成「没听到歌」。
       const engines = (engine.implemented && await isNcmEngineEnabled()) ? [createNcmEngine()] : []
       outcome = await recognizeWithEngines(engines, window8k, createGuardInstance())
     } catch {
       // Ruling T5a：provider 里 check/onAttempt/onSuccess/onFailure 四处 await 都在 try 之外，
       // 闸门自己一抛就会冒到这里。不兜住的话 phase 永远停在「匹配中」，比报错更糟。
-      if (isUnmountedRef.current || cancelledRef.current) return
+      if (isUnmountedRef.current || seq !== runSeqRef.current) return
       setReason('failed')
       setPhase('error')
       return
     }
-    if (isUnmountedRef.current || cancelledRef.current) return
+    if (isUnmountedRef.current || seq !== runSeqRef.current) return
 
     if (outcome.ok) {
       setSong(outcome.song)
@@ -166,6 +180,7 @@ export default ({ engine }: { engine: EngineInfo }) => {
   }
 
   const busy = phase == 'listening' || phase == 'matching'
+  // 状态文案没有 result 这一支：命中后由结果卡片说话，这里再顶一句「点击开始识别」像是识别没生效
   const statusText = phase == 'listening'
     ? `${t('music_recognition_listening')} ${remain}s`
     : phase == 'matching'
@@ -186,7 +201,7 @@ export default ({ engine }: { engine: EngineInfo }) => {
         }]}
         activeOpacity={0.8}
         accessibilityRole="button"
-        accessibilityLabel={t('music_recognition')}
+        accessibilityLabel={busy ? t('music_recognition_stop') : t('music_recognition')}
         onPress={() => {
           if (busy) {
             reset()
@@ -202,7 +217,7 @@ export default ({ engine }: { engine: EngineInfo }) => {
           color={busy ? theme['c-primary'] : theme['c-300']}
         />
       </TouchableOpacity>
-      <Text size={16} style={styles.status}>{statusText}</Text>
+      {phase == 'result' ? null : <Text size={16} style={styles.status}>{statusText}</Text>}
       {
         phase == 'not_ready'
           ? <Text size={12} color={theme['c-font-label']} style={styles.hint}>{t('music_recognition_not_ready_desc')}</Text>

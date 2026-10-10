@@ -109,8 +109,12 @@ const AfpWasmView = () => {
   const resetBridge = useCallback(() => {
     booted.current = false
     injected.current = false
+    // 单例桥也在这里作废：调用方是靠 isWasmReady() 决定「值不值得录 8 秒、扣不扣一次额度」的，
+    // 页面里已经没有 __ask 却还答 yes，用户就白录白扣，最后只拿到一句超时。
+    // 按引用注销，所以不会踢掉转场时新实例注册的 requester；下一次 ready 回包会重新注册回来。
+    clearWasmRequester(requestFingerprint)
     rejectPending('fingerprint webview reset')
-  }, [rejectPending])
+  }, [rejectPending, requestFingerprint])
 
   useEffect(() => {
     mounted.current = true
@@ -183,7 +187,11 @@ const AfpWasmView = () => {
         onError={() => {
           if (__DEV__) console.log('[recognition] webview load error')
           // 主文档挂了 = 页面里没有 __ask。不作废闩的话 booted 一直是真的，
-          // 之后每次识别都只会在 15s 超时里失败。原生随后还会发 onLoadEnd，那时再注入。
+          // 之后每次识别都只会在 15s 超时里失败。
+          // 「onError 之后还会再来一次 onLoadEnd」是 JS 包装层给的：lib/WebViewShared.js 的
+          // onLoadingError 在调完 onError 后、同一个 handler 里接着调 onLoadEnd（本仓库装的 13.6.4 是 :77-92）。
+          // 原生侧反而是 finish 先发、error 后发（RNCWebViewClient.java:235-237），那次 onLoadEnd
+          // 来得比拨闩还早，指望不上。库升级若去掉那行 onLoadEnd，这里会静默失去重注入的机会。
           resetBridge()
         }}
         onRenderProcessGone={() => {
