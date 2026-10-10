@@ -66,14 +66,18 @@ test('全都安静地没命中：reason 是 no_match，既不退避也不清零'
   assert.deepEqual(calls, ['check', 'attempt'])
 })
 
+// 评审 Important-1：闸门这一半契约不只是「不发请求」，还有「不占额度、不碰
+// onSuccess/onFailure」。冷却期里每次点击若偷偷调了 onAttempt，冷却一结束立刻变 daily。
 test('闸门挡住时一个引擎都不发请求', async() => {
   for (const gate of ['daily', 'cooldown'] as const) {
     let touched = false
     const engines: RecognizeEngine[] = [{ id: 'ncm', recognize: async() => { touched = true; return song('A') } }]
-    const outcome = await recognizeWithEngines(engines, new Int16Array(8), makeGuard(gate).guard)
+    const { calls, guard } = makeGuard(gate)
+    const outcome = await recognizeWithEngines(engines, new Int16Array(8), guard)
     assert.equal(touched, false)
     assert.equal(outcome.ok, false)
     if (!outcome.ok) assert.equal(outcome.reason, gate)
+    assert.deepEqual(calls, ['check'], '被拦住的尝试不该计入每日额度')
   }
 })
 
@@ -93,10 +97,16 @@ test('命中后 onSuccess 被调用一次', async() => {
 
 test('单个引擎的 recognize 收到的是调用方给的同一份 8k 窗口', async() => {
   let seen: Int16Array | null = null
-  const engines: RecognizeEngine[] = [{ id: 'ncm', recognize: async(pcm) => { seen = pcm; return null } }]
+  // 引擎在收到窗口的当下就快照内容，否则调度层事后改写会被引用相等的假象放过
+  let seenContent: number[] | null = null
+  const engines: RecognizeEngine[] = [
+    { id: 'ncm', recognize: async(pcm) => { seen = pcm; seenContent = Array.from(pcm); return null } },
+  ]
   const pcm = new Int16Array([1, 2, 3])
   await recognizeWithEngines(engines, pcm, makeGuard().guard)
   assert.equal(seen, pcm)
+  assert.deepEqual(seenContent, [1, 2, 3], '调度层不许就地加工/重采样识别窗口')
+  assert.deepEqual(Array.from(pcm), [1, 2, 3], '一轮调度之后窗口内容必须原封不动')
 })
 
 // Ruling T4f：运营方把引擎全关（remoteConfig.sanitizeConfig 会给出 engines: []）时
@@ -153,15 +163,21 @@ test('引擎返回 null 不累计失败，抛异常恰好累计一次失败', as
 })
 
 // 8kHz 契约：调度层把同一份引用依次交给每个引擎，不拷贝、不重采样。
-test('降级到后续引擎时拿到的还是同一份 8k 窗口引用，没有拷贝', async() => {
+// 引用同一之外还得钉住内容——`pcm.set(...)` 式的就地加工（归一化/重采样）引用不变，
+// 只比 assert.equal(seen, pcm) 抓不到。
+test('降级到后续引擎时拿到的还是同一份 8k 窗口引用与原始内容，没有拷贝也没有就地加工', async() => {
   const seen: Int16Array[] = []
+  // 每个引擎在收到窗口的当下就快照内容，第二个引擎若拿到被第一个引擎之后改写过的样本就会红
+  const seenContent: number[][] = []
   const engines: RecognizeEngine[] = [
-    { id: 'ncm', recognize: async(pcm) => { seen.push(pcm); throw new Error('boom') } },
-    { id: 'shazam', recognize: async(pcm) => { seen.push(pcm); return null } },
+    { id: 'ncm', recognize: async(pcm) => { seen.push(pcm); seenContent.push(Array.from(pcm)); throw new Error('boom') } },
+    { id: 'shazam', recognize: async(pcm) => { seen.push(pcm); seenContent.push(Array.from(pcm)); return null } },
   ]
   const pcm = new Int16Array([1, 2, 3, 4])
   await recognizeWithEngines(engines, pcm, makeGuard().guard)
   assert.equal(seen.length, 2)
   assert.equal(seen[0], pcm)
   assert.equal(seen[1], pcm)
+  assert.deepEqual(seenContent, [[1, 2, 3, 4], [1, 2, 3, 4]], '降级时窗口内容不许被就地加工/重采样')
+  assert.deepEqual(Array.from(pcm), [1, 2, 3, 4], '一轮调度之后窗口内容必须原封不动')
 })
