@@ -49,12 +49,16 @@ const bootScript = (assets: Assets): string => {
 /**
  * 隐藏 WebView：加载 afp.wasm 与打补丁的胶水，把 8kHz 样本换成指纹字符串。
  * 只负责算指纹，不碰麦克风、不联网。
+ * 必须挂在 App 根而不是识曲页内部：挂在页面里等于每次进页都重读并重注入 308KB、
+ * 每次离页都把单例桥拆掉（见 wasmBridge.clearWasmRequester）。
  */
-export default () => {
+const AfpWasmView = () => {
   const webViewRef = useRef<WebView>(null)
   const pending = useRef(new Map<string, Pending>())
   const seq = useRef(0)
   const booted = useRef(false)
+  const injected = useRef(false)
+  const mounted = useRef(false)
   const assetsRef = useRef<Assets | null>(null)
   const [source, setSource] = useState<{ html: string } | null>(null)
 
@@ -86,37 +90,51 @@ export default () => {
     }
   }), [])
 
+  // 上下文一没，在途请求必须当场结算。只 clearTimeout 的话 await 它的 Promise 永远不落，
+  // recognizeWithEngines 不返回，UI 停在「正在听」转个不停，而额度已经被 guard.onAttempt() 扣掉。
+  const rejectPending = useCallback((reason: string) => {
+    for (const item of pending.current.values()) {
+      clearTimeout(item.timer)
+      item.reject(new Error(reason))
+    }
+    pending.current.clear()
+  }, [])
+
+  // 闩要打在「注入」这个动作上，不能打在 ready 回包上：回包是一次异步往返，
+  // 在此之前连续到来的两次 onLoadEnd 都会读成「还没注入」，于是整段 bootScript
+  // （308KB data URL + 89KB 胶水）被注入两遍，换来两份 wasm 堆和两个 ready。
+  // 页面重置时把它拨回 false，所以「幂等」不等于「永不重试」。
+  const resetBridge = useCallback(() => {
+    booted.current = false
+    injected.current = false
+    rejectPending('fingerprint webview reset')
+  }, [rejectPending])
+
   useEffect(() => {
-    // useRef 的 current 从不重新赋值，这里取到的一直是同一个 Map；
-    // 先存成局部，免得 lint 以为清理函数读到了过期的 ref（它没有）。
-    const pendingRequests = pending.current
+    mounted.current = true
     void loadAssets().then(assets => {
       assetsRef.current = assets
       // 空壳文档：真正的脚本注入走 onLoadEnd，避免把 308KB base64 塞进 HTML
-      setSource({ html: '<html><head><meta charset="utf-8"></head><body></body></html>' })
+      if (mounted.current) setSource({ html: '<html><head><meta charset="utf-8"></head><body></body></html>' })
     }, () => {
       // iOS 上没有 assets 目录，这里必然走到：不挂 WebView、不注册 requester，
       // 于是 fingerprintFromWasm 大声抛「not ready」，任何 await 都不会悬着。
       if (__DEV__) console.log('[recognition] wasm assets unavailable')
     })
     return () => {
+      mounted.current = false
       booted.current = false
+      injected.current = false
       clearWasmRequester(requestFingerprint)
-      for (const item of pendingRequests.values()) {
-        clearTimeout(item.timer)
-        // 卸载时绝不能只 clearTimeout：那样 await 的 Promise 永远不结算，
-        // recognizeWithEngines 不返回，Task 8 的 UI 会停在「正在听」转个不停，
-        // 而每日额度已经被 guard.onAttempt() 扣掉了。必须显式 reject。
-        item.reject(new Error('fingerprint webview unmounted'))
-      }
-      pendingRequests.clear()
+      rejectPending('fingerprint webview unmounted')
     }
-  }, [requestFingerprint])
+  }, [requestFingerprint, rejectPending])
 
   const handleLoadEnd = () => {
-    if (booted.current) return // onLoadEnd 在 Android 上可能触发多次，注入必须幂等
     const assets = assetsRef.current
     if (!assets) return
+    if (injected.current) return
+    injected.current = true
     webViewRef.current?.injectJavaScript(bootScript(assets))
   }
 
@@ -129,6 +147,9 @@ export default () => {
     }
     if (message.ready != null) {
       if (message.ready) {
+        // 清理已经跑过一次的话，这里注册进去的就是一个没有主人的 WebView：
+        // 桥会一直「就绪」，而每次识别都白等满 15s 超时。
+        if (!mounted.current) return
         booted.current = true
         setWasmRequester(requestFingerprint)
       } else if (__DEV__) {
@@ -146,7 +167,7 @@ export default () => {
     else item.reject(new Error(message.error ?? 'fingerprint failed'))
   }
 
-  if (!source) return <View style={styles.hidden} />
+  if (!source) return <View pointerEvents="none" style={styles.hidden} />
 
   return (
     <View pointerEvents="none" style={styles.hidden}>
@@ -157,7 +178,18 @@ export default () => {
         javaScriptEnabled={true}
         domStorageEnabled={false}
         originWhitelist={['*']}
-        onError={() => { if (__DEV__) console.log('[recognition] webview load error') }}
+        onError={() => {
+          if (__DEV__) console.log('[recognition] webview load error')
+          // 主文档挂了 = 页面里没有 __ask。不作废闩的话 booted 一直是真的，
+          // 之后每次识别都只会在 15s 超时里失败。原生随后还会发 onLoadEnd，那时再注入。
+          resetBridge()
+        }}
+        onRenderProcessGone={() => {
+          if (__DEV__) console.log('[recognition] webview render process gone')
+          resetBridge()
+          // renderer 被系统杀掉后页面是空白的，不会再有 onLoadEnd 来敲门，只能自己重载一次
+          webViewRef.current?.reload()
+        }}
         onLoadEnd={handleLoadEnd}
         onMessage={handleMessage}
       />
@@ -181,3 +213,5 @@ const styles = createStyle({
     backgroundColor: 'transparent',
   },
 })
+
+export default AfpWasmView

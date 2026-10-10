@@ -168,3 +168,29 @@ test('真正的未命中（200 + 已解析对象 + result 为 null）仍然安�
   const resp = { ok: true, status: 200, body: noMatchResponse }
   assert.equal(parseMatchResponse(unwrapMatchBody(resp)), null)
 })
+
+// ---- 业务 code 闸门：HTTP 200 也可能是在挡我们 ----
+// 实测成功响应带 code:200（见上面的 hitResponse），所以限流/风控时它同样会带一个
+// 非 200 的 code 而不改 HTTP 状态。少了这道闸，那种回包会被 parseMatchResponse
+// 吞成 null，UI 说「没听到歌」：不退避、不报障，而且每天白扣一次额度。
+
+test('200 但业务 code 是 -462 时抛出并带上 code，不许当成未命中', () => {
+  const resp = { ok: true, status: 200, body: { code: -462, msg: 'risk control' } }
+  assert.throws(() => unwrapMatchBody(resp), err => (err as Error).message == 'match code -462')
+  // 组合起来也必须抛：走到底不能变成 null，否则调度层算的是 no_match 而不是 failed
+  assert.throws(() => parseMatchResponse(unwrapMatchBody(resp)))
+})
+
+test('业务 code 闸门不吃掉实测的成功响应（code:200）', () => {
+  assert.equal(parseMatchResponse(unwrapMatchBody({ ok: true, status: 200, body: hitResponse }))!.name, '浆果')
+  assert.equal(parseMatchResponse(unwrapMatchBody({ ok: true, status: 200, body: multiCandidateResponse }))!.name, '甲歌')
+})
+
+test('没有 code 或 code 不是数字时照常透传与解析', () => {
+  const withoutCode = { data: { result: [] } }
+  assert.equal(unwrapMatchBody({ ok: true, status: 200, body: withoutCode }), withoutCode)
+  assert.equal(parseMatchResponse(unwrapMatchBody({ ok: true, status: 200, body: { code: '200', data: { result: null } } })), null)
+  assert.equal(parseMatchResponse(unwrapMatchBody({ ok: true, status: 200, body: { code: null, data: { result: null } } })), null)
+  const hit = { data: { result: [{ startTime: 1, song: { name: '无码' } }] } }
+  assert.equal(parseMatchResponse(unwrapMatchBody({ ok: true, status: 200, body: hit }))!.name, '无码')
+})

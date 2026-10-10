@@ -13,7 +13,9 @@ const REQUEST_TIMEOUT_MS = 9000
 // 入参 pcm 是 8kHz 识别窗口（见 types.ts 的契约），不要再降采样
 export const recognizeNcm = async(pcm: Int16Array): Promise<RecognizedSong | null> => {
   const endpoint = await getNcmEndpoint()
-  if (!endpoint) return null
+  // 空 endpoint 只有一个来源：ncm 这条被 sanitizeConfig 筛掉了（关停或非法域名），
+  // 那是配置状态不是「没听到歌」，必须抛，让它落到 failed 而不是 no_match。
+  if (!endpoint) throw new Error('ncm engine not configured')
 
   const rawdata = await fingerprintFromWasm(fromByteArray(toLittleEndianBytes(pcm)))
   if (__DEV__) console.log('[recognition] fingerprint:', (rawdata.length / 1024).toFixed(1) + 'KB')
