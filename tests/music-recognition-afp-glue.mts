@@ -33,7 +33,16 @@ const loadGlue = (): GlueApi => {
     WebAssembly: globalWebAssembly,
     console: { log() {}, warn() {}, error() {}, info() {}, debug() {} },
     setTimeout,
-    setInterval,
+    // 胶水 NeteaseRecordArrayToBase64(afp-glue.js:2020) 用 setInterval 轮询 wasm 是否就绪，
+    // 没有重试上限，只在就绪时 clearInterval。资产损坏 / wasm 实例化失败时这个 interval 会一直
+    // 挂着并吊住事件循环：node --test 子进程不退出、`# fail` 汇总不输出、退出码也拿不到，
+    // 闸门于是以「超时」而不是「失败」暴露。句柄 unref 后它不再阻止进程排空退出，
+    // 成功路径仍靠 clearInterval 自清理，行为不变。
+    setInterval: (fn: (...args: unknown[]) => unknown, ms?: number) => {
+      const handle = setInterval(fn, ms)
+      handle.unref()
+      return handle
+    },
     clearInterval,
     clearTimeout,
     TextDecoder,
