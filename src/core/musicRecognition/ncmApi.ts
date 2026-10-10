@@ -69,3 +69,16 @@ export const parseMatchResponse = (body: unknown): RecognizedSong | null => {
     startTimeMs: Number(first?.startTime) || 0,
   }
 }
+
+// 传输层的两个「假装成功」必须在进入 parseMatchResponse 之前拦下（见 src/utils/request.js）：
+// 1. 非 2xx 不 reject —— 403 / 429 会以 fulfilled 的 promise 回来；
+// 2. JSON.parse 失败时空 catch（request.js:202-204），body 原样留成字符串。
+// 两者都会被 parseMatchResponse 的 asRecord 吞成 null，于是「服务把我们挡在外面」
+// 在 UI 上永远显示成「没听到歌」：不报错、不退避、看不出来。这是本功能最坏的失效方向，
+// 所以这里一律抛，让调度层把它算成 failed 并累计退避保险丝。
+// 只认 ok/status/body 三个字段，调用方负责把 httpFetch 的 statusCode 映射成 status。
+export const unwrapMatchBody = (resp: { ok: boolean, status: number, body: unknown }): unknown => {
+  if (!resp.ok) throw new Error('match http ' + resp.status)
+  if (typeof resp.body == 'string') throw new Error('match response is not JSON')
+  return resp.body
+}

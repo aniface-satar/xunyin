@@ -5,6 +5,7 @@ import {
   buildMatchForm,
   createSessionId,
   parseMatchResponse,
+  unwrapMatchBody,
 } from '../src/core/musicRecognition/ncmApi.ts'
 
 // 形状取自本机实测响应，标量（startTime、album.id、artists[0].id、picUrl 等）已按测试意图改写，非实测原值
@@ -131,4 +132,39 @@ test('畸形响应一律返回 null 而不是抛异常', () => {
   assert.equal(parseMatchResponse({ data: { result: [{}] } }), null)
   assert.equal(parseMatchResponse({ data: { result: [{ song: { name: '' } }] } }), null)
   assert.equal(parseMatchResponse({ data: { result: 'oops' } }), null)
+})
+
+// ---- unwrapMatchBody：传输层闸门 ----
+// 钉的是 httpFetch 的两件事（src/utils/request.js）：非 2xx 不 reject、
+// JSON.parse 失败时空 catch 把 body 留成字符串。缺了这道闸，
+// 403 / 429 / HTML 错误页都会被 parseMatchResponse 吞成 null，
+// 于是「服务挡了我们」永远显示成「没听到歌」：不报错、不退避。
+
+test('非 2xx 一律抛出并带上状态码，不许当成未命中', () => {
+  assert.throws(() => unwrapMatchBody({ ok: false, status: 403, body: { data: { result: null } } }),
+    err => (err as Error).message == 'match http 403')
+  assert.throws(() => unwrapMatchBody({ ok: false, status: 429, body: '' }),
+    err => (err as Error).message == 'match http 429')
+})
+
+test('body 还是字符串说明 JSON 没解析成功，抛而不是放行', () => {
+  assert.throws(() => unwrapMatchBody({ ok: true, status: 200, body: '{"data":' }),
+    err => (err as Error).message == 'match response is not JSON')
+  assert.throws(() => unwrapMatchBody({ ok: true, status: 200, body: '' }))
+})
+
+test('解析成功的对象原样透传', () => {
+  const body = { code: 200, data: { result: [] } }
+  assert.equal(unwrapMatchBody({ ok: true, status: 200, body }), body)
+})
+
+test('200 且 body 是 HTML 错误页时不会安静地变成 null', () => {
+  const resp = { ok: true, status: 200, body: '<html><body>502 Bad Gateway</body></html>' }
+  assert.throws(() => parseMatchResponse(unwrapMatchBody(resp)),
+    err => (err as Error).message == 'match response is not JSON')
+})
+
+test('真正的未命中（200 + 已解析对象 + result 为 null）仍然安静返回 null', () => {
+  const resp = { ok: true, status: 200, body: noMatchResponse }
+  assert.equal(parseMatchResponse(unwrapMatchBody(resp)), null)
 })
