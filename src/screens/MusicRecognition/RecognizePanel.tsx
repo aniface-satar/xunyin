@@ -59,6 +59,11 @@ export default ({ engine }: { engine: EngineInfo }) => {
 
   useEffect(() => {
     isUnmountedRef.current = false
+    // 运营配置在挂载时预热一次。`run()` 里的 `isNcmEngineEnabled()` 排在 8 秒录音**之后**，
+    // 冷缓存时它要串行走最多 5 个镜像、每个 4s 超时（≈20s），那段时间全落在「正在匹配」里，
+    // 看起来像识别卡住。只在本面板挂载时热，从不进识曲页的设备一笔配置请求都不会发。
+    // 不接返回值也不兜错：findNcmEngine 内部已经把失败兜成 DEFAULT_CONFIG。
+    void isNcmEngineEnabled()
     return () => {
       isUnmountedRef.current = true
       clearTick()
@@ -141,15 +146,16 @@ export default ({ engine }: { engine: EngineInfo }) => {
     try {
       pcm = (await recordPcm(LISTEN_SECONDS)).pcm
     } catch {
+      // 被作废的一轮什么都不碰，包括倒计时：tickRef 是面板级唯一的一根，迟到的一轮清掉它，
+      // 正在录的那一轮秒数就会冻住。reset() 已经清过自己那根了，这里跳过不会留下野 interval。
+      if (isUnmountedRef.current || seq !== runSeqRef.current) return
       clearTick()
-      if (!isUnmountedRef.current && seq === runSeqRef.current) {
-        setReason('failed')
-        setPhase('error')
-      }
+      setReason('failed')
+      setPhase('error')
       return
     }
-    clearTick()
     if (isUnmountedRef.current || seq !== runSeqRef.current) return
+    clearTick()
 
     setPhase('matching')
     // 一次采集多路输出：这里抽成引擎约定的 8kHz 识别窗口

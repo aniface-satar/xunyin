@@ -54,7 +54,7 @@ const loadConfig = async(): Promise<RecognitionConfig> => {
 }
 
 // 启用与端点是两件事，必须分开问（Task 8 用它决定引擎数组）：
-// 数组为空 -> provider 返回 unsupported（「识曲暂不可用」）；
+// 数组为空 -> provider 返回 unsupported（面板用 music_recognition_failed 那句「暂时没响应」）；
 // 数组非空但拿不到端点 -> 那是配置状态，ncmEngine 直接抛，让它落到 failed 而不是「没听到歌」。
 // 混成一件事会让运营方的紧急关停在读用户眼里变成「你的耳机里没歌」。
 const findNcmEngine = async(): Promise<EngineConfig | undefined> => {
