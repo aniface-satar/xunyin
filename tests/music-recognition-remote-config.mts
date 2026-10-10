@@ -114,7 +114,7 @@ test('同一 id 重复出现只保留第一条 —— 配置文件不能把自�
   })
   assert.equal(flooded.engines.length, 1)
   assert.equal(flooded.engines[0].endpoint, 'https://interface.music.163.com/api/music/audio/match?n=0')
-  // 收敛按 id 计数，不影响不同 id 各自保留
+  // 同一 id 只留第一条：后面那条 enabled:false 不会叠加成第二个打到网易的口子
   const twoIds = sanitizeConfig({
     version: 6,
     engines: [
