@@ -116,6 +116,11 @@ android {
         versionCode verCode
         versionName verName
     }
+    // RNFS.readFileAssets sizes its buffer with InputStream.available(), which can
+    // under-report for compressed assets. Keep the recognition wasm stored.
+    androidResources {
+        noCompress 'wasm'
+    }
 
     splits {
         abi {
