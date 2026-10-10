@@ -9,6 +9,7 @@ import {
   LeaderboardDetail,
   MylistDetail,
   Comment,
+  MusicRecognition,
   // Setting,
 } from '@/screens'
 import { Provider } from '@/store/Provider'
@@ -19,6 +20,7 @@ import {
   SONGLIST_DETAIL_SCREEN,
   LEADERBOARD_DETAIL_SCREEN,
   MYLIST_DETAIL_SCREEN,
+  MUSIC_RECOGNITION_SCREEN,
   COMMENT_SCREEN,
   VERSION_MODAL,
   NOTICE_MODAL,
@@ -51,6 +53,7 @@ export default () => {
   Navigation.registerComponent(SONGLIST_DETAIL_SCREEN, () => WrappedComponent(SonglistDetail))
   Navigation.registerComponent(LEADERBOARD_DETAIL_SCREEN, () => WrappedComponent(LeaderboardDetail))
   Navigation.registerComponent(MYLIST_DETAIL_SCREEN, () => WrappedComponent(MylistDetail))
+  Navigation.registerComponent(MUSIC_RECOGNITION_SCREEN, () => WrappedComponent(MusicRecognition))
   Navigation.registerComponent(COMMENT_SCREEN, () => WrappedComponent(Comment))
   Navigation.registerComponent(VERSION_MODAL, () => WrappedComponent(VersionModal))
   Navigation.registerComponent(NOTICE_MODAL, () => WrappedComponent(NoticeModal))

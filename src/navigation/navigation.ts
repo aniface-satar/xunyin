@@ -8,6 +8,7 @@ import {
   SONGLIST_DETAIL_SCREEN,
   LEADERBOARD_DETAIL_SCREEN,
   MYLIST_DETAIL_SCREEN,
+  MUSIC_RECOGNITION_SCREEN,
   // SETTING_SCREEN,
 } from './screenNames'
 
@@ -245,6 +246,9 @@ export function pushLeaderboardDetailScreen(componentId: string, source: LX.Onli
 
 export function pushMylistDetailScreen(componentId: string, info: MylistDetailInfo) {
   pushDetailScreen(componentId, MYLIST_DETAIL_SCREEN, { info })
+}
+export function pushMusicRecognitionScreen(componentId: string) {
+  pushDetailScreen(componentId, MUSIC_RECOGNITION_SCREEN, {})
 }
 export function pushCommentScreen(componentId: string) {
   /*

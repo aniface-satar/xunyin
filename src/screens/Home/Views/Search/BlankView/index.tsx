@@ -7,6 +7,7 @@ import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import HistorySearch, { type HistorySearchType } from './HistorySearch'
 import HotSearch, { type HotSearchType } from './HotSearch'
+import MusicRecognitionEntry from './MusicRecognitionEntry'
 
 interface BlankViewProps {
   onSearch: (keyword: string) => void
@@ -46,20 +47,20 @@ export default forwardRef<BlankViewType, BlankViewProps>(({ onSearch }, ref) => 
 
   return (
     visible
-      ? isShowHotSearch || isShowHistorySearch
-        ? (
-            <ScrollView>
-              <View style={styles.content}>
-                { isShowHotSearch ? <HotSearch ref={hotSearchRef} onSearch={onSearch} /> : null }
-                { isShowHistorySearch ? <HistorySearch ref={historySearchRef} onSearch={onSearch} /> : null }
-              </View>
-            </ScrollView>
-          )
-        : (
-            <View style={styles.welcome}>
-              <Text size={22} color={theme['c-font-label']}>{t('search__welcome')}</Text>
+      ? (
+          <ScrollView>
+            <View style={styles.content}>
+              <MusicRecognitionEntry />
+              { isShowHotSearch ? <HotSearch ref={hotSearchRef} onSearch={onSearch} /> : null }
+              { isShowHistorySearch ? <HistorySearch ref={historySearchRef} onSearch={onSearch} /> : null }
+              {
+                !isShowHotSearch && !isShowHistorySearch
+                  ? <Text style={styles.welcomeText} size={16} color={theme['c-font-label']}>{t('search__welcome')}</Text>
+                  : null
+              }
             </View>
-          )
+          </ScrollView>
+        )
       : null
 
   )
@@ -73,9 +74,8 @@ const styles = createStyle({
     paddingLeft: 15,
     paddingRight: 15,
   },
-  welcome: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  welcomeText: {
+    marginTop: 30,
+    textAlign: 'center',
   },
 })
