@@ -49,8 +49,10 @@ const bootScript = (assets: Assets): string => {
 /**
  * 隐藏 WebView：加载 afp.wasm 与打补丁的胶水，把 8kHz 样本换成指纹字符串。
  * 只负责算指纹，不碰麦克风、不联网。
- * 必须挂在 App 根而不是识曲页内部：挂在页面里等于每次进页都重读并重注入 308KB、
- * 每次离页都把单例桥拆掉（见 wasmBridge.clearWasmRequester）。
+ * 挂载位置：RecognizePanel 内，只在 implemented 的引擎标签打开时存在。
+ * 代价是每次进页重注入一次（assets 有模块级缓存，省掉重复读 308KB）；换来的是从不进识曲页的
+ * 设备不必常驻一个 WebView 和它的 wasm 堆。因此调用方必须先问 isWasmReady() 再开始录：
+ * 桥没就绪时 provider 已经扣掉每日额度了，白录 8 秒还白花钱。
  */
 const AfpWasmView = () => {
   const webViewRef = useRef<WebView>(null)
