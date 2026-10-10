@@ -15,6 +15,8 @@
     <!-- Required on Android 13+ so the media notification (and therefore the
          OPPO Fluid Cloud / HONOR Magic Capsule media capsule) can be posted. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 听歌识曲只在用户主动点击时采几秒环境音，且只上传指纹、不落盘。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
       android:name=".MainApplication"
