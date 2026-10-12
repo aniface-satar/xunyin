@@ -30,7 +30,7 @@
 | 源 | 端点（仓库实际调用的那个） | 逐曲语种 | 形态 |
 |---|---|---|---|
 | kg | `songsearch.kugou.com/song_search_v2`（`kg/musicSearch.js:11`） | **有** | `trans_param.language`，中文词表 |
-| kg | `www2.kugou.kugou.com/yueku/v9/special/single/...`（`kg/songList.js:177`） | **有** | 同上 |
+| kg | `www2.kugou.kugou.com/yueku/v9/special/single/${id}-5-9999.html`（`kg/songList.js:177`） | 端点**有**，引擎**拿不到** | HTML 内嵌 `global.data` 每项带 `trans_param.language`；但 `getListDetailBySpecialId:121` 把这份数据交给 `getMusicInfos:324`，那里只 `map(item => ({ hash: item.hash }))` 再打 `gateway.kugou.com/v2/album_audio/audio`（`createTask:301` 的 fields 不含语种），`filterData2:815` 重建出的对象自然也没有——要用它就得按 hash/audio_id 回填 |
 | tx | `fcg_ucc_getcdinfo_byids_cp.fcg?...&new_format=1`（`tx/songList.js:64`） | **有** | `language` 数字码 |
 | kw | `nplserver.kuwo.cn/pl.svc`、`search.kuwo.cn/r.s` | 无 | 语种只在**歌单级** `tag="经典,华语,怀旧"` |
 | mg | `c.musicapp.migu.cn/MIGUM3.0/resource/playlist/v2.0` | 无 | 语种在**歌单级** `data.tags[].tagName` |
@@ -104,7 +104,7 @@ V2302A（10AE2N03QR0041Y）走 **5G 蜂窝网络**（非家里 Wi-Fi），DNS �
 
 | 级 | 来源 | 说明 |
 |---|---|---|
-| L1 | 接口逐曲字段 | kg `trans_param.language` 词表映射；tx `language` 按 §2.2 码表映射。要穿过三层：各源 `filterData` 保留原始语种 → `toNewMusicInfo`（`src/utils/index.ts:28`）白名单加 `lang`（照现成的 `releaseDate` 那行的写法）→ `PoolCandidate.lang` |
+| L1 | 接口逐曲字段 | kg `trans_param.language` 词表映射；tx `language` 按 §2.2 码表映射。要穿过三层：各源 `filterData` 保留原始语种 → `toNewMusicInfo`（`src/utils/index.ts:28`）白名单加 `lang`（照现成的 `releaseDate` 那行的写法）→ `PoolCandidate.lang`。kg 的**歌单详情**管线要多改一处：按 §2.1 的说明在 `getMusicInfos` 里用 hash/audio_id 把语种回填给 `filterData2`，只改 `filterData` 只能覆盖搜索那条路 |
 | L2 | 来源语种桶 | 候选在召回时已知自己来自哪个语种标签（§3.3 的桶召回），直接打 `langHint`，不依赖分类淘汰 |
 | L3 | 歌手语言表 | 本地持久化 `歌手名 → 桶`。两个喂入口：① 播放时歌词脚本统计（白捡，见下）；② MB tags/country（路线 2 顺带） |
 | L4 | 歌名/歌手名脚本统计 | 汉字→zh/yue 歧义时交 L3；假名→ja、谚文→ko、纯拉丁→`unknown`（**不**判成 en，英文艺名的中文歌手很多） |
@@ -160,7 +160,20 @@ L3 的歌词喂入是零额外请求的：电台每首播都取歌词，且**两
 
    a) `revokeSeedWeights`（`onboarding.ts:93-104`）现在只减 `positiveWeight`，整个函数不碰 `negativeWeight`，删除条件也是"正权归 0 且负权本来为 0"。播种分量一旦可带符号，这里必须按符号分两支对称回退（负分量去减 `negativeWeight`），否则用户重置问卷后**负权永久残留**，会把该分类压死。
    b) **`STATE_VERSION` 8 → 9，加一条重播种迁移**（原文写"不需要迁移"是错的）。存量用户的 `seededThemeWeights` 已经按老公式写成纯正分量，只改代码的话他们不会重新过问卷，这次修正对其真实偏好**永远不落地**。迁移做法：`stateSchema.ts:55 migrateRecommendationState` 里按版本闸门（照 `:66 dropLegacyCandidates`、`:69` onboarding 重置的既有写法）对 `version < 9` 的记录先用老分量做 a) 的回退，再用存下的 `onboarding.weights`（百分比原值一直在）按新公式重播种。学习数据（tracks/playlists/session）不动。
-2. **分类轮换改按权重抽样**。`candidate.ts:295-303` 的 `preferredTags[rotation % preferredTags.length]` 是等频轮转（10% 与 100% 同频），改为按 `net` 的轮盘抽样（复用 `diversity.ts:6` 的 `softmaxSample` 思路，温度单独放 config），让低净权分类真的少被抓。
+2. **刻度两端要说得出话：0% 是"明确不要"，不是"没填"**（最终评审补的账，原 spec 没写）。改成 50% 中轴之后，
+   `sanitizeWeights` 的 `if (percent > 0)`、`computeSeedWeights` 的 `if (!percent)`、`allocateByPercents` 的
+   `percent > 0` 筛选这三处都把刻度最下端那一个值和"没滑过"合并成同一个状态，结果是**"中文 0%"得到的抑制比
+   "中文 10%"更少**——10% 会播种负权并占一格配额，0% 直接消失。落地口径：
+   - `sanitizeWeights` **保留 0、丢弃 50**（50 的播种分量本就是 0，留着只会让它冒充一条有效配额声明；
+     丢掉它之后"把滑条放回中间"就是天然的"恢复未填"手势，不需要新造重置按钮。代价：想表达"恰好一半"要滑 40/60）。
+   - 0% 桶进 `targets`（值 0）→ 进 `caps`（值 0），且**±1 容差不作用于 0 目标**（`target - used + tolerance` 在 0 目标上会白送 1 首，等于替用户改口）。
+   - `enforced` 的判据从"百分比合计 > 0"改成"**声明过的语言桶集合非空**"，否则全 0 提交会被当成从没打开过问卷。
+   - UI 三处同步：滑条未填时显示中性点而不是 0%；只滑到 0% 也要能提交（`hasSelection` 看键是否存在，不看值）；
+     设置页不许再把 0 偷偷 `delete`（那是用户回头改配额的地方）。
+   供给侧对 0 目标是天然一致的：`planLangBucketFetch` 的缺口 `ceil(0 × scale) - 池内数 ≤ 0` 永不成单，
+   `computePoolBucketLimits` 给出 0 限额，所以"明确不要"不会引起当轮断粮，靠 24h 自然淘汰收干。
+
+3. **分类轮换改按权重抽样**。`candidate.ts:295-303` 的 `preferredTags[rotation % preferredTags.length]` 是等频轮转（10% 与 100% 同频），改为按 `net` 的轮盘抽样（复用 `diversity.ts:6` 的 `softmaxSample` 思路，温度单独放 config），让低净权分类真的少被抓。
 
 ### 3.4 相似歌手通道 E
 
@@ -186,7 +199,10 @@ provider 链（依次尝试，成功即止，结果带来源标记）：
 
 ### 3.5 治连推（与 E 通道配套）
 
-- `artist_hits`：每轮 2 人×15 首 → **1 人×8 首**，affinity 门槛 0.5 → 0.6。
+- `artist_hits`：每轮 2 人×15 首 → **1 人×8 首**。原文还写过"affinity 门槛 0.5 → 0.6"，**这条作废并按原值保留 0.5**：
+  `candidate.ts:172` 的 `Math.max(0.5, …)` 是**下限**不是闸门，而 `computeFinalScore = affinity + coOccurrence + exploration - exposureCount * 0.1`
+  过的是 `qualityGateRatio = 0.6` 的**相对**质量门槛——抬下限等于给每张直采曲加分，让"熟歌手占领 A 池"更严重，与治连推反着走。
+  真正减少供给倾斜的就是"1 人 8 首"这一处；要真想当闸门用，得改成"亲和度低于阈值的歌手本轮不直采"（P1 不做，避免一轮颗粒度太粗）。
 - A 通道额度 9 → 7，让出的 2 个名额给 E（`config.ts:24` `targetPerWindow`）。
 - 抽样权重加软惩罚：`weightFor`（`diversity.ts:222`）里"最近 6 首同歌手 ×0.35 / 12 首内 ×0.6"。
 - 删掉 `diversity.ts:191` 的 `artistGap = 0` 兜底，最低一档也保持隔 2 首；候选真枯竭时宁可少给几首并记 `reasons`，也不连推。
