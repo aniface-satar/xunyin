@@ -169,7 +169,9 @@ export const createArtistHitCandidates = (
   params: CatalogRefreshParams,
 ): PoolCandidate[] => {
   const top = params.profile.topArtists.find(item => item.artist == artist)
-  const affinity = Math.max(0.6, Math.min(1, top?.weight ?? 0))
+  // 这里不当地闸门用：这只是个下限，抬高它只会让直采曲更容易活过相对质量门槛，
+  // 反向助攻"熟歌手占领 A 池"；真正减供给的杠杆在每轮直采人数×首数那里。
+  const affinity = Math.max(0.5, Math.min(1, top?.weight ?? 0))
   const candidates: PoolCandidate[] = []
   for (const musicInfo of tracks) {
     if (isExcluded(musicInfo, params)) continue
@@ -485,7 +487,7 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
         seenTracks.add(key)
         uniqueTracks.push(track)
       }
-      if (!uniqueTracks.length && summary.langHint) reasons.push(`lang_bucket_empty:${summary.id}`)
+      if (!uniqueTracks.length && summary.langHint) reasons.push(`lang_playlist_empty:${summary.id}`)
       const seedTrackKeys: string[] = []
       let seedOverlap = 0
       for (const track of uniqueTracks) {

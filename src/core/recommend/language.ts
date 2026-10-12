@@ -178,7 +178,7 @@ export type ArtistLangTable = Record<string, ArtistLangEntry>
 /**
  * 歌手语言表就地合并（表由 artistLanguageStore 持有，本函数不碰存储）：
  * 高强度直接覆盖；同强度用 hits 做计数器投票（反向票递减，减到负再换桶），
- * 低强度忽略。unknown 不入库。超容量淘汰 hits 最低、最旧的一条。
+ * 低强度忽略。unknown 与 instr 都不入库（原因见函数体内的注释）。超容量淘汰 hits 最低、最旧的一条。
  */
 export const updateArtistLangTable = (
   table: ArtistLangTable,
