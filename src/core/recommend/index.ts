@@ -579,7 +579,9 @@ class RecommendationEngine {
     }
     const poolLangCounts = countPoolLang(finalItems)
     // 池里对这个桶一首都没有，配额这轮注定兑现不了——和"被配额挡住"是两种问题，日志要分开
+    // （目标 0 首的桶不算：它不是兑现不了，是用户明确不要）
     const langUnmet = Object.keys(langTargets.targets)
+      .filter(bucket => (langTargets.targets[bucket as LangBucket] ?? 0) > 0)
       .filter(bucket => (poolLangCounts[bucket as LangBucket] ?? 0) === 0)
       .map(bucket => `lang_unmet:${bucket}`)
     const langLevels: Record<string, number> = {}
