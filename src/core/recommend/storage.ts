@@ -111,6 +111,11 @@ export const trimState = () => {
     dislikedEntries.sort((a, b) => b[1] - a[1])
     state.dislikedTracks = Object.fromEntries(dislikedEntries.slice(0, recommendationConfig.storage.dislikedTrackLimit))
   }
+  const hiddenPlaylistEntries = Object.entries(state.hiddenPlaylists ?? {})
+  if (hiddenPlaylistEntries.length > recommendationConfig.storage.dislikedTrackLimit) {
+    hiddenPlaylistEntries.sort((a, b) => b[1] - a[1])
+    state.hiddenPlaylists = Object.fromEntries(hiddenPlaylistEntries.slice(0, recommendationConfig.storage.dislikedTrackLimit))
+  }
   const themeEntries = Object.entries(state.themeWeights ?? {})
   if (themeEntries.length > recommendationConfig.storage.themeWeightLimit) {
     themeEntries.sort((a, b) =>

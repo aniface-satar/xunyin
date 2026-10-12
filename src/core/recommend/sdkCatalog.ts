@@ -226,11 +226,13 @@ export const getChartTracks = async(
   requestOptions?: RunRequestOptions,
 ): Promise<ChartTracksResult> => {
   const context = getLeaderboardContext(source)
+  // 各源 SDK 只认纯 bangId，复合 id（kw__17）是本项目上层的表示法
+  const bangId = chartId.startsWith(`${source}__`) ? chartId.slice(source.length + 2) : chartId
   const result = await callMethod<{
     list?: LX.Music.MusicInfoOnline[]
     total?: number
     page?: number
-  }>(context, 'getList', [chartId, page], requestOptions)
+  }>(context, 'getList', [bangId, page], requestOptions)
   const tracks = (result?.list ?? []).map((musicInfo, index) => ({
     musicInfo: toNewMusicInfo(musicInfo) as LX.Music.MusicInfoOnline,
     rank: (page - 1) * ((result as unknown as { limit?: number }).limit ?? 30) + index + 1,

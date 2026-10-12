@@ -36,6 +36,9 @@ export const getUserPlaylistInputs = async(): Promise<LibraryPlaylistInput[]> =>
   const inputs: LibraryPlaylistInput[] = []
   const loveTracks = await getListMusics(LIST_IDS.LOVE)
   inputs.push({ id: LIST_IDS.LOVE, name: 'love', isLove: true, tracks: loveTracks })
+  // 默认列表同样是用户主动收藏的歌，必须参与"已在库"判重
+  const defaultTracks = await getListMusics(LIST_IDS.DEFAULT)
+  inputs.push({ id: LIST_IDS.DEFAULT, name: 'default', tracks: defaultTracks })
   for (const list of userLists) {
     if (SPECIAL_LIST_IDS.has(list.id) || list.id.startsWith('download')) continue
     const tracks = await getListMusics(list.id)

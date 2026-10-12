@@ -1,8 +1,7 @@
 export const recommendationConfig = {
   /**
    * 单曲级反馈分值。喜欢 +6 / 不感兴趣 -8 为显式信号，
-   * 完整听完 +1.5、早切 -1 为隐式信号：切歌含义模糊，故刻意弱于显式信号的一半。
-   * 结算条件见 feedback.ts。
+   * 完整听完 +1.5、秒切 -2 为隐式信号。分档条件见 feedback.ts settlePlayRecord。
    */
   behavior: {
     like: 6,
@@ -10,7 +9,7 @@ export const recommendationConfig = {
     dislike: -8,
     repeat: 4,
     complete: 1.5,
-    earlySkip: -1,
+    earlySkip: -2,
   },
 
   /**
@@ -107,20 +106,33 @@ export const recommendationConfig = {
   },
 
   /**
-   * 歌单反馈 P/N 的默认更新量。
+   * 歌单反馈 P/N 的默认更新量。进度分档：<10s（或覆盖<15%）秒切重罚；
+   * 15%-25% 轻罚；25%-45% 中性；45%-80% 轻奖；≥80% 完播重奖。
    */
   playlistFeedback: {
     like: 2,
     addToPlaylist: 1,
-    listenOver80: 0.25,
+    listenOver80: 1.2,
+    slightInterest: 0.6,
+    slightInterestMinCoverage: 0.45,
+    lowInterest: 0.5,
+    lowInterestMaxCoverage: 0.25,
     dislike: 1,
-    earlySkip: 0.25,
+    earlySkip: 1.5,
     earlySkipMaxSeconds: 10,
     earlySkipMaxCoverage: 0.15,
     fullSongMinSeconds: 60,
     coverageCompleteThreshold: 0.8,
-    /** 同歌单多首不同歌曲持续负反馈后的临时冷却时长。 */
+    /** 同歌单多首不同歌曲持续负反馈后的临时冷却。 */
     cooldownMs: 30 * 60 * 1000,
+    cooldownNegativeWeight: 0.75,
+    legacyCooldownFactor: 0.25,
+    /** 秒切软拉黑：首次 12h 冷却；再次秒切或负分累计超阈值拉黑 30 天；任意正反馈解除。 */
+    instantSkipCooldownMs: 12 * 60 * 60 * 1000,
+    instantSkipBanMs: 30 * 24 * 60 * 60 * 1000,
+    instantSkipBanAfterSkips: 2,
+    instantSkipBanNegativeWeight: 2,
+    instantSkipCooldownFactor: 0.1,
     /** 导入来源歌单只记打折正反馈：电台推荐路径已有全额归因，避免一次喜欢记两次。 */
     importedOriginDiscount: 0.5,
   },
@@ -211,8 +223,8 @@ export const recommendationConfig = {
     variantSoftFactor: 0.4,
     /** 相邻两个探索通道（C/D）曲目之间至少要隔多少首非探索曲目，防止连续 unfamiliar。 */
     explorationGap: 1,
-    /** 候选不足时按顺序放宽歌手间隔。 */
-    relaxArtistGaps: [8, 5, 3],
+    /** 候选不足时按顺序放宽歌手间隔；下限 4 首——同歌手至少隔 4 首，最后一档兜底才归零。 */
+    relaxArtistGaps: [8, 6, 4],
     relaxSameArtistInLast30: 6,
     relaxSamePlaylistInLast20: 4,
     relaxSameAlbumInLast20: 4,

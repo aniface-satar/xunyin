@@ -98,7 +98,7 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       sameChartInLast20: c.sameChartInLast20 + 1,
     },
     {
-      artistGap: c.relaxArtistGaps[1] ?? 5,
+      artistGap: c.relaxArtistGaps[1] ?? 6,
       sameArtistInLast30: c.sameArtistInLast30,
       samePlaylistInLast20: c.relaxSamePlaylistInLast20,
       sameAlbumInLast20: c.relaxSameAlbumInLast20,
@@ -107,7 +107,7 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       sameChartInLast20: c.sameChartInLast20 + 1,
     },
     {
-      artistGap: c.relaxArtistGaps[2] ?? 3,
+      artistGap: c.relaxArtistGaps[2] ?? 4,
       sameArtistInLast30: c.sameArtistInLast30,
       samePlaylistInLast20: c.relaxSamePlaylistInLast20,
       sameAlbumInLast20: c.relaxSameAlbumInLast20,
@@ -116,7 +116,8 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       sameChartInLast20: c.sameChartInLast20 + 1,
     },
     {
-      artistGap: c.relaxArtistGaps[2] ?? 3,
+      // 最后一档：所有候选连"同歌手隔 4 首"都满足不了时才允许放宽到 0，避免候选枯竭时电台断粮
+      artistGap: c.relaxArtistGaps[2] ?? 4,
       sameArtistInLast30: c.relaxSameArtistInLast30,
       samePlaylistInLast20: c.relaxSamePlaylistInLast20,
       sameAlbumInLast20: c.relaxSameAlbumInLast20,
@@ -186,6 +187,7 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
   const temperature = options.temperature ?? recommendationConfig.softmax.temperature
   const explorationGap = Math.max(0, options.explorationGap ?? 0)
   const relaxConfigs = getRelaxConfigs()
+  // 用户约定同歌手至少隔 4 首；仅最后一档（所有候选都满足不了时）兜底归零
   relaxConfigs[relaxConfigs.length - 1].artistGap = 0
   const target = Math.max(0, options.target)
   const history: FinalQueueItem[] = (options.recent ?? []).slice(-60)

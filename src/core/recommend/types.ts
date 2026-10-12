@@ -81,6 +81,10 @@ export interface PlaylistPreference {
   lastNegativeTrackKey?: string
   distinctNegativeTracks?: number
   cooldownUntil?: number
+  /** 冷却期内选曲权重乘数；缺省按旧规则（legacyCooldownFactor）。 */
+  cooldownFactor?: number
+  /** 秒切累计次数，软拉黑状态机用；任意正反馈清零。 */
+  instantSkipCount?: number
 }
 
 export interface SessionTrack {
@@ -184,6 +188,13 @@ export interface PoolCandidate {
   reasons: string[]
 }
 
+/** 首次进入偏好问卷：weights 为选项 id→百分比（只存 >0）；seededThemeWeights 为本轮写入 themeWeights 的初值分量，精确回退用。 */
+export interface OnboardingState {
+  completed: boolean
+  weights: Record<string, number>
+  seededThemeWeights: Record<string, number>
+}
+
 export interface RecommendationState {
   version: number
   tracks: Record<string, TrackPreference>
@@ -191,6 +202,8 @@ export interface RecommendationState {
   themeWeights: Record<string, ThemePreference>
   trackPlaylists: Record<string, string[]>
   dislikedTracks: Record<string, number>
+  /** 推荐 tab 被「不感兴趣」隐藏的网络歌单（normalizePlaylistKey → 隐藏时间戳），确定性不再推荐。 */
+  hiddenPlaylists: Record<string, number>
   recentlyPlayed: Array<{ trackKey: string, timestamp: number }>
   session: SessionPreference
   radioHistory: RadioPlayRecord[]
@@ -223,6 +236,8 @@ export interface RecommendationState {
   audioEmbeddings: Record<string, AudioEmbedding>
   /** 音频分析每日节流元数据。 */
   audioAnalysis: { dayKey: string, dayCount: number, lastRunAt: number }
+  /** 偏好问卷状态（v7 新增）：迁移时老用户（已有学习数据）自动记为已完成。 */
+  onboarding: OnboardingState
 }
 export interface InterestDirection {
   directionId: string

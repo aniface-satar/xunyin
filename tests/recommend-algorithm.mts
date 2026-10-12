@@ -1,14 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildTrackKey, canonicalTrackKey, getArtistKeys, getPrimaryArtist, isSameRecording } from '../src/core/recommend/trackKey.ts'
+import { buildTrackKey, canonicalTrackKey, exactPairKey, getArtistKeys, getPrimaryArtist, isSameRecording } from '../src/core/recommend/trackKey.ts'
 import { buildLibraryIndexData } from '../src/core/recommend/libraryIndex.ts'
 import { getExclusionReason } from '../src/core/recommend/filter.ts'
 import { recommendationConfig } from '../src/core/recommend/config.ts'
 import { planChannelQuotas } from '../src/core/recommend/channels.ts'
 import { selectFinalQueue } from '../src/core/recommend/diversity.ts'
 import { computeCandidateCoOccurrence, computeFeedbackQuality, computePlaylistScore, computePlaylistSimilarity, groupSimilarPlaylists, buildTrackPlaylistIndex } from '../src/core/recommend/similarity.ts'
-import { settleExplicitFeedback, settlePlayRecord, computeEffectiveCoverage, mergeIntervals, shouldSuppressImplicitSettlement, shouldApplyImplicitSettlement, applyThemeFeedback, themeNetWeight, themeAffinityFactor } from '../src/core/recommend/feedback.ts'
+import { settleExplicitFeedback, settlePlayRecord, computeEffectiveCoverage, mergeIntervals, shouldSuppressImplicitSettlement, shouldApplyImplicitSettlement, applyThemeFeedback, themeNetWeight, themeAffinityFactor, createPlaylistPreference } from '../src/core/recommend/feedback.ts'
 import { createPlaybackTracker, finishPlaybackTracker, notePlaybackSeek, observePlaybackSample } from '../src/core/recommend/listening.ts'
 import { buildRadioProfile, selectProfileSeeds, buildPlaylistKeywords } from '../src/core/recommend/profile.ts'
 import { createRadioQueue } from '../src/core/recommend/queue.ts'
@@ -26,6 +26,7 @@ import { computeLogMelFrames, buildPatches, cosine } from '../src/core/recommend
 import { quantizeEmbedding, dequantizeEmbedding, getTasteCentroid, computePlaylistAudioAffinity, audioModelId, bytesToBase64, base64ToBytes } from '../src/core/recommend/audioEmbedding.ts'
 import { updateChannelBandit, thompsonMultiplier } from '../src/core/recommend/bandit.ts'
 import { buildSessionCoOccurrence } from '../src/core/recommend/similarity.ts'
+import { pickCardPlaylists, pickNewSongBoard, pickPlaylistSort, pickPlaylistTag, rankPlaylistTags, rankPlaylistsByProfile, rankTracksByProfile } from '../src/core/recommend/tabSections.ts'
 import type { FinalQueueItem } from '../src/core/recommend/diversity.ts'
 import type { ObservedPlaylist, PoolCandidate } from '../src/core/recommend/types.ts'
 import { selectDeferredTrackKeys } from '../src/core/recommend/queueDeferral.ts'
@@ -299,8 +300,8 @@ test('full natural listen applies positive feedback, early skip applies limited 
   assert.equal(early.track?.earlySkipCountDelta, 1)
 
   const partial = settlePlayRecord(mkRecord({
-    intervals: [{ from: 0, to: 45000 }],
-    listenedMs: 45000,
+    intervals: [{ from: 0, to: 70000 }],
+    listenedMs: 70000,
     endReason: 'user_next',
   }) as any)
   assert.equal(partial.playlist, undefined)
@@ -318,6 +319,105 @@ test('a short share of a long song counts as early skip even past the 10s floor'
   assert.equal(result.track?.earlySkipCountDelta, 1)
   assert.equal(result.ledgerEntry.trackReward, -Math.abs(recommendationConfig.behavior.earlySkip))
   assert.equal(result.playlist?.negativeDelta, recommendationConfig.playlistFeedback.earlySkip)
+})
+
+test('instant skip (<10s) applies the boosted penalty and flags the playlist effect', () => {
+  const result = settlePlayRecord(mkRecord({
+    intervals: [{ from: 0, to: 8000 }],
+    listenedMs: 8000,
+    wallClockMs: 8000,
+    endReason: 'user_next',
+  }) as any)
+  assert.equal(result.playlist?.negativeDelta, recommendationConfig.playlistFeedback.earlySkip)
+  assert.equal(result.playlist?.instantSkip, true)
+  assert.equal(result.track?.scoreDelta, recommendationConfig.behavior.earlySkip)
+  assert.ok(result.ledgerEntry.earlySkip)
+})
+
+test('low-interest band (15%-25% coverage) applies a mild playlist negative without instant flag', () => {
+  const result = settlePlayRecord(mkRecord({
+    intervals: [{ from: 0, to: 40000 }],
+    listenedMs: 40000,
+    wallClockMs: 40000,
+    endReason: 'user_next',
+  }) as any)
+  assert.equal(result.playlist?.negativeDelta, recommendationConfig.playlistFeedback.lowInterest)
+  assert.equal(result.playlist?.instantSkip, undefined)
+  assert.equal(result.playlist?.negativeTrackKey, 'track-1')
+  assert.equal(result.track, undefined)
+  assert.equal(result.ledgerEntry.earlySkip, undefined)
+  assert.ok(result.reasons.includes('low_interest_skip'))
+})
+
+test('neutral band (25%-45% coverage) still learns nothing', () => {
+  const result = settlePlayRecord(mkRecord({
+    intervals: [{ from: 0, to: 80000 }],
+    listenedMs: 80000,
+    wallClockMs: 80000,
+    endReason: 'user_next',
+  }) as any)
+  assert.equal(result.playlist, undefined)
+  assert.equal(result.track, undefined)
+  assert.ok(result.reasons.includes('partial_skip_neutral'))
+})
+
+test('interest band (45%-80% coverage) applies a slight playlist positive', () => {
+  const result = settlePlayRecord(mkRecord({
+    intervals: [{ from: 0, to: 100000 }],
+    listenedMs: 100000,
+    wallClockMs: 100000,
+    endReason: 'user_next',
+  }) as any)
+  assert.equal(result.playlist?.positiveDelta, recommendationConfig.playlistFeedback.slightInterest)
+  assert.equal(result.playlist?.negativeDelta, 0)
+  assert.equal(result.ledgerEntry.completion, undefined)
+  assert.ok(result.reasons.includes('partial_interest'))
+})
+
+test('manual skip past 80% coverage settles as completion with the boosted positive', () => {
+  const result = settlePlayRecord(mkRecord({
+    intervals: [{ from: 0, to: 170000 }],
+    listenedMs: 170000,
+    wallClockMs: 170000,
+    endReason: 'user_next',
+  }) as any)
+  assert.equal(result.playlist?.positiveDelta, recommendationConfig.playlistFeedback.listenOver80)
+  assert.ok(result.ledgerEntry.completion)
+  assert.ok(result.reasons.includes('listen_over_80'))
+})
+
+test('progress tiers are pinned to the agreed magnitudes', () => {
+  const fb = recommendationConfig.playlistFeedback
+  assert.equal(fb.earlySkip, 1.5)
+  assert.equal(fb.lowInterest, 0.5)
+  assert.equal(fb.slightInterest, 0.6)
+  assert.equal(fb.listenOver80, 1.2)
+  assert.equal(fb.lowInterestMaxCoverage, 0.25)
+  assert.equal(fb.slightInterestMinCoverage, 0.45)
+  assert.equal(recommendationConfig.behavior.earlySkip, -2)
+})
+
+test('soft-banned playlist cools candidates harder than the legacy cooldown', () => {
+  const banned = mkPoolCandidate('banned', 'B')
+  const cooled = mkPoolCandidate('cooled', 'B')
+  const mkPref = (id, extra) => ({
+    ...createPlaylistPreference(id, 1000),
+    negativeWeight: 3,
+    lastDecayTime: 1000,
+    cooldownUntil: 5000,
+    ...extra,
+  })
+  const items = buildFinalQueueItems([banned, cooled], {
+    now: 4000,
+    playlistPreferences: {
+      'pl-banned': mkPref('pl-banned', { cooldownFactor: 0.1 }),
+      'pl-cooled': mkPref('pl-cooled', {}),
+    },
+  })
+  const bannedWeight = items.find(item => item.key == banned.trackKey).channelWeights.B
+  const cooledWeight = items.find(item => item.key == cooled.trackKey).channelWeights.B
+  assert.ok(bannedWeight > 0)
+  assert.ok(bannedWeight < cooledWeight * 0.5, `instant-skip cooldown (${bannedWeight}) should crush legacy cooldown (${cooledWeight})`)
 })
 
 test('play errors, buffering/pauses and unknown short duration are neutral negative', () => {
@@ -750,7 +850,7 @@ test('legacy v1 state migrates without losing learning data and restart defaults
     dislikedTracks: { bad: 123 },
     recentlyPlayed: [{ trackKey: 'old', timestamp: 1 }],
   } as any)
-  assert.equal(migrated.version, 6)
+  assert.equal(migrated.version, 8)
   assert.equal(migrated.tracks.old.score, 3)
   assert.equal(migrated.playlists.p1.positiveWeight, 3)
   assert.equal(migrated.playlists.p1.negativeWeight, 1)
@@ -769,7 +869,7 @@ test('legacy v1 state migrates without losing learning data and restart defaults
   assert.equal(stalePool.candidateCacheFetchedAt, 0)
   assert.ok(stalePool.tracks.keep, 'dropping the stale pool must keep the learning data')
   const defaults = createDefaultState()
-  assert.equal(defaults.version, 6)
+  assert.equal(defaults.version, 8)
   assert.ok(Array.isArray(defaults.radioHistory))
   assert.deepEqual(defaults.tokenWeights, {})
   assert.deepEqual(defaults.channelBandit, {})
@@ -1657,4 +1757,303 @@ test('radio always leans familiar and explore mode is never modulated', () => {
     resolveRadioExploration({ mode: 'explore', explorationFactor: 1.4, explorationGap: gap }),
     { explorationFactor: 1.4, explorationGap: 0 },
   )
+})
+
+// ---------- 推荐 tab 两个新区块：新歌速递 / 推荐歌单 ----------
+
+const tabNow = 1_700_000_000_000
+const freshTheme = (positive: number, negative = 0) => ({
+  positiveWeight: positive,
+  negativeWeight: negative,
+  lastDecayTime: tabNow,
+  lastUsedTime: tabNow,
+})
+
+test('new-song board pick prefers 新歌榜, degrades to 飙升榜, and never claims 热歌榜', () => {
+  const hot = { id: 'kw__16', name: '热歌榜', source: 'kw' as const }
+  const fresh = { id: 'kw__17', name: '新歌榜', source: 'kw' as const }
+  const rising = { id: 'kw__93', name: '飙升榜', source: 'kw' as const }
+
+  assert.equal(pickNewSongBoard([hot, fresh, rising])?.id, 'kw__17')
+  assert.equal(pickNewSongBoard([hot, rising])?.id, 'kw__93')
+  // 没有真新歌可给时返回 null，让上层换源，而不是把热榜冒充新歌
+  assert.equal(pickNewSongBoard([hot]), null)
+  assert.equal(pickNewSongBoard([]), null)
+  assert.equal(pickNewSongBoard([{ id: 'tx__27', name: 'New Songs', source: 'tx' as const }])?.id, 'tx__27')
+  // 真实音源里带限定词的新歌榜很多，必须挑最通用的一张而不是列表第一个命中项
+  const kgBoards = [
+    { id: 'kg__8888', name: 'TOP500', source: 'kg' as const },
+    { id: 'kg__33162', name: 'ACG新歌榜', source: 'kg' as const },
+    { id: 'kg__46910', name: '综艺新歌榜', source: 'kg' as const },
+    { id: 'kg__6666', name: '飙升榜', source: 'kg' as const },
+  ]
+  assert.equal(pickNewSongBoard(kgBoards)?.id, 'kg__46910')
+  assert.equal(pickNewSongBoard([...kgBoards, { id: 'kg__7777', name: '新歌榜', source: 'kg' as const }])?.id, 'kg__7777')
+})
+
+test('new-song board pick targets the learned taste before falling back to the general board', () => {
+  const kwNew = { id: 'kw__17', name: '新歌榜', source: 'kw' as const }
+  const kgFilm = { id: 'kg__3001', name: '影视新歌榜', source: 'kg' as const }
+  const kgACG = { id: 'kg__33162', name: 'ACG新歌榜', source: 'kg' as const }
+  const txNew = { id: 'tx__27', name: '新歌榜', source: 'tx' as const }
+
+  // 画像里学到的风格词命中限定榜：定向优先于通用榜
+  assert.equal(pickNewSongBoard([kwNew, kgFilm, kgACG], ['影视'])?.id, 'kg__3001')
+  // 并列命中按轮次轮换，刷新能看到另一张同分榜单
+  assert.equal(pickNewSongBoard([{ id: 'kg__4011', name: '华语新歌榜', source: 'kg' as const }, { id: 'tx__28', name: '华语新歌榜', source: 'tx' as const }], ['华语'], 0)?.id, 'kg__4011')
+  assert.equal(pickNewSongBoard([{ id: 'kg__4011', name: '华语新歌榜', source: 'kg' as const }, { id: 'tx__28', name: '华语新歌榜', source: 'tx' as const }], ['华语'], 1)?.id, 'tx__28')
+  // 一个关键词都没命中：保持通用榜规则，不飘到小众限定榜
+  assert.equal(pickNewSongBoard([kgFilm, kgACG, kwNew], ['爵士'])?.id, 'kw__17')
+  // 关键词在降级带（飙升榜）里同样生效
+  assert.equal(pickNewSongBoard([
+    { id: 'kw__16', name: '热歌榜', source: 'kw' as const },
+    { id: 'kw__94', name: '摇滚飙升榜', source: 'kw' as const },
+  ], ['摇滚'])?.id, 'kw__94')
+})
+
+test('new songs keep chart order cold and follow learned artists once trained', () => {
+  const tracks = [
+    { name: '早春境', singer: '张三' },
+    { name: '晚风起', singer: '李四' },
+    { name: '海与你', singer: '王五' },
+  ]
+
+  assert.deepEqual(rankTracksByProfile(tracks, {}, tabNow), tracks, 'no profile must not reorder the board')
+
+  const loved = rankTracksByProfile(tracks, { artistStats: { 李四: freshTheme(2) } as any }, tabNow)
+  assert.equal(loved[0].singer, '李四')
+  assert.deepEqual(loved.slice(1), [tracks[0], tracks[2]], 'untouched tracks keep their board order')
+
+  const burned = rankTracksByProfile(tracks, { artistStats: { 张三: freshTheme(0, 2) } as any }, tabNow)
+  assert.equal(burned[2].singer, '张三', 'a burnt artist must sink to the bottom')
+})
+
+test('playlist categories rank learned-positive first and demote disliked ones below unknown ones', () => {
+  const tags = [
+    { id: '1', name: '流行' },
+    { id: '2', name: '古风' },
+    { id: '3', name: '说唱' },
+    { id: '4', name: '电子' },
+  ]
+
+  assert.deepEqual(rankPlaylistTags(tags, {}, [], tabNow), tags, 'cold start keeps the source catalog order')
+
+  const ranked = rankPlaylistTags(tags, {
+    古风: freshTheme(1.2),
+    流行: freshTheme(3),
+    说唱: freshTheme(0, 2),
+  } as any, [], tabNow)
+  assert.deepEqual(ranked.map(tag => tag.name), ['流行', '古风', '电子', '说唱'])
+})
+
+test('playlist categories ride the learned keywords, not just explicit feedback', () => {
+  const tags = [
+    { id: '1', name: '流行' },
+    { id: '2', name: '粤语' },
+    { id: '3', name: '民谣' },
+  ]
+
+  // 冷启动没有显式分类反馈时，词面学习到的风格词（如"粤语"）把同类分类顶到前面
+  assert.equal(rankPlaylistTags(tags, {}, ['粤语'], tabNow)[0].name, '粤语')
+
+  // 显式正反馈仍然压过词面亲和，被词面抬升的分类排在学习过的分类之后
+  const ranked = rankPlaylistTags(tags, { 民谣: freshTheme(1) } as any, ['粤语'], tabNow)
+  assert.equal(ranked[0].name, '民谣')
+  assert.equal(ranked[1].name, '粤语')
+})
+
+test('curated category rotates across the whole catalog instead of pinning the official front', () => {
+  const catalog = [
+    { id: 'b1', name: '推荐', parentName: '官方' },
+    { id: 'b2', name: '华语', parentName: '语种' },
+    { id: 'b3', name: '治愈', parentName: '心情' },
+  ]
+
+  // 冷启动按轮次在全目录里游走，官方组不再钉死在首位
+  assert.equal(pickPlaylistTag(catalog, {}, [], 0)?.id, 'b1')
+  assert.equal(pickPlaylistTag(catalog, {}, [], 1)?.id, 'b2')
+  assert.equal(pickPlaylistTag(catalog, {}, [], 2)?.id, 'b3')
+
+  // 学到正偏好的分类在多数轮次里优先；4 轮 1 轮的全目录探索轮换到其余分类
+  const themes = { 治愈: freshTheme(2) } as any
+  assert.equal(pickPlaylistTag(catalog, themes, [], 0)?.id, 'b3')
+  assert.equal(pickPlaylistTag(catalog, themes, [], 1)?.id, 'b3')
+  assert.equal(pickPlaylistTag(catalog, themes, [], 3)?.id, 'b3')
+  assert.equal(pickPlaylistTag(catalog, themes, [], 11)?.id, 'b2')
+})
+
+test('recommended playlists follow learned taste and never show blacklisted artists', () => {
+  const playlists = [
+    { id: 'p1', name: '民谣手札：老狼与城市', author: '街声音乐' },
+    { id: 'p2', name: '陈奕迅·港乐黄金年代', author: '环球音乐' },
+    { id: 'p3', name: '深夜电音派', author: '酷狗音乐' },
+  ]
+
+  assert.deepEqual(rankPlaylistsByProfile(playlists, {}, tabNow), playlists, 'cold start keeps the source hotness order')
+
+  const ranked = rankPlaylistsByProfile(playlists, {
+    tokenWeights: { 民谣: freshTheme(1.5) } as any,
+    artistStats: { 陈奕迅: freshTheme(0, 2) } as any,
+  }, tabNow)
+  assert.equal(ranked[0].id, 'p1', 'a learned-positive word in the title must lead')
+  assert.equal(ranked[2].id, 'p2', 'an artist the user keeps skipping must sink even in the title')
+
+  const blocked = { names: new Set<string>(), musicNames: new Set<string>(), singerNames: new Set(['陈奕迅']) }
+  assert.deepEqual(rankPlaylistsByProfile(playlists, { blocked }, tabNow).map(item => item.id), ['p1', 'p3'],
+    'a blacklisted artist named in the title removes the playlist')
+})
+
+test('playlists marked not interested never come back in the curated list', () => {
+  const playlists = [
+    { id: 'p1', source: 'kw', name: '民谣手札：老狼与城市', author: '街声音乐' },
+    { id: 'p2', source: 'kw', name: '深夜电音派', author: '酷狗音乐' },
+    { id: 'p3', source: 'tx', name: '粤语金曲', author: '官方账号' },
+  ]
+
+  // 被「不感兴趣」隐藏的歌单无论画像分多高都不再返回
+  const ranked = rankPlaylistsByProfile(playlists, { hidden: { 'kw::p1': tabNow, 'tx::p3': tabNow } }, tabNow)
+  assert.deepEqual(ranked.map(item => item.id), ['p2'])
+})
+
+test('the playlist card refreshes inside the personalized top band', () => {
+  const ranked = Array.from({ length: 30 }, (_, index) => ({ id: `p${index}` }))
+
+  assert.deepEqual(pickCardPlaylists(ranked, 6, () => 0).map(item => item.id), ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'])
+  const later = pickCardPlaylists(ranked, 6, () => 0.999)
+  assert.deepEqual(later.map(item => item.id), ['p6', 'p7', 'p8', 'p9', 'p10', 'p11'], 'refresh must show a different batch')
+  assert.ok(later.every(item => Number(item.id.slice(1)) < 12), 'sampling must stay in the top band, never the tail')
+  assert.equal(pickCardPlaylists(ranked, 6, () => 0.5).length, 6)
+  // 候选不足一屏时全给，不硬凑
+  assert.deepEqual(pickCardPlaylists(ranked.slice(0, 4), 6).map(item => item.id), ['p0', 'p1', 'p2', 'p3'])
+})
+
+test('every category group of the source catalog is eligible, not only the official one', () => {
+  const catalog = [
+    { id: 'a1', name: '华语', parentName: '语种' },
+    { id: 'a2', name: '治愈', parentName: '心情' },
+    { id: 'a3', name: '推荐歌单', parentName: '官方' },
+    { id: 'a4', name: '精品歌单', parentName: '主题' },
+    { id: 'a5', name: '古风' },
+  ]
+
+  assert.deepEqual(rankPlaylistTags(catalog, {}, [], tabNow).map(tag => tag.id), ['a1', 'a2', 'a3', 'a4', 'a5'],
+    'no category may be dropped from the catalog')
+
+  const liked = rankPlaylistTags(catalog, { 治愈: freshTheme(2) } as any, [], tabNow)
+  assert.equal(liked[0].id, 'a2', 'a taste learned on a plain category group must be able to lead')
+})
+
+test('playlist sort picks the hottest listing and falls back to the source default', () => {
+  assert.equal(pickPlaylistSort([{ id: '2', name: '最新' }, { id: '5', name: '最热' }])?.id, '5')
+  assert.equal(pickPlaylistSort([{ id: '0', name: '推荐' }, { id: '2', name: '最新' }])?.id, '0')
+  assert.equal(pickPlaylistSort([]), null)
+})
+
+test('exact pair key matches only literal name+singer equality', () => {
+  // 歌手分隔符/顺序/排版差异是同一组歌手
+  assert.equal(exactPairKey('晴天', '周杰伦/费玉清'), exactPairKey('晴天', '周杰伦、费玉清'))
+  assert.equal(exactPairKey('晴天', '周杰伦 & 费玉清'), exactPairKey('晴天', '费玉清、周杰伦'))
+  assert.equal(exactPairKey("Don't Stop", 'Taylor Swift'), exactPairKey('Don’t Stop', 'Ｔaylor  Swift'))
+  assert.equal(exactPairKey('晴天（Live）', '周杰伦'), exactPairKey('晴天(Live)', '周杰伦'))
+  // 少一个字母都不算同一首
+  assert.notEqual(exactPairKey('晴天', '周杰伦'), exactPairKey('晴夭', '周杰伦'))
+  assert.notEqual(exactPairKey('晴天', '周杰伦'), exactPairKey('晴天', '周杰倫'))
+  assert.notEqual(exactPairKey('晴天', '周杰伦'), exactPairKey('晴天', '周杰伦/费玉清'))
+  // 同名不同歌手不算同一首
+  assert.notEqual(exactPairKey('晴天', '周杰伦'), exactPairKey('晴天', '周杰伦2'))
+})
+
+const mkPairCtx = (tracks: Array<{ name: string, singer: string }>) => {
+  const library = buildLibraryIndexData(tracks.map((track, i) => ({
+    id: `pl-${i}`,
+    name: `list-${i}`,
+    tracks: [mkMusic(`lib-${i}`, track.name, track.singer)],
+  })))
+  assert.ok(library.pairKeys.size >= 1, 'library index must expose exact pair keys')
+  return {
+    libraryKeys: library.keys,
+    libraryPairKeys: library.pairKeys,
+    dislikedTrackKeys: new Set<string>(),
+    queuedTrackKeys: new Set<string>(),
+    sessionTrackKeys: new Set<string>(),
+    recentRadioTrackKeys: new Set<string>(),
+    blocked: { names: new Set<string>(), musicNames: new Set<string>(), singerNames: new Set<string>() },
+  }
+}
+
+test('library exact-pair keys exclude cross-source re-formatted duplicates', () => {
+  const ctx = mkPairCtx([{ name: '晴天', singer: '周杰伦/费玉清' }])
+  // canonical key 不同（歌手字段写法不同），但字面歌名+歌手一致 → 必须排除
+  const reformatted = mkMusic('kw-1', '晴天', '周杰伦、费玉清')
+  assert.equal(canonicalTrackKey(reformatted.name, reformatted.singer) != canonicalTrackKey('晴天', '周杰伦/费玉清'), true)
+  assert.equal(getExclusionReason(reformatted, ctx), 'library')
+  const reordered = mkMusic('kw-2', '晴天', '费玉清/周杰伦')
+  assert.equal(getExclusionReason(reordered, ctx), 'library')
+  // 全角引号差异同样命中
+  const typography = mkMusic('kw-3', "Don't Stop", 'Taylor Swift')
+  const ctxEn = mkPairCtx([{ name: 'Don’t Stop', singer: 'Taylor Swift' }])
+  assert.equal(getExclusionReason(typography, ctxEn), 'library')
+})
+
+test('exact-pair exclusion never catches songs that differ by one letter or singer', () => {
+  const ctx = mkPairCtx([{ name: '晴天', singer: '周杰伦' }])
+  assert.equal(getExclusionReason(mkMusic('kw-1', '晴夭', '周杰伦'), ctx), undefined)
+  assert.equal(getExclusionReason(mkMusic('kw-2', '晴天', '周杰伦2'), ctx), undefined)
+  assert.equal(getExclusionReason(mkMusic('kw-3', '晴天 (Live)', '周杰伦'), ctx), undefined, 'different version label is a different field value')
+  // canonical key 命中时照旧排除，pair key 只是兜底
+  assert.equal(getExclusionReason(mkMusic('kw-4', '晴天', '周杰伦'), ctx), 'library')
+})
+
+test('filterPoolCandidates drops cross-source pair duplicates before queueing', () => {
+  // 库内写法是合并署名，另一个音源把同一首歌写成斜杠分隔 → canonical key 不同，pair key 必须命中
+  const favorites = mkMusic('fav-1', '后来', '刘若英、XXX')
+  const pool = [
+    createPoolCandidate({ musicInfo: mkMusic('p1', '后来', '刘若英/XXX'), channel: 'A', sourceId: 's1' }),
+    createPoolCandidate({ musicInfo: mkMusic('p2', '后来', '刘若英、XXX'), channel: 'A', sourceId: 's1' }),
+    createPoolCandidate({ musicInfo: mkMusic('p3', '后来', '刘诗诗'), channel: 'A', sourceId: 's1' }),
+  ]
+  const library = buildLibraryIndexData([{ id: 'love', name: 'love', isLove: true, tracks: [favorites] }])
+  const ctx = {
+    libraryKeys: library.keys,
+    libraryPairKeys: library.pairKeys,
+    dislikedTrackKeys: new Set<string>(),
+    queuedTrackKeys: new Set<string>(),
+    sessionTrackKeys: new Set<string>(),
+    recentRadioTrackKeys: new Set<string>(),
+    blocked: { names: new Set<string>(), musicNames: new Set<string>(), singerNames: new Set<string>() },
+  }
+  const kept = filterPoolCandidates(pool, ctx).map(candidate => candidate.musicInfo.id)
+  assert.deepEqual(kept, ['p3'], 'same song from another source (separator variant or plain dupe) must be dropped')
+})
+
+test('artist relaxation never dips below the four-song floor before the last rung', () => {
+  const { antiRepeat } = recommendationConfig
+  assert.ok(antiRepeat.artistGap >= 4, 'baseline artist gap must keep at least four songs in between')
+  assert.ok(antiRepeat.relaxArtistGaps.every(gap => gap >= 4), `relax ladder dipped below 4: ${antiRepeat.relaxArtistGaps.join(',')}`)
+  assert.ok(antiRepeat.relaxArtistGaps.every((gap, i) => i == 0 || gap <= antiRepeat.relaxArtistGaps[i - 1]), 'relax ladder must not widen back up')
+
+  // 备选充足时，任何歌手的两首歌之间至少隔着 4 首其他歌手的歌
+  const repeats = ['X', 'Y', 'Z'].flatMap(artist => Array.from(
+    { length: 4 },
+    (_, i) => mkFinalItem(`${artist}-${i}`, artist, 'A', { sourcePlaylistId: `p-${artist}-${i}` }),
+  ))
+  const others = Array.from({ length: 20 }, (_, i) => mkFinalItem(`o-${i}`, `O-${i}`, 'B', { sourcePlaylistId: `op-${i}` }))
+  const plan = { quotas: { A: 6, B: 6, C: 0, D: 0 }, total: 12, reasons: {} } as any
+  for (let seed = 1; seed <= 9; seed++) {
+    const result = selectFinalQueue([...repeats, ...others], { target: 12, channelPlan: plan, rng: seedRandom(seed) })
+    const positionsByArtist = new Map<string, number[]>()
+    result.items.forEach((entry, index) => {
+      for (const artist of entry.item.artistKeys) {
+        const list = positionsByArtist.get(artist) ?? []
+        list.push(index)
+        positionsByArtist.set(artist, list)
+      }
+    })
+    for (const [artist, positions] of positionsByArtist) {
+      for (let i = 1; i < positions.length; i++) {
+        assert.ok(positions[i] - positions[i - 1] >= 5,
+          `seed ${seed}: artist ${artist} needs four songs in between, got positions ${positions.join(',')}`)
+      }
+    }
+  }
 })

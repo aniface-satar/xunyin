@@ -1,5 +1,5 @@
 import { recommendationConfig } from './config.ts'
-import { buildTrackKey, getArtistKeys, normalizeText } from './trackKey.ts'
+import { buildTrackKey, exactPairKey, getArtistKeys, normalizeText } from './trackKey.ts'
 import { buildTrackPlaylistIndex, computeCandidateCoOccurrence, computeProfileAffinity, groupSimilarPlaylists } from './similarity.ts'
 import { buildPlaylistKeywords, pickChartBoard } from './profile.ts'
 import { getLearnedStyleTokens } from './tokenFeedback.ts'
@@ -22,6 +22,7 @@ export interface CatalogRefreshParams {
   profile: RadioProfile
   state: RecommendationState
   libraryKeys: ReadonlySet<string>
+  libraryPairKeys?: ReadonlySet<string>
   blocked: DislikeRules
   queuedTrackKeys: ReadonlySet<string>
   sessionTrackKeys: ReadonlySet<string>
@@ -31,6 +32,8 @@ export interface CatalogRefreshParams {
   signal?: { cancelled: boolean }
   now?: number
   budget?: number
+  /** 偏好问卷规范词（按强度降序），插在画像关键词之前参与 rotation 窗口。 */
+  explicitKeywords?: readonly string[]
   /** 轮换计数，避免每次只抓第一页/第一张榜。 */
   rotation?: number
 }
@@ -48,6 +51,7 @@ const isExcluded = (
 ) => {
   const trackKey = buildTrackKey(musicInfo)
   if (params.libraryKeys.has(trackKey)) return 'library'
+  if (params.libraryPairKeys?.size && params.libraryPairKeys.has(exactPairKey(musicInfo.name, musicInfo.singer))) return 'library'
   if (params.dislikedTrackKeys.has(trackKey)) return 'disliked'
   if (params.queuedTrackKeys.has(trackKey)) return 'queued'
   if (params.sessionTrackKeys.has(trackKey)) return 'session_played'
@@ -255,6 +259,7 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
     .map(pref => normalizeText(params.state.observedPlaylists[pref.playlistId]?.name ?? ''))
     .filter(name => name)
   const keywordPool = [...new Set([
+    ...(params.explicitKeywords ?? []),
     ...positivePlaylistNames.slice(0, 2),
     ...buildPlaylistKeywords(params.profile, recommendationConfig.candidatePool.searchSeedsPerRefresh * 2,
       getLearnedStyleTokens(params.state.tokenWeights, 3)),

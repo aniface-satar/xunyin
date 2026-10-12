@@ -52,6 +52,8 @@ export interface PlaylistEffect {
   negativeTrackKey?: string
   distinctNegativeTrackDelta?: number
   cooldownUntil?: number
+  /** 秒切（<10s 或覆盖<15%）触发的重罚，进入软拉黑状态机。 */
+  instantSkip?: boolean
 }
 
 export interface SettlementResult {
@@ -137,7 +139,7 @@ export const settlePlayRecord = (
       reasons.push('skip_low_confidence_duration')
       return result
     }
-    // 听不足 10 秒、或进度不到 15% 就切走，都算早切（后者覆盖"三分钟的歌听了 25 秒就切"）
+    // 秒切：听不足 10 秒、或进度不到 15% 就切走（后者覆盖"三分钟的歌听了 25 秒就切"）
     if (listenedMs < config.earlySkipMaxSeconds * 1000 || coverage < config.earlySkipMaxCoverage) {
       ledgerEntry.trackReward = -Math.abs(recommendationConfig.behavior.earlySkip)
       ledgerEntry.playlistNegative = config.earlySkip
@@ -148,10 +150,28 @@ export const settlePlayRecord = (
           positiveDelta: 0,
           negativeDelta: config.earlySkip,
           negativeTrackKey: record.trackKey,
+          instantSkip: true,
         }
       }
       ledgerEntry.earlySkip = true
       reasons.push('early_skip')
+      return result
+    }
+    if (coverage < config.lowInterestMaxCoverage) {
+      ledgerEntry.playlistNegative = config.lowInterest
+      if (playlistId) {
+        result.playlist = {
+          id: playlistId,
+          positiveDelta: 0,
+          negativeDelta: config.lowInterest,
+          negativeTrackKey: record.trackKey,
+        }
+      }
+      reasons.push('low_interest_skip')
+      return result
+    }
+    if (coverage < config.slightInterestMinCoverage) {
+      reasons.push('partial_skip_neutral')
       return result
     }
     if (coverage >= config.coverageCompleteThreshold) {
@@ -163,7 +183,9 @@ export const settlePlayRecord = (
       reasons.push('listen_over_80')
       return result
     }
-    reasons.push('partial_skip_neutral')
+    ledgerEntry.playlistPositive = config.slightInterest
+    if (playlistId) result.playlist = { id: playlistId, positiveDelta: config.slightInterest, negativeDelta: 0 }
+    reasons.push('partial_interest')
     return result
   }
 
@@ -222,6 +244,47 @@ export const decayPlaylistPreference = (
 const decayWeight = (value: number, elapsedMs: number, halfLifeDays: number) => {
   if (!value) return 0
   return value * Math.pow(0.5, elapsedMs / (Math.max(1, halfLifeDays) * 86400000))
+}
+
+/**
+ * 把一次结算增量并入歌单偏好（纯函数，冷却/软拉黑状态机都在这里）。
+ * 秒切首次进 12h 冷却，再次秒切或负分累计超阈值升级 30 天拉黑；任意正反馈立即解除。
+ */
+export const updatePlaylistPreference = (
+  pref: PlaylistPreference,
+  effect: PlaylistEffect,
+  now = Date.now(),
+): PlaylistPreference => {
+  const cfg = recommendationConfig.playlistFeedback
+  const next: PlaylistPreference = { ...pref, lastUsedTime: now, lastDecayTime: now }
+  next.positiveWeight = Math.max(0, pref.positiveWeight + effect.positiveDelta)
+  next.negativeWeight = Math.max(0, pref.negativeWeight + effect.negativeDelta)
+  next.positiveCount = Math.max(0, pref.positiveCount + (effect.positiveDelta > 0 ? 1 : effect.positiveDelta < 0 ? -1 : 0))
+  next.negativeCount = Math.max(0, pref.negativeCount + (effect.negativeDelta > 0 ? 1 : effect.negativeDelta < 0 ? -1 : 0))
+  if (effect.negativeDelta > 0) {
+    if (effect.negativeTrackKey && effect.negativeTrackKey != pref.lastNegativeTrackKey) {
+      next.distinctNegativeTracks = (pref.distinctNegativeTracks ?? 0) + 1
+      next.lastNegativeTrackKey = effect.negativeTrackKey
+    }
+    next.consecutiveNegativeCount = pref.consecutiveNegativeCount + 1
+    if (effect.instantSkip) {
+      const skips = (pref.instantSkipCount ?? 0) + 1
+      next.instantSkipCount = skips
+      next.cooldownFactor = cfg.instantSkipCooldownFactor
+      const banned = skips >= cfg.instantSkipBanAfterSkips || next.negativeWeight >= cfg.instantSkipBanNegativeWeight
+      next.cooldownUntil = now + (banned ? cfg.instantSkipBanMs : cfg.instantSkipCooldownMs)
+    } else if ((next.distinctNegativeTracks ?? 0) >= 3 && next.negativeWeight >= cfg.cooldownNegativeWeight) {
+      // 单次负反馈不永久封禁；至少 3 首不同歌曲持续负反馈才进入临时冷却。
+      next.cooldownUntil = now + cfg.cooldownMs
+    }
+  }
+  if (effect.positiveDelta > 0) {
+    next.consecutiveNegativeCount = 0
+    next.cooldownUntil = undefined
+    next.cooldownFactor = undefined
+    next.instantSkipCount = 0
+  }
+  return next
 }
 
 export const createThemePreference = (themeId: string, now = Date.now()): ThemePreference => ({

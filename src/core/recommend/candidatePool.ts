@@ -255,7 +255,15 @@ const channelWeightsFor = (
     raw *= tokenFactor
     // 长期歌手先验：历史上总被切的歌手持续降权，常听完的歌手加分
     raw *= artistFactor
-    if (candidate.playlistIds.some(playlistId => (options.playlistPreferences?.[playlistId]?.cooldownUntil ?? 0) > now)) raw *= 0.25
+    // 冷却降权：秒切软拉黑带更狠的 cooldownFactor，多个来源歌单取最严格的一个
+    let cooldownFactor = 1
+    for (const playlistId of candidate.playlistIds) {
+      const pref = options.playlistPreferences?.[playlistId]
+      if (pref && (pref.cooldownUntil ?? 0) > now) {
+        cooldownFactor = Math.min(cooldownFactor, pref.cooldownFactor ?? recommendationConfig.playlistFeedback.legacyCooldownFactor)
+      }
+    }
+    raw *= cooldownFactor
     weights[channel] = Math.max(0.01, Math.min(1, raw))
   }
   return weights

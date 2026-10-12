@@ -1,7 +1,7 @@
 import { recommendationConfig } from './config.ts'
 import { getState, saveState, trimState } from './storage.ts'
 import { saveCandidateCache } from './candidateStore.ts'
-import { createPlaylistPreference, decayPlaylistPreference, applyThemeFeedback, settleExplicitFeedback, settlePlayRecord, computeEffectiveCoverage, shouldApplyImplicitSettlement, type LedgerEntry, type SettlementResult } from './feedback.ts'
+import { createPlaylistPreference, decayPlaylistPreference, updatePlaylistPreference, applyThemeFeedback, settleExplicitFeedback, settlePlayRecord, computeEffectiveCoverage, shouldApplyImplicitSettlement, type LedgerEntry, type SettlementResult } from './feedback.ts'
 import { pushSessionTrack } from './session.ts'
 import { updateChannelBandit } from './bandit.ts'
 import { applyNameTokenFeedback } from './tokenFeedback.ts'
@@ -77,28 +77,7 @@ const applyTrackEffect = (effect: NonNullable<SettlementResult['track']>) => {
 }
 
 const applyPlaylistEffect = (effect: NonNullable<SettlementResult['playlist']>, now = Date.now()) => {
-  let pref = ensurePlaylist(effect.id)
-  pref.positiveWeight = Math.max(0, pref.positiveWeight + effect.positiveDelta)
-  pref.negativeWeight = Math.max(0, pref.negativeWeight + effect.negativeDelta)
-  pref.positiveCount = Math.max(0, pref.positiveCount + (effect.positiveDelta > 0 ? 1 : effect.positiveDelta < 0 ? -1 : 0))
-  pref.negativeCount = Math.max(0, pref.negativeCount + (effect.negativeDelta > 0 ? 1 : effect.negativeDelta < 0 ? -1 : 0))
-  pref.lastUsedTime = now
-  pref.lastDecayTime = now
-  if (effect.negativeDelta > 0) {
-    if (effect.negativeTrackKey && effect.negativeTrackKey != pref.lastNegativeTrackKey) {
-      pref.distinctNegativeTracks = (pref.distinctNegativeTracks ?? 0) + 1
-      pref.lastNegativeTrackKey = effect.negativeTrackKey
-    }
-    pref.consecutiveNegativeCount += 1
-    // 单次负反馈不永久封禁；至少 3 首不同歌曲持续负反馈才进入临时冷却。
-    if ((pref.distinctNegativeTracks ?? 0) >= 3 && pref.negativeWeight >= 0.75) {
-      pref.cooldownUntil = now + recommendationConfig.playlistFeedback.cooldownMs
-    }
-  }
-  if (effect.positiveDelta > 0) {
-    pref.consecutiveNegativeCount = 0
-    pref.cooldownUntil = undefined
-  }
+  const pref = updatePlaylistPreference(ensurePlaylist(effect.id), effect, now)
   getState().playlists[effect.id] = pref
   // 主题级学习：喜欢的歌加权其所在歌单的分类，不感兴趣让该分类整体降权
   const category = getState().observedPlaylists[effect.id]?.category
@@ -358,6 +337,19 @@ export const applyExplicitFeedback = (input: ExplicitFeedbackInput) => {
   trimState()
   saveState()
   return result
+}
+
+/**
+ * 推荐歌单「不感兴趣」：歌单偏好记一笔显式负反馈，所属分类整体降权。
+ * applyPlaylistEffect 内部只按已观察到的分类记主题反馈；推荐 tab 传入的分类
+ * 只在该歌单还没被电台观察过时补记，避免同一笔负反馈算两次。
+ */
+export const applyPlaylistNotInterested = (playlistId: string, category?: string, now = Date.now()) => {
+  const negative = recommendationConfig.playlistFeedback.dislike
+  const observedCategory = getState().observedPlaylists[playlistId]?.category
+  applyPlaylistEffect({ id: playlistId, positiveDelta: 0, negativeDelta: negative }, now)
+  const themeId = category && !observedCategory ? normalizeText(category) : ''
+  if (themeId) applyThemeFeedback(getState().themeWeights, themeId, 0, negative, now)
 }
 
 /**

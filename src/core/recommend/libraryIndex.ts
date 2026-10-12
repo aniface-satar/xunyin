@@ -1,4 +1,4 @@
-import { buildTrackKey } from './trackKey.ts'
+import { buildTrackKey, exactPairKey } from './trackKey.ts'
 import { normalizePlaylistKey } from './playlistIndex.ts'
 
 export interface LibraryPlaylistInput {
@@ -27,6 +27,8 @@ export const getPlaylistOriginKey = (playlist: Pick<LibraryPlaylistInput, 'sourc
 
 export interface LibraryIndexData {
   keys: Set<string>
+  /** 歌名+歌手字面完全一致的精确判重集合，跨音源同名同歌手的歌靠它排除。 */
+  pairKeys: Set<string>
   entries: Map<string, LibraryEntry>
   listSizes: Record<string, number>
   loveKeys: Set<string>
@@ -41,6 +43,7 @@ export interface LibraryIndexData {
 export const buildLibraryIndexData = (playlists: readonly LibraryPlaylistInput[]): LibraryIndexData => {
   const entries = new Map<string, LibraryEntry>()
   const keys = new Set<string>()
+  const pairKeys = new Set<string>()
   const loveKeys = new Set<string>()
   const listSizes: Record<string, number> = {}
 
@@ -50,6 +53,7 @@ export const buildLibraryIndexData = (playlists: readonly LibraryPlaylistInput[]
     for (const musicInfo of playlist.tracks) {
       const trackKey = buildTrackKey(musicInfo)
       keys.add(trackKey)
+      pairKeys.add(exactPairKey(musicInfo.name, musicInfo.singer))
       if (playlist.isLove) loveKeys.add(trackKey)
       const entry = entries.get(trackKey)
       if (entry) {
@@ -68,5 +72,5 @@ export const buildLibraryIndexData = (playlists: readonly LibraryPlaylistInput[]
     }
   }
 
-  return { keys, entries, listSizes, loveKeys, totalTracks: entries.size, updatedAt: Date.now() }
+  return { keys, pairKeys, entries, listSizes, loveKeys, totalTracks: entries.size, updatedAt: Date.now() }
 }

@@ -11,8 +11,8 @@ import { loadState, getState, saveState, resetState, trimState, flushState } fro
 import { loadCandidateCache, setCandidateCache, saveCandidateCache, clearCandidateCache } from './candidateStore.ts'
 import { ensureLibraryIndex, getLibraryTrackOrigins, refreshLibraryIndex } from './library.ts'
 import { buildTrackPlaylistIndex, buildSessionCoOccurrence } from './similarity.ts'
-import { selectPlaylistEvictions } from './playlistIndex.ts'
-import { buildRadioProfile } from './profile.ts'
+import { selectPlaylistEvictions, normalizePlaylistKey } from './playlistIndex.ts'
+import { buildRadioProfile, buildPlaylistKeywords } from './profile.ts'
 import { createRadioQueue } from './queue.ts'
 import { createSession } from './session.ts'
 import { planChannelQuotas } from './channels.ts'
@@ -20,14 +20,35 @@ import { selectFinalQueue, type FinalQueueItem } from './diversity.ts'
 import { buildFinalQueueItems, filterPoolCandidates, mergePoolCandidates, poolStats } from './candidatePool.ts'
 import { computePlaylistAudioAffinity, enqueueAudioAnalysis } from './audioFeature.ts'
 import { refreshExternalCandidates, type CatalogRefreshParams, type KnownExternalPlaylist } from './candidate.ts'
-import { applyExplicitFeedback, beginRadioPlay, creditImportedOrigins, finishRadioPlay, getPlayRecord, getRecentRadioTrackKeys, isSourceCoolingDown, removeTrackFromCandidates, setSourceCooldown } from './behavior.ts'
+import { getCatalogCapabilities, getChartBoards, getChartTracks, getPlaylistTags, type ChartSummary } from './sdkCatalog.ts'
+import { pickNewSongBoard, pickPlaylistSort, pickPlaylistTag, rankPlaylistsByProfile, rankTracksByProfile } from './tabSections.ts'
+import { getLearnedStyleTokens } from './tokenFeedback.ts'
+import { applySeedWeights, computePreferenceKeywords, computeSeedWeights, mergePreferenceKeywords, revokeSeedWeights, sanitizeWeights } from './onboarding.ts'
+import { applyExplicitFeedback, applyPlaylistNotInterested, beginRadioPlay, creditImportedOrigins, finishRadioPlay, getPlayRecord, getRecentRadioTrackKeys, isSourceCoolingDown, removeTrackFromCandidates, setSourceCooldown } from './behavior.ts'
 import { buildSessionPenalties, computeSessionHealth, resolveRadioExploration, type SessionHealth } from './sessionHealth.ts'
 import { selectDeferredTrackKeys } from './queueDeferral.ts'
 import { startRadioPlaybackTracking, finishRadioPlaybackTracking, cancelRadioPlaybackTracking } from './playbackTracker.ts'
+import { getExclusionReason } from './filter.ts'
 import type { DislikeRules, ExclusionContext } from './filter.ts'
 import type { ChannelId, RadioMode, RecommendQueueItem } from './types.ts'
 import { recallLog } from './log.ts'
 import { computeTimeSlotAffinity } from './timeSlot.ts'
+
+/** 新歌速递的取数结果：boardName 为画像定向选中的新歌榜名，source 为 null 表示没取到。 */
+export interface CuratedNewSongs {
+  source: LX.OnlineSource | null
+  boardId: string
+  boardName: string
+  tracks: LX.Music.MusicInfoOnline[]
+}
+
+/** 推荐歌单的取数参数：画像选出的分类 + 该源可用的排序档，界面据此取带封面的歌单列表。 */
+export interface CuratedCategory {
+  source: LX.OnlineSource
+  tagId: string
+  tagName: string
+  sortId: string
+}
 
 interface CachedDislike {
   rules: DislikeRules
@@ -44,7 +65,7 @@ class RecommendationEngine {
   private currentPlayId: string | null = null
   private currentTrackKey: string | null = null
   private batchId = 0
-  private initialized = false
+  private initPromise: Promise<void> | null = null
   private refreshPromise: Promise<void> | null = null
   private lastRefreshAt = 0
   private lastRefreshReasons: string[] = []
@@ -54,12 +75,23 @@ class RecommendationEngine {
   private lastIdleCrawlAt = 0
   private pendingProvider: (() => readonly RecommendQueueItem[]) | null = null
   private lastDeferredView = { engineQueue: 0, handedOff: 0 }
+  private profileRevision = 0
+  /** 推荐 tab 两个区块共用的定向化轮次：同分榜单/候选分类按它轮换，保证覆盖而不重样。 */
+  private curatedRotation = 0
   private readonly trackRemovalListeners: Array<(trackKey: string) => void> = []
   private readonly recentPlayed: Array<{ musicInfo: LX.Music.MusicInfo, channel?: ChannelId, playlistId?: string, seedKey?: string, groupId?: string, chartId?: string }> = []
 
   async initialize() {
-    if (this.initialized) return
-    this.initialized = true
+    // 并发调用必须等同一次读档结束：只置标志位会让后进来的调用在 stateReady 上扑空
+    if (this.initPromise) return this.initPromise
+    this.initPromise = this.doInitialize().catch(error => {
+      this.initPromise = null
+      throw error
+    })
+    return this.initPromise
+  }
+
+  private async doInitialize() {
     await loadState()
     this.stateReady = true
     const cachedCandidates = await loadCandidateCache()
@@ -123,6 +155,8 @@ class RecommendationEngine {
       if (!musicInfo || 'progress' in musicInfo) continue
       keys.add(buildTrackKey(musicInfo))
     }
+    // 待补位曲目已经出队但仍未播出，不算进排除集会让同一首歌在新批次里被再次选中
+    for (const item of this.pendingProvider?.() ?? []) keys.add(buildTrackKey(item.musicInfo))
     return keys
   }
 
@@ -132,6 +166,7 @@ class RecommendationEngine {
     const sessionKeys = new Set(getState().session.recentTracks.map(track => track.trackKey))
     return {
       libraryKeys: library.keys,
+      libraryPairKeys: library.pairKeys,
       dislikedTrackKeys: new Set(Object.keys(getState().dislikedTracks)),
       queuedTrackKeys: this.getQueuedTrackKeys(),
       sessionTrackKeys: sessionKeys,
@@ -147,7 +182,8 @@ class RecommendationEngine {
     for (const entry of library.entries.values()) {
       if (entry.isLove) love.push(entry.musicInfo)
       for (const listId of entry.listIds) {
-        if (listId == 'love') continue
+        // 默认列表进排除索引但不进画像：本次只收紧判重，不改变画像来源
+        if (listId == 'love' || listId == 'default') continue
         if (!playlistsById[listId]) playlistsById[listId] = []
         playlistsById[listId].push(entry.musicInfo)
       }
@@ -200,6 +236,11 @@ class RecommendationEngine {
     return order
   }
 
+  /** 推荐 tab 取数用的源顺序：沿用音源随机，但跳过正在冷却的源。 */
+  private static curationSources(): LX.OnlineSource[] {
+    return RecommendationEngine.shuffledSources().filter(source => !isSourceCoolingDown(source))
+  }
+
   /** 随机音源优先，失败立即降级到下一个可用音乐源（spec §11 第 1 步）。 */
   private async refreshPool(reason: string, budget = cfg.request.maxRequestsPerRefresh) {
     const order = RecommendationEngine.shuffledSources().filter(item => !isSourceCoolingDown(item))
@@ -237,12 +278,14 @@ class RecommendationEngine {
         profile,
         state,
         libraryKeys: library.keys,
+        libraryPairKeys: library.pairKeys,
         blocked,
         queuedTrackKeys: exclusion.queuedTrackKeys,
         sessionTrackKeys: exclusion.sessionTrackKeys,
         recentRadioTrackKeys: exclusion.recentRadioTrackKeys,
         dislikedTrackKeys: exclusion.dislikedTrackKeys,
         knownExternalPlaylists,
+        explicitKeywords: computePreferenceKeywords(state.onboarding.weights),
         now: Date.now(),
         budget,
         rotation: Math.floor(Date.now() / (5 * 60 * 1000)),
@@ -320,7 +363,7 @@ class RecommendationEngine {
     return this.refreshPromise
   }
 
-  private buildRecentSelectionItems(limit = 30): FinalQueueItem[] {
+  private buildRecentSelectionItems(limit = 60): FinalQueueItem[] {
     const state = getState()
     const items: FinalQueueItem[] = []
     const pushMusicInfo = (musicInfo: LX.Music.MusicInfo, channel?: ChannelId, playlistId?: string, seedKey?: string, groupId?: string, chartId?: string) => {
@@ -340,23 +383,29 @@ class RecommendationEngine {
       })
     }
     const recentPlayedKeys = new Set(this.recentPlayed.map(item => buildTrackKey(item.musicInfo)))
-    for (const track of state.session.recentTracks) {
+    // 条目按真实播放顺序排列（旧→新）：窗口截断留下的才是紧邻新批次的曲目，
+    // 否则刚播过的歌手反而被裁掉、跨批次歌手间隔会失效
+    for (const track of [...state.session.recentTracks].reverse()) {
       if (recentPlayedKeys.has(track.trackKey)) continue
       const item = this.served.get(track.trackKey) ?? this.queue.snapshot().items.find(queueItem => buildTrackKey(queueItem.musicInfo) == track.trackKey)
       if (item) pushMusicInfo(item.musicInfo, track.channel ?? item.channel, track.sourcePlaylistId ?? item.sourcePlaylistId, track.sourceSeedTrackKey, track.sourceClusterId, track.sourceChartId)
     }
-    for (const item of this.queue.snapshot().items) {
-      pushMusicInfo(item.musicInfo, item.channel, item.sourcePlaylistId, item.sourceSeedTrackKey, item.sourceClusterId, item.sourceChartId != null ? String(item.sourceChartId) : undefined)
-    }
-    for (const item of this.recentPlayed) {
+    for (const item of [...this.recentPlayed].reverse()) {
       pushMusicInfo(item.musicInfo, item.channel, item.playlistId, item.seedKey, item.groupId, item.chartId)
     }
+    if (this.currentItem) pushMusicInfo(this.currentItem.musicInfo, this.currentItem.channel, this.currentItem.sourcePlaylistId, this.currentItem.sourceSeedTrackKey, this.currentItem.sourceClusterId, this.currentItem.sourceChartId != null ? String(this.currentItem.sourceChartId) : undefined)
     for (const item of playerState.tempPlayList) {
       const musicInfo = item.musicInfo
       if (!musicInfo || 'progress' in musicInfo) continue
       pushMusicInfo(musicInfo, undefined)
     }
-    if (this.currentItem) pushMusicInfo(this.currentItem.musicInfo, this.currentItem.channel, this.currentItem.sourcePlaylistId, this.currentItem.sourceSeedTrackKey, this.currentItem.sourceClusterId, this.currentItem.sourceChartId != null ? String(this.currentItem.sourceChartId) : undefined)
+    // 待补位曲目会先于新批次播出：跨批次歌手间隔必须看到它们，否则相邻批次会接上同一歌手
+    for (const item of this.pendingProvider?.() ?? []) {
+      pushMusicInfo(item.musicInfo, item.channel, item.sourcePlaylistId, item.sourceSeedTrackKey, item.sourceClusterId, item.sourceChartId != null ? String(item.sourceChartId) : undefined)
+    }
+    for (const item of this.queue.snapshot().items) {
+      pushMusicInfo(item.musicInfo, item.channel, item.sourcePlaylistId, item.sourceSeedTrackKey, item.sourceClusterId, item.sourceChartId != null ? String(item.sourceChartId) : undefined)
+    }
     return items.slice(-Math.max(1, limit))
   }
 
@@ -526,22 +575,38 @@ class RecommendationEngine {
       token = this.queue.getVersion()
       items = this.queue.shift(count, token)
     }
+    items = await this.filterServedItems(items)
     for (const item of items) this.rememberServed(item)
     return items
   }
 
   async getNextTrack(): Promise<RecommendQueueItem | null> {
     await this.initialize()
-    if (!this.queue.size()) {
-      // 队列暂空：异步触发补货并返回 null，由调用方稍后重试
-      void this.triggerRefresh('next_empty', 4).then(async() => this.generateQueue(cfg.queue.targetSize)).catch(() => {})
-      return null
-    }
     const token = this.queue.getVersion()
-    const [item] = this.queue.shift(1, token)
-    if (!item) return null
-    this.rememberServed(item)
-    return item
+    // 复检不过的曲目直接丢弃（歌库在入队后可能新增了同名同歌手的歌），继续取下一条
+    while (this.queue.size()) {
+      const [item] = this.queue.shift(1, token)
+      if (!item) break
+      if (await this.isTrackExcluded(item.musicInfo)) continue
+      this.rememberServed(item)
+      return item
+    }
+    // 队列暂空：异步触发补货并返回 null，由调用方稍后重试
+    void this.triggerRefresh('next_empty', 4).then(async() => this.generateQueue(cfg.queue.targetSize)).catch(() => {})
+    return null
+  }
+
+  /** 出队/补位前的排除复检：候选入池时不在库内，但用户之后可能刚收藏了同曲（含跨音源同名同歌手）。 */
+  async isTrackExcluded(musicInfo: LX.Music.MusicInfo): Promise<boolean> {
+    if (!this.stateReady) return false
+    const ctx = await this.buildExclusionContext()
+    return getExclusionReason(musicInfo, ctx) != null
+  }
+
+  private async filterServedItems(items: readonly RecommendQueueItem[]): Promise<RecommendQueueItem[]> {
+    if (!this.stateReady || !items.length) return [...items]
+    const ctx = await this.buildExclusionContext()
+    return items.filter(item => getExclusionReason(item.musicInfo, ctx) == null)
   }
 
   private rememberServed(item: RecommendQueueItem) {
@@ -717,6 +782,7 @@ class RecommendationEngine {
     const record = await finishRadioPlaybackTracking(reason)
     if (record) {
       finishRadioPlay(record, reason)
+      this.markProfileLearned()
       // 自然播完的曲目进入后台音频分析队列（best-effort，为音频品味质心积累样本）
       if (reason == 'natural_end' && finishedMusicInfo) {
         enqueueAudioAnalysis(record.trackKey, finishedMusicInfo)
@@ -730,7 +796,7 @@ class RecommendationEngine {
    * 安全模式熔断：连续多首不合胃口时，把引擎队列与已移交给播放器的待播曲目里
    * 命中近期负反馈歌手/歌单的那些撤下来（只撤曲目不删候选池），让补位走画像优先的新批次。
    */
-  private maybeEnterSafeMode(excludedTrackKey?: string) {
+  private maybeEnterSafeMode(excludeTrackKey?: string) {
     if (!this.stateReady) return
     const state = getState()
     const health = computeSessionHealth(state.session, new Set(Object.keys(state.dislikedTracks)))
@@ -815,6 +881,7 @@ class RecommendationEngine {
       const playId = this.currentTrackKey == trackKey ? this.currentPlayId ?? undefined : undefined
       applyExplicitFeedback({ type: 'dislike', trackKey, playId, name, singer })
       this.removeTrackEverywhere(trackKey)
+      this.markProfileLearned()
       // 显式不喜欢是强负反馈，立即评估是否熔断清队
       this.maybeEnterSafeMode(trackKey)
     } catch (error) {
@@ -839,6 +906,7 @@ class RecommendationEngine {
         sourcePlaylistId,
       })
       void this.creditImportedSources(trackKey, 'like', sourcePlaylistId)
+      this.markProfileLearned()
       // 喜欢后收藏索引即会排除该曲，异步补充少量不同歌手的新候选
       void this.triggerRefresh('liked_supplement', 4)
       this.removeTrackEverywhere(trackKey)
@@ -852,6 +920,7 @@ class RecommendationEngine {
     try {
       const trackKey = buildTrackKey(musicInfo)
       applyExplicitFeedback({ type: 'unlike', trackKey, playId: this.currentTrackKey == trackKey ? this.currentPlayId ?? undefined : undefined })
+      this.markProfileLearned()
       // 取消喜欢只撤回正向信号，不视为不感兴趣
     } catch (error) {
       recallLog('onUnlikedError', { message: error instanceof Error ? error.message : String(error) })
@@ -875,6 +944,7 @@ class RecommendationEngine {
         listId,
       })
       void this.creditImportedSources(trackKey, 'add_to_playlist', sourcePlaylistId)
+      this.markProfileLearned()
       this.removeTrackEverywhere(trackKey)
     } catch (error) {
       recallLog('onAddedToPlaylistError', { message: error instanceof Error ? error.message : String(error) })
@@ -920,6 +990,171 @@ class RecommendationEngine {
     return getState().candidateCache.length
   }
 
+  /** 画像每落一次反馈就自增；推荐 tab 的两个新区块用它判断是否要重新取。 */
+  getProfileRevision() {
+    return this.profileRevision
+  }
+
+  private markProfileLearned() {
+    this.profileRevision++
+  }
+
+  /** 首次进入问卷：UI 据此决定渲染问答还是正常内容，并用 weights 预填滑条。 */
+  async getOnboardingView(): Promise<{ completed: boolean, weights: Record<string, number> }> {
+    await this.initialize()
+    const onboarding = getState().onboarding
+    return { completed: onboarding.completed, weights: { ...onboarding.weights } }
+  }
+
+  /**
+   * 提交问卷：先撤销上一轮记录的初值分量，再按百分比写入新一轮。
+   * 空选择＝跳过（completed=true、无种子）；状态未就绪返回 false，让 UI 保留问卷下次重试。
+   */
+  async submitOnboarding(weights: Record<string, number>): Promise<boolean> {
+    await this.initialize()
+    if (!this.stateReady) return false
+    const state = getState()
+    const sanitized = sanitizeWeights(weights)
+    revokeSeedWeights(state.themeWeights, state.onboarding.seededThemeWeights)
+    const seeds = computeSeedWeights(sanitized)
+    applySeedWeights(state.themeWeights, seeds)
+    state.onboarding = { completed: true, weights: sanitized, seededThemeWeights: seeds }
+    this.markProfileLearned()
+    trimState()
+    saveState()
+    return true
+  }
+
+  private nextCuratedRotation() {
+    const rotation = this.curatedRotation
+    this.curatedRotation += 1
+    return rotation
+  }
+
+  /** 推荐 tab 定向化用的画像关键词：歌手/方向/种子与词面学习验证过的风格词。 */
+  private async buildCuratedKeywords(): Promise<string[]> {
+    const profile = await this.buildCurrentProfile()
+    return mergePreferenceKeywords(
+      buildPlaylistKeywords(profile, 8, getLearnedStyleTokens(getState().tokenWeights, 3)),
+      computePreferenceKeywords(getState().onboarding.weights),
+    )
+  }
+
+  /**
+   * 新歌速递：跨音源收集有"新歌"性质的榜单（新歌榜优先，无则飙升榜），
+   * 按画像关键词定向选榜（与电台 D 通道的榜单定向化同一配方），取回后按画像排序，
+   * 剔除已在自建歌单/已踩雷/电台近期播过的曲目。只读，不动电台队列。
+   */
+  async getCuratedNewSongs(count = 3): Promise<CuratedNewSongs> {
+    await this.initialize()
+    if (!this.stateReady) return { source: null, boardId: '', boardName: '', tracks: [] }
+    const state = getState()
+    const exclusionCtx = await this.buildExclusionContext()
+    const boards: ChartSummary[] = []
+    for (const source of RecommendationEngine.curationSources()) {
+      if (!getCatalogCapabilities(source).canChart) continue
+      try {
+        boards.push(...await getChartBoards(source))
+      } catch { /* 这个源的榜单目录拿不到就换下一个 */ }
+    }
+    if (!boards.length) return { source: null, boardId: '', boardName: '', tracks: [] }
+    const keywords = await this.buildCuratedKeywords()
+    const rotation = this.nextCuratedRotation()
+    // 选中的榜单整页都被过滤/拉取失败时把它移出候选再选一次，限制尝试次数控制请求量
+    const skipped = new Set<string>()
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const board = pickNewSongBoard(
+        boards.filter(item => !skipped.has(`${item.source}__${item.id}`)),
+        keywords,
+        rotation + attempt,
+      )
+      if (!board) break
+      try {
+        const result = await getChartTracks(board.source, board.id, 1)
+        const fresh = result.tracks
+          .filter(entry => !getExclusionReason(entry.musicInfo, exclusionCtx))
+          .map(entry => entry.musicInfo)
+        if (!fresh.length) {
+          skipped.add(`${board.source}__${board.id}`)
+          continue
+        }
+        return {
+          source: board.source,
+          boardId: board.id,
+          boardName: board.name,
+          tracks: rankTracksByProfile(fresh, { artistStats: state.artistStats, tokenWeights: state.tokenWeights }).slice(0, count),
+        }
+      } catch {
+        skipped.add(`${board.source}__${board.id}`)
+      }
+    }
+    return { source: null, boardId: '', boardName: '', tracks: [] }
+  }
+
+  /**
+   * 推荐歌单：用音源的完整分类目录，按"画像正偏好 + 关键词亲和"挑选分类——
+   * 多数轮次在学习到的分类里轮换，少数轮次放开到全目录探索，
+   * 语种/场景/心情等普通分组一并参与，不再固定在目录首位（官方组）。
+   * 由界面用它取带封面的歌单列表，冷启动时在全目录里按轮次游走。
+   */
+  async getCuratedPlaylistCategory(): Promise<CuratedCategory | null> {
+    await this.initialize()
+    if (!this.stateReady) return null
+    const state = getState()
+    const keywords = await this.buildCuratedKeywords()
+    const rotation = this.nextCuratedRotation()
+    for (const source of RecommendationEngine.curationSources()) {
+      const caps = getCatalogCapabilities(source)
+      if (!caps.canTags || !caps.canList) continue
+      try {
+        const tags = await getPlaylistTags(source)
+        if (!tags.length) continue
+        const sort = pickPlaylistSort(caps.sorts)
+        if (!sort) continue
+        const tag = pickPlaylistTag(tags, state.themeWeights, keywords, rotation)
+        if (!tag) continue
+        return { source, tagId: tag.id, tagName: tag.name, sortId: sort.id }
+      } catch { /* 分类目录拿不到就换下一个源 */ }
+    }
+    return null
+  }
+
+  /**
+   * 推荐歌单列表的个性化排序：界面取回一整页后交给这里，只读画像与踩雷名单，
+   * 不动电台队列、不写收藏。冷启动还没读到画像时原样返回音源热度序。
+   * 被「不感兴趣」隐藏的歌单在此确定性剔除。
+   */
+  async rankCuratedPlaylists<T extends { name?: string | null, author?: string | null }>(
+    playlists: readonly T[],
+  ): Promise<T[]> {
+    await this.initialize()
+    if (!this.stateReady || !playlists.length) return [...playlists]
+    const state = getState()
+    return rankPlaylistsByProfile(playlists, {
+      artistStats: state.artistStats,
+      tokenWeights: state.tokenWeights,
+      blocked: await this.getDislikeRules(),
+      hidden: state.hiddenPlaylists,
+    })
+  }
+
+  /**
+   * 推荐歌单「不感兴趣」：该歌单进入隐藏名单（推荐 tab 不再返回它），
+   * 歌单偏好记一笔负反馈并按所属分类整体降权（与电台结算共用一套账本），
+   * 画像版本自增让两个区块尽快按新口味重取。
+   */
+  async dislikeCuratedPlaylist(input: { source: LX.OnlineSource, id: string, category?: string }) {
+    await this.initialize()
+    if (!this.stateReady) return
+    const state = getState()
+    const playlistKey = normalizePlaylistKey(input.source, input.id)
+    state.hiddenPlaylists[playlistKey] = Date.now()
+    applyPlaylistNotInterested(playlistKey, input.category)
+    this.markProfileLearned()
+    trimState()
+    saveState()
+  }
+
   async resetProfile() {
     await resetState()
     await clearCandidateCache()
@@ -932,6 +1167,7 @@ class RecommendationEngine {
     this.lastRefreshReasons = []
     this.lastSafeModeAt = 0
     this.lastIdleCrawlAt = 0
+    this.curatedRotation = 0
     cachedDislike = null
     cancelRadioPlaybackTracking()
   }

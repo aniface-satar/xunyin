@@ -120,6 +120,8 @@ const ensureCommitted = async() => {
     const item = pending.shift()!
     const key = keyOf(item)
     if (radioTrackKeys.has(key)) continue
+    // 补位前复检：候选入池后用户可能刚把同名同歌手的歌收进我喜欢/自建歌单（跨音源也算）
+    if (await recommendationEngine.isTrackExcluded(item.musicInfo)) continue
     committedKeys.add(key)
     radioTrackKeys.add(key)
     addTempPlayList([{ musicInfo: item.musicInfo, listId: null }])

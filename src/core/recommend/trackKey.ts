@@ -67,6 +67,30 @@ export const canonicalWorkKey = (name: string, singer: string) => {
   return `work:${getBaseName(name)}__${normalizeText(singer)}`
 }
 
+/**
+ * 精确判重的文本归一化：只消除编码级差异（全角/半角、弯引号、多余空白），
+ * 不做简繁互换、别名映射等语义级模糊——少一个字母就不算同一首歌。
+ */
+export const normalizeExactText = (text: string | null | undefined): string => {
+  return normalizeText(
+    String(text ?? '')
+      .normalize('NFKC')
+      .replace(/[’‘ʼ`´]/g, "'")
+      .replace(/[“＂]/g, '"'),
+  )
+}
+
+/**
+ * 歌名+歌手都完全一致才算同一首歌的精确 key（跨音源收藏判重用）。
+ * 歌手侧按分隔符拆成歌手集合再排序，"A/B" 与 "A、B"、"B & A" 视为同一组歌手。
+ */
+export const exactPairKey = (name: string | null | undefined, singer: string | null | undefined): string => {
+  const artists = getArtistKeys(String(singer ?? ''))
+    .map(artist => normalizeExactText(artist))
+    .sort()
+  return `pair:${normalizeExactText(name)}__${artists.join('+')}`
+}
+
 const parseDurationSeconds = (interval: string | null | undefined): number | undefined => {
   if (!interval) return undefined
   const parts = String(interval).trim().split(':').map(part => parseInt(part, 10))
