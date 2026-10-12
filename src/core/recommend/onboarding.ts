@@ -140,10 +140,10 @@ export const revokeSeedWeights = (
 
 const MIN_KEYWORD_PERCENT = 20
 
-/** 进关键词池的规范词：≥20% 才贡献，按百分比降序（rotation 窗口从强偏好起滑）。 */
+/** 进关键词池的规范词：≥20% 才贡献，按百分比降序（rotation 窗口从强偏好起滑）。停在 50% 不算表态。 */
 export const computePreferenceKeywords = (weights: Record<string, number>): string[] => {
   return ONBOARDING_OPTIONS
-    .filter(option => (weights[option.id] ?? 0) >= MIN_KEYWORD_PERCENT)
+    .filter(option => (weights[option.id] ?? 0) >= MIN_KEYWORD_PERCENT && weights[option.id] != NEUTRAL_PERCENT)
     .sort((a, b) => (weights[b.id] ?? 0) - (weights[a.id] ?? 0))
     .map(option => normalizeText(option.aliases[0]))
     .filter(Boolean)

@@ -214,3 +214,10 @@ test('running the v8 migration twice lands on the same place', () => {
   assert.deepEqual(twice.onboarding, once.onboarding)
   assert.deepEqual(twice.themeWeights, once.themeWeights)
 })
+
+test('停在 50% 的选项不贡献关键词池条目（存量脏 50 不算偏好）', () => {
+  // sanitizeWeights 写侧丢 50，但 v9 迁移把 Task 8/9 存量的 {zh: 50} 原样搬过来；
+  // 关键词池只管 >=20 的门槛，不挡就会让"没意见"的语言进选榜定向，和新配额契约自相矛盾
+  assert.deepEqual(computePreferenceKeywords({ zh: 50 }), [])
+  assert.deepEqual(computePreferenceKeywords({ zh: 50, ko: 80 }), ['韩语'])
+})
