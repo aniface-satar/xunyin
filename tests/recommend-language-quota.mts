@@ -75,8 +75,9 @@ test('同语言连播硬规则只看尾部连续段，不看全窗口', () => {
   assert.equal(consecutiveLangAllowed(['en', 'en'], 'zh'), true)
   assert.equal(consecutiveLangAllowed(['unknown', 'unknown'], 'unknown'), true)
   assert.equal(consecutiveLangAllowed(['unknown', 'unknown'], 'zh'), true)
-  // 下面两条才是"尾部"而非"全窗口"的证据：全窗口计数会数到 2 个 zh 而误拦
+  // 只有第一条能区分"尾部连续段"和"全窗口计数"：全窗口会数到 2 个 zh 而误拦
   assert.equal(consecutiveLangAllowed(['zh', 'en', 'en', 'en', 'zh'], 'zh'), true)
+  // 第二条是反面补位：尾部真攒够 2 连照样拦
   assert.equal(consecutiveLangAllowed(['en', 'en', 'en', 'zh', 'zh'], 'zh'), false)
 })
 
