@@ -119,9 +119,11 @@ export const mergePoolCandidates = (
       confirmedSeedPlaylist: prev.confirmedSeedPlaylist || candidate.confirmedSeedPlaylist,
       reasons: [...new Set([...prev.reasons, ...candidate.reasons])],
       // L1 事实以较新的一份为准（同一首不同批次里，后到的更可能是重新拉取的现值）；
-      // 只有旧的一边有 L1 时保留它；langHint 同理取先出现的那个（提示来自更可信的批次）
-      lang: candidate.lang ?? prev.lang,
-      langHint: prev.langHint ?? candidate.langHint,
+      // 只有旧的一边有 L1 时保留它；langHint 同理取先出现的那个（提示来自更可信的批次）。
+      // 两边都没有时整键缺席（不能写 lang: undefined）：池子每轮刷新都在内存里合一次，
+      // 幽灵键会让 Task 7 的 `!('lang' in candidate)` 读时推导永远跳过这些候选。
+      ...(candidate.lang ?? prev.lang ? { lang: candidate.lang ?? prev.lang } : {}),
+      ...(prev.langHint ?? candidate.langHint ? { langHint: prev.langHint ?? candidate.langHint } : {}),
       addedAt: Math.min(prev.addedAt, candidate.addedAt),
     })
   }

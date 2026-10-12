@@ -62,3 +62,23 @@ test('mergePoolCandidates keeps langHint from incoming when existing has none', 
   assert.equal(merged.lang, 'zh')
   assert.equal(merged.langHint, 'en')
 })
+
+test('mergePoolCandidates keeps the lang key absent when neither side knows it', () => {
+  const bare = createPoolCandidate(baseInput(musicInfoOf({})))
+  const [merged] = mergePoolCandidates([bare], [createPoolCandidate(baseInput(musicInfoOf({})))])
+  assert.equal('lang' in merged, false)
+  assert.equal('langHint' in merged, false)
+})
+
+test('mergePoolCandidates output survives a JSON round trip', () => {
+  // 候选池落盘是整池 JSON 重写，所以"键缺席"必须能穿过序列化仍然是缺席
+  // trackKey 只由 name+singer 决定，所以两首必须用不同歌名才真的是池里的两条候选
+  const known = createPoolCandidate(baseInput(musicInfoOf({ songmid: 'a', name: '喜欢你', lang: '粤语' })))
+  const bare = createPoolCandidate(baseInput(musicInfoOf({ songmid: 'b', name: '泡沫' })))
+  const revived = JSON.parse(JSON.stringify(mergePoolCandidates([known], [bare])))
+  assert.equal(revived.length, 2)
+  const withLang = revived.find((c: any) => c.musicInfo.id == 'kg_a')
+  const withoutLang = revived.find((c: any) => c.musicInfo.id == 'kg_b')
+  assert.equal(withLang.lang, 'yue')
+  assert.equal('lang' in withoutLang, false)
+})
