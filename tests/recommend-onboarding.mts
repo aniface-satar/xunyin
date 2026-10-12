@@ -187,7 +187,9 @@ test('running the v8 migration twice lands on the same place', () => {
     华语: -1.6, 国语: -1.6, 中文: -1.6, 内地: -1.6,
     欧美: 4, 英文: 4, 英语: 4, 西洋: 4,
   })
-  assert.equal(Object.keys(once.themeWeights).length, 8, '老分量退干净了，新分量一条不多一条不少')
+  assert.equal(Object.keys(once.themeWeights).length, 8, '四个别名各一条，没多出残留条目')
+  // 键数抓不到"没退干净"：老 +4 若退不掉，欧美 会是 8 而不是 4，键数照旧
+  assert.equal(once.themeWeights['欧美'].positiveWeight, 4, '老分量退干净了，新分量一条不多一条不少')
   const twice = migrateRecommendationState(once)
   assert.deepEqual(twice.onboarding, once.onboarding)
   assert.deepEqual(twice.themeWeights, once.themeWeights)
