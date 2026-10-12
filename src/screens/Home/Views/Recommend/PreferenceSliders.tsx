@@ -4,7 +4,7 @@ import Text from '@/components/common/Text'
 import Slider from '@/components/common/Slider'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
-import { ONBOARDING_OPTIONS, type OnboardingOptionId } from '@/core/recommend/onboarding'
+import { ONBOARDING_OPTIONS, NEUTRAL_PERCENT, type OnboardingOptionId } from '@/core/recommend/onboarding'
 import { createStyle } from '@/utils/tools'
 
 const PreferenceRow = ({ id, percent, onChange }: {
@@ -49,7 +49,7 @@ const PreferenceSections = ({ weights, onChange }: {
         <PreferenceRow
           key={option.id}
           id={option.id}
-          percent={weights[option.id] ?? 0}
+          percent={weights[option.id] ?? NEUTRAL_PERCENT}
           onChange={onChange}
         />
       ))}

@@ -26,8 +26,8 @@ export default () => {
   const handleChange = (id: OnboardingOptionId, percent: number) => {
     setWeights(current => {
       const next = { ...current }
-      if (percent > 0) next[id] = percent
-      else delete next[id]
+      // 0% 是有效的"不要"，这里偷偷 delete 会把整条 0% 契约抹平
+      next[id] = percent
       return next
     })
   }

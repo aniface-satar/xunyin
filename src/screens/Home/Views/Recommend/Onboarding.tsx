@@ -24,13 +24,14 @@ const Onboarding = ({ initialWeights, onCompleted }: Props) => {
   const [weights, setWeights] = useState<Record<string, number>>(initialWeights)
   const [submitting, setSubmitting] = useState(false)
   const dialogRef = useRef<DialogType>(null)
-  const hasSelection = useMemo(() => Object.values(weights).some(percent => percent > 0), [weights])
+  // 只看滑没滑过，不看值：滑到 0% 是有效的"不要"
+  const hasSelection = useMemo(() => Object.keys(weights).length > 0, [weights])
 
   const handleChange = (id: OnboardingOptionId, percent: number) => {
     setWeights(current => {
       const next = { ...current }
-      if (percent > 0) next[id] = percent
-      else delete next[id]
+      // 0% 要留在 weights 里：这里 delete 掉，上面的 hasSelection 就永远为 false，0% 从界面上够不着
+      next[id] = percent
       return next
     })
   }
