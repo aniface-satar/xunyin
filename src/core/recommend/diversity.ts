@@ -38,6 +38,8 @@ export interface FinalQueueItem {
   albumKey: string
   /** 语种桶：配额与连播硬规则的唯一依据。undefined 与 unknown 同义——不受配额约束。 */
   lang?: LangBucket
+  /** 语种判定的命中级别：0=判不出 1=接口字段 2=桶提示 3=歌手表 4=字面统计。只用于诊断日志。 */
+  langLevel?: 0 | 1 | 2 | 3 | 4
   /** 作品级 key（忽略 Live/Remix 等版本差异），用于软降频而非硬排除。 */
   workKey?: string
   sourcePlaylistId?: string

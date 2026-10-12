@@ -8,7 +8,7 @@ import { getDislikeInfo } from '@/utils/dislikeManage'
 import { buildTrackKey, getAlbumName, getArtistKeys, getPrimaryArtist } from './trackKey.ts'
 import { bucketFromLangField, bucketFromLyric, resolveLang } from './language.ts'
 import type { LangBucket } from './language.ts'
-import { computeLangCaps, computeLangTargets, countLangUsed, countPoolLang } from './languageQuota.ts'
+import { computeLangCaps, computeLangTargets, computePoolBucketLimits, countLangUsed, countPoolLang } from './languageQuota.ts'
 import { recommendationConfig as cfg } from './config.ts'
 import { loadState, getState, saveState, resetState, trimState, flushState } from './storage.ts'
 import { loadCandidateCache, setCandidateCache, saveCandidateCache, clearCandidateCache } from './candidateStore.ts'
@@ -21,7 +21,7 @@ import { createRadioQueue } from './queue.ts'
 import { createSession } from './session.ts'
 import { planChannelQuotas } from './channels.ts'
 import { selectFinalQueue, type FinalQueueItem } from './diversity.ts'
-import { buildFinalQueueItems, filterPoolCandidates, mergePoolCandidates, poolStats } from './candidatePool.ts'
+import { buildFinalQueueItems, filterPoolCandidates, mergePoolCandidates, poolStats, resolvePoolLang } from './candidatePool.ts'
 import { computePlaylistAudioAffinity, enqueueAudioAnalysis } from './audioFeature.ts'
 import { refreshExternalCandidates, type CatalogRefreshParams, type KnownExternalPlaylist } from './candidate.ts'
 import { getCatalogCapabilities, getChartBoards, getChartTracks, getPlaylistTags, type ChartSummary } from './sdkCatalog.ts'
@@ -291,6 +291,13 @@ class RecommendationEngine {
         this.getKnownExternalPlaylists(),
       ])
       const exclusion = await this.buildExclusionContext()
+      const langTargets = computeLangTargets(state.onboarding.weights, cfg.channels.windowSize)
+      const poolLimits = computePoolBucketLimits({
+        targets: langTargets,
+        maxSize: cfg.candidatePool.maxSize,
+        windowSize: cfg.channels.windowSize,
+        slack: cfg.candidatePool.poolEvictOverQuotaSlack,
+      })
       const params: CatalogRefreshParams = {
         source,
         profile,
@@ -306,7 +313,8 @@ class RecommendationEngine {
         explicitKeywords: computePreferenceKeywords(state.onboarding.weights),
         now: Date.now(),
         budget,
-        langTargets: computeLangTargets(state.onboarding.weights, cfg.channels.windowSize),
+        langTargets,
+        artistLangTable: getArtistLangTable(),
         rotation: Math.floor(Date.now() / (5 * 60 * 1000)),
       }
       const result = await refreshExternalCandidates(params)
@@ -321,7 +329,10 @@ class RecommendationEngine {
       for (const id of evictions) delete observed[id]
       state.observedPlaylists = observed
       state.trackPlaylistIndex = buildTrackPlaylistIndex(Object.values(observed))
-      state.candidateCache = mergePoolCandidates(state.candidateCache, result.candidates, cfg.candidatePool.maxSize)
+      state.candidateCache = mergePoolCandidates(state.candidateCache, result.candidates, cfg.candidatePool.maxSize, {
+        limits: poolLimits,
+        resolveBucket: candidate => resolvePoolLang(candidate, getArtistLangTable()).bucket,
+      })
       // 用最新排除集重新过滤候选，避免抓取期间新增收藏或屏蔽的内容残留
       state.candidateCache = filterPoolCandidates(state.candidateCache, exclusion)
       state.candidateCacheFetchedAt = Date.now()
@@ -334,7 +345,7 @@ class RecommendationEngine {
       recallLog('refresh', {
         reason,
         requests: result.requests,
-        pool: poolStats(state.candidateCache),
+        pool: poolStats(state.candidateCache, candidate => resolvePoolLang(candidate, getArtistLangTable()).bucket),
         reasons: result.reasons.slice(-5),
       })
       return result.candidates.length > 0 || state.candidateCache.length >= cfg.candidatePool.minCacheForInstantStart
@@ -502,6 +513,7 @@ class RecommendationEngine {
       tokenWeights: state.tokenWeights,
       artistStats: state.artistStats,
       timeSlotFactor: computeTimeSlotAffinity(state.radioHistory, Date.now()).factorFor,
+      artistLangTable: getArtistLangTable(),
     })
     if (!finalItems.length) return false
     const availability: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0 }
@@ -568,6 +580,11 @@ class RecommendationEngine {
     const langUnmet = Object.keys(langTargets.targets)
       .filter(bucket => (poolLangCounts[bucket as LangBucket] ?? 0) === 0)
       .map(bucket => `lang_unmet:${bucket}`)
+    const langLevels: Record<string, number> = {}
+    for (const item of finalItems) {
+      const key = `L${item.langLevel ?? 0}`
+      langLevels[key] = (langLevels[key] ?? 0) + 1
+    }
     recallLog('generate', {
       requested: target,
       selected: queueItems.length,
@@ -581,6 +598,7 @@ class RecommendationEngine {
       reasons: selection.reasons,
       langCaps: langCaps.caps,
       langUnmet,
+      langLevels,
       health: {
         streak: health.negativeStreak,
         rate: health.negativeRate,
@@ -588,7 +606,7 @@ class RecommendationEngine {
         explorationFactor: health.explorationFactor,
         safeMode: health.safeMode,
       },
-      pool: poolStats(state.candidateCache),
+      pool: poolStats(state.candidateCache, candidate => resolvePoolLang(candidate, getArtistLangTable()).bucket),
     })
     return accepted
   }

@@ -1,6 +1,7 @@
 import { recommendationConfig } from './config.ts'
 import { buildTrackKey, canonicalWorkKey, getAlbumName, getArtistKeys, getPrimaryArtist, normalizeText } from './trackKey.ts'
-import { bucketFromLangField, type LangBucket } from './language.ts'
+import { bucketFromLangField, resolveLang } from './language.ts'
+import type { ArtistLangTable, LangBucket } from './language.ts'
 import { getExclusionReason, type ExclusionContext } from './filter.ts'
 import { computePlaylistScore, computeProfileAffinity, decayWeight } from './similarity.ts'
 import { sessionPenaltyFactor, sessionPenaltyScore, type SessionPenalties } from './sessionHealth.ts'
@@ -8,6 +9,43 @@ import { nameTokenFactor, type TokenWeightMap } from './tokenFeedback.ts'
 import { artistPriorFactor, type ArtistStatsMap } from './artistPrior.ts'
 import type { ChannelId, PlaylistPreference, PoolCandidate, ObservedPlaylist, RadioMode } from './types.ts'
 import type { FinalQueueItem } from './diversity.ts'
+
+
+/** 候选上语种能从哪几处读到——resolvePoolLang 的输入形状。 */
+export interface PoolLangBearing {
+  lang?: LangBucket
+  langHint?: LangBucket | null
+  artistKeys?: readonly string[]
+  musicInfo: { source: string, name: string, singer: string, meta?: { lang?: string | number | null } }
+}
+
+/** 裁剪时的语种约束：limits 缺席即该桶不受限，resolveBucket 缺席即只认已存的 lang/langHint。 */
+export interface PoolCapOptions {
+  /** 各桶在池里的名额上限；缺席即代表该桶不受淘汰约束。 */
+  limits?: Partial<Record<LangBucket, number>>
+  /** 桶判定器：默认只认已存的 lang / langHint，调用方可传读时推导结果。 */
+  resolveBucket?: (candidate: PoolCandidate) => LangBucket
+}
+
+/**
+ * 读时推导（spec §3.4）：不往候选数据里写推导结果，用的时候现算。
+ * 候选池落盘是整池 JSON 重写且没有版本戳，一次误写就把磁盘缓存改了；
+ * 老候选缺 lang 键也不该被当成"永远判不出"。
+ */
+export const resolvePoolLang = (
+  candidate: PoolLangBearing,
+  table?: ArtistLangTable,
+): { bucket: LangBucket, level: 0 | 1 | 2 | 3 | 4 } => {
+  if (candidate.lang) return { bucket: candidate.lang, level: 1 }
+  return resolveLang({
+    source: candidate.musicInfo.source,
+    langField: candidate.musicInfo.meta?.lang,
+    name: candidate.musicInfo.name,
+    singer: candidate.musicInfo.singer,
+    langHint: candidate.langHint ?? null,
+    artistKeys: candidate.artistKeys,
+  }, table)
+}
 
 
 /**
@@ -86,6 +124,7 @@ export const mergePoolCandidates = (
   existing: readonly PoolCandidate[],
   incoming: readonly PoolCandidate[],
   maxSize = recommendationConfig.candidatePool.maxSize,
+  capOptions?: PoolCapOptions,
 ): PoolCandidate[] => {
   const byKey = new Map<string, PoolCandidate>()
   for (const candidate of existing) byKey.set(candidate.trackKey, { ...candidate })
@@ -127,12 +166,17 @@ export const mergePoolCandidates = (
       addedAt: Math.min(prev.addedAt, candidate.addedAt),
     })
   }
-  return capPoolSize([...byKey.values()], maxSize)
+  return capPoolSize([...byKey.values()], maxSize, capOptions)
 }
 
+/**
+ * 按分数裁剪到 maxSize；只在真的超额时动手。
+ * 池子没满就不淘汰：语种靠供给补齐（candidate.ts 步骤 4.5），不靠把已有候选赶出去。
+ */
 export const capPoolSize = (
   candidates: readonly PoolCandidate[],
   maxSize = recommendationConfig.candidatePool.maxSize,
+  options?: PoolCapOptions,
 ): PoolCandidate[] => {
   if (candidates.length <= maxSize) return [...candidates]
   const sorted = [...candidates].sort((a, b) => {
@@ -141,7 +185,29 @@ export const capPoolSize = (
     if (scoreA != scoreB) return scoreB - scoreA
     return b.addedAt - a.addedAt
   })
-  return sorted.slice(0, maxSize)
+  const bucketOf = options?.resolveBucket ?? ((candidate: PoolCandidate) => candidate.lang ?? candidate.langHint ?? 'unknown')
+  const limits = options?.limits
+  if (!limits || !Object.keys(limits).length) return sorted.slice(0, maxSize)
+  const kept: PoolCandidate[] = []
+  const overflow: PoolCandidate[] = []
+  const used: Partial<Record<LangBucket, number>> = {}
+  for (const candidate of sorted) {
+    const bucket = bucketOf(candidate)
+    const limit = limits[bucket]
+    if (limit !== undefined && (used[bucket] ?? 0) >= limit) {
+      overflow.push(candidate)
+      continue
+    }
+    used[bucket] = (used[bucket] ?? 0) + 1
+    kept.push(candidate)
+    if (kept.length >= maxSize) break
+  }
+  // 限额卡不住时池子仍会缺位：用超配桶的候选按分数补满，宁多几个华语也不让池子空着
+  for (const candidate of overflow) {
+    if (kept.length >= maxSize) break
+    kept.push(candidate)
+  }
+  return kept
 }
 
 export const filterPoolCandidates = (candidates: readonly PoolCandidate[], ctx: ExclusionContext): PoolCandidate[] => {
@@ -183,6 +249,8 @@ export interface FinalQueueBuildOptions {
   artistStats?: ArtistStatsMap
   /** 时段画像因子（当前时段的歌手听感），画像通道温和加成。 */
   timeSlotFactor?: (artistKeys: readonly string[]) => number
+  /** 歌手语言表：读时推导 L3 用，缺表时 L3 自动跳过、由 L4 落桶。 */
+  artistLangTable?: ArtistLangTable
 }
 
 const playlistScoreFor = (
@@ -291,6 +359,7 @@ export const buildFinalQueueItems = (
     const channels = (Object.keys(channelWeights) as ChannelId[]).filter(channel => channelWeights[channel] != null)
     const exposureCount = options.exposureCounts?.[candidate.trackKey] ?? candidate.exposureCount
     const maxWeight = channels.reduce((max, channel) => Math.max(max, channelWeights[channel] ?? 0), 0)
+    const resolvedLang = resolvePoolLang(candidate, options.artistLangTable)
     return {
       key: candidate.trackKey,
       channels: channels.length ? channels : candidate.channels,
@@ -299,7 +368,8 @@ export const buildFinalQueueItems = (
       primaryArtist: candidate.primaryArtist,
       artistKeys: candidate.artistKeys,
       albumKey: candidate.albumKey,
-      lang: candidate.lang,
+      lang: resolvedLang.bucket,
+      langLevel: resolvedLang.level,
       workKey: canonicalWorkKey(candidate.musicInfo.name, candidate.musicInfo.singer),
       sourcePlaylistId: candidate.playlistIds[0],
       sourceSeedTrackKey: candidate.seedTrackKeys[0],
@@ -312,14 +382,19 @@ export const buildFinalQueueItems = (
   })
 }
 
-export const poolStats = (candidates: readonly PoolCandidate[]) => {
+export const poolStats = (candidates: readonly PoolCandidate[], resolveBucket?: (candidate: PoolCandidate) => LangBucket) => {
   const byChannel: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0 }
+  const byLang: Partial<Record<LangBucket, number>> = {}
+  const bucketOf = resolveBucket ?? ((candidate: PoolCandidate) => candidate.lang ?? candidate.langHint ?? 'unknown')
   for (const candidate of candidates) {
     for (const channel of candidate.channels) byChannel[channel] += 1
+    const bucket = bucketOf(candidate)
+    byLang[bucket] = (byLang[bucket] ?? 0) + 1
   }
   return {
     total: candidates.length,
     byChannel,
+    byLang,
     confirmed: candidates.filter(candidate => candidate.confirmedSeedPlaylist).length,
   }
 }

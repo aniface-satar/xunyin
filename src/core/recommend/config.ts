@@ -211,6 +211,8 @@ export const recommendationConfig = {
     newestListRatio: 0.7,
     /** 每轮直采的画像强歌手数（各搜一次热门歌，轮换不同歌手）。 */
     artistHitsPerRefresh: 2,
+    /** 淘汰限额相对"窗口目标数按池规模等比放大"再乘的宽松系数：越小越狠。 */
+    poolEvictOverQuotaSlack: 1.5,
   },
 
   /**

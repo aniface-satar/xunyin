@@ -171,3 +171,24 @@ export const computeBucketDetailReserve = (options: {
   const want = options.unknownShare > options.escalateAt ? options.escalateTo : options.base
   return Math.max(0, Math.min(want, Math.max(0, Math.floor(options.detailBudget) - 1)))
 }
+
+/**
+ * 把"20 首窗口里的目标首数"放大成"池里允许存在多少首"，再乘宽松系数：
+ * 淘汰是慢变量（下次抓取才能补货），卡太死会让某语种突然断供。
+ */
+export const computePoolBucketLimits = (options: {
+  targets: LangTargets
+  maxSize: number
+  windowSize: number
+  slack: number
+}): Partial<Record<LangBucket, number>> => {
+  if (!options.targets.enforced) return {}
+  const window = Math.max(1, Math.floor(options.windowSize))
+  const limits: Partial<Record<LangBucket, number>> = {}
+  for (const bucket of QUOTA_LANG_BUCKETS) {
+    const target = options.targets.targets[bucket]
+    if (target === undefined) continue
+    limits[bucket] = Math.ceil(target * (Math.max(0, options.maxSize) / window) * Math.max(1, options.slack))
+  }
+  return limits
+}

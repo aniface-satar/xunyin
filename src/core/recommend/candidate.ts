@@ -3,14 +3,14 @@ import { buildTrackKey, exactPairKey, getArtistKeys, normalizeText } from './tra
 import { buildTrackPlaylistIndex, computeCandidateCoOccurrence, computeProfileAffinity, groupSimilarPlaylists } from './similarity.ts'
 import { buildPlaylistKeywords, pickChartBoard } from './profile.ts'
 import { getLearnedStyleTokens } from './tokenFeedback.ts'
-import { createPoolCandidate, mergePoolCandidates, planRefreshBudget } from './candidatePool.ts'
+import { createPoolCandidate, mergePoolCandidates, planRefreshBudget, resolvePoolLang } from './candidatePool.ts'
 import { themeAffinityFactor, themeNetWeight } from './feedback.ts'
 import { computePlayCountNumber, computeWeakThemeScore, normalizePlaylistKey, upsertObservedPlaylist, type PlaylistObservationInput } from './playlistIndex.ts'
 import { getCatalogCapabilities, getChartBoards, getChartTracks, getPlaylistDetailPage, getPlaylistTags, getPlaylistsByTag, searchMusic, searchPlaylists } from './sdkCatalog.ts'
 import { computeBucketDetailReserve, countPoolLang } from './languageQuota.ts'
 import { pickPlaylistSort, pickWeightedTag, planLangBucketFetch } from './tabSections.ts'
 import type { LangTargets } from './languageQuota.ts'
-import type { LangBucket } from './language.ts'
+import type { ArtistLangTable, LangBucket } from './language.ts'
 import type { SortSummary, TagSummary } from './sdkCatalog.ts'
 import type { DislikeRules } from './filter.ts'
 import type { ChannelId, ObservedPlaylist, PoolCandidate, RadioProfile, RecommendationState } from './types.ts'
@@ -43,6 +43,8 @@ export interface CatalogRefreshParams {
   rotation?: number
   /** 语种硬配额的目标数（由引擎按问卷算好传入）；本模块据此决定要不要补哪个语种的货。 */
   langTargets?: LangTargets
+  /** 歌手语言表：算池内语种分布时做读时推导，老候选不至于全算成 unknown。 */
+  artistLangTable?: ArtistLangTable
 }
 
 export interface CatalogRefreshResult {
@@ -369,7 +371,9 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
   let unknownShare = 0
   if (params.langTargets?.enforced) {
     const poolCandidates = params.state.candidateCache
-    const poolCounts = countPoolLang(poolCandidates)
+    const poolCounts = countPoolLang(poolCandidates.map(candidate => ({
+      lang: resolvePoolLang(candidate, params.artistLangTable).bucket,
+    })))
     // 缺口折算要垫到 targetSize（池还小时也得按满池的目标推），
     // 但 unknown 占比必须用真实长度：分母垫到 500 会让 spec §3.3 的"unknown > 30% 优先补货"
     // 在冷启动阶段永远够不着阈值，而那正是 unknown 最浓、最需要 L1 补货的时候。
