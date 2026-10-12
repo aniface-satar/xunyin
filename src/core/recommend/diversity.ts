@@ -131,10 +131,11 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       langQuotaEnforced: false,
     },
     {
-      // 最后一档：连"同歌手隔 4 首"都满足不了时才走到这里
-      // 下一行的字面值只是占位：selectFinalQueue 取完档位后会把它改写成 minArtistGap，所以第 3、4 档的间隔并不相同。
-      // 候选枯竭时的新契约是宁可少出几首（并记 no_candidate_after_relaxation），不再靠把间隔归零把队列凑满
-      artistGap: c.relaxArtistGaps[2] ?? 4,
+      // 阶梯的字面值读法：档位 0/1 用 c.artistGap，档位 2/3 用 c.relaxArtistGaps[1]/[2]，末档直读 c.minArtistGap。
+      // 最后一档：连"同歌手隔 4 首"都满足不了时才走到这里，但间隔不归零——同歌手连推是用户明确投诉过的观感问题。
+      // 候选枯竭时的契约是宁可少出几首（并记 no_candidate_after_relaxation，见 selectFinalQueue 的 fallback 分支），
+      // 不再靠把间隔归零把队列凑满。
+      artistGap: c.minArtistGap,
       sameArtistInLast30: c.relaxSameArtistInLast30,
       samePlaylistInLast20: c.relaxSamePlaylistInLast20,
       sameAlbumInLast20: c.relaxSameAlbumInLast20,
@@ -220,9 +221,6 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
   const temperature = options.temperature ?? recommendationConfig.softmax.temperature
   const explorationGap = Math.max(0, options.explorationGap ?? 0)
   const relaxConfigs = getRelaxConfigs()
-  // 最后一档也保持 minArtistGap，不再归零：同歌手连推是用户明确投诉过的观感问题，
-  // 候选枯竭时让它少出几首并记 no_candidate_after_relaxation（下面 fallback 分支的既有 reason），也不要连推
-  relaxConfigs[relaxConfigs.length - 1].artistGap = recommendationConfig.antiRepeat.minArtistGap
   const target = Math.max(0, options.target)
   const history: FinalQueueItem[] = (options.recent ?? []).slice(-60)
   // 必须克隆 caps：本函数是纯函数，直接扣 options.langCaps.caps 会把调用方的额度吃掉，

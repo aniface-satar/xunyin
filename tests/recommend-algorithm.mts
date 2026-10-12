@@ -2032,9 +2032,14 @@ test('artist relaxation never dips below the four-song floor before the last run
   assert.ok(antiRepeat.relaxArtistGaps.every(gap => gap >= 4), `relax ladder dipped below 4: ${antiRepeat.relaxArtistGaps.join(',')}`)
   assert.ok(antiRepeat.minArtistGap >= 1, 'the last rung must still keep at least one song in between')
   assert.ok(antiRepeat.relaxArtistGaps.every((gap, i) => i == 0 || gap <= antiRepeat.relaxArtistGaps[i - 1]), 'relax ladder must not widen back up')
-  // 末档由 minArtistGap 覆写，所以单调性还得把它算进来：比 relaxArtistGaps 末值还大就等于最后一档反而更严
+  // 末档直读 minArtistGap，所以单调性还得把它算进来：比 relaxArtistGaps 末值还大就等于最后一档反而更严
   assert.ok(antiRepeat.minArtistGap <= antiRepeat.relaxArtistGaps[antiRepeat.relaxArtistGaps.length - 1],
     `last rung turned out stricter than the one before it: minArtistGap=${antiRepeat.minArtistGap} vs ${antiRepeat.relaxArtistGaps.join(',')}`)
+  // 末档是唯一允许放松"最近 30 首同歌手计数"的档位，反过来的话阶梯越放宽越严。
+  // 这条放松关系既没有代码维护（末档的间隔现在是直读，不再是 selectFinalQueue 的事后覆写），
+  // 也没有别的用例钉着，只能钉在这里。
+  assert.ok(antiRepeat.sameArtistInLast30 <= antiRepeat.relaxSameArtistInLast30,
+    `last rung turned out stricter than the earlier ones on the 30-song artist count: sameArtistInLast30=${antiRepeat.sameArtistInLast30} vs relaxSameArtistInLast30=${antiRepeat.relaxSameArtistInLast30}`)
 
   // 备选充足时，任何歌手的两首歌之间至少隔着 4 首其他歌手的歌
   const repeats = ['X', 'Y', 'Z'].flatMap(artist => Array.from(

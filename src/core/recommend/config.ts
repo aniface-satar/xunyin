@@ -253,9 +253,9 @@ export const recommendationConfig = {
     categoryRotationTemperature: 1.2,
     /** 相邻两个探索通道（C/D）曲目之间至少要隔多少首非探索曲目，防止连续 unfamiliar。 */
     explorationGap: 1,
-    /** 候选不足时按顺序放宽歌手间隔；下限 4 首——同歌手至少隔 4 首，最后一档由 minArtistGap 兜住。 */
+    /** 候选不足时放宽歌手间隔的阶梯表；下限 4 首——同歌手至少隔 4 首。阶梯并不按顺序读它：只有 [1]（值 6）喂档位 2、[2]（值 4）喂档位 3，[0] 目前没有档位引用；末档不取本数组，直读下面的 minArtistGap。 */
     relaxArtistGaps: [8, 6, 4],
-    /** 最后一档（所有候选都满足不了间隔时）也保持的最小间隔；0 会直接造成同歌手连推。由 selectFinalQueue 取完档位后覆写末档；取值不得大于 relaxArtistGaps 的末值，否则阶梯越放宽越宽。 */
+    /** 最后一档（所有候选都满足不了间隔时）也保持的最小间隔；0 会直接造成同歌手连推。diversity.ts 的阶梯末档直读它；取值不得大于 relaxArtistGaps 的末值，否则阶梯越放宽越宽——这条护栏钉在 tests/recommend-algorithm.mts 的 "artist relaxation never dips below the four-song floor before the last rung" 用例里。 */
     minArtistGap: 2,
     /** 抽样软惩罚：同歌手出现在最近 N 首内时权重乘该系数（硬门槛之外的第二道闸）。
      * 调这两个窗口/系数的自动化护栏是 recommend-algorithm.mts 里"两个歌手都等到末档"那条用例：

@@ -196,6 +196,15 @@ export const updateArtistLangTable = (
     const key = typeof rawKey == 'string' ? rawKey.trim() : ''
     if (!key) continue
     const prev = table[key]
+    // 表是从磁盘读回来的，编译器管不到单条目。缺 strength 会让上下两次比较同时 NaN-false，
+    // 永远落在"同强度"分支、两个出口又都只 {...prev} 原样铺开——连一次 field 观测都救不回来；
+    // 缺 hits 会把 NaN 一路写下去（存盘成 null），淘汰排序还把 NaN 当"跟谁都相等"，
+    // 让正常的低 hits 条目被垃圾条目挤掉。就地补成数字：脏条目按"最弱证据"重生，
+    // 两个音源强度都 > 0（lyric 1 / field 2），所以下一次观测必然覆盖它。
+    if (prev) {
+      if (!Number.isFinite(prev.hits)) prev.hits = 0
+      if (!Number.isFinite(prev.strength)) prev.strength = 0
+    }
     if (!prev) {
       table[key] = { bucket, hits: 1, strength, updatedAt: now }
       continue

@@ -183,3 +183,19 @@ test('resolveLang L3 drops malformed table entries instead of short-circuiting L
     { bucket: 'yue', level: 3 },
   )
 })
+
+test('脏条目救得回来：缺 strength 与缺 hits 都会被下一次观测覆盖', () => {
+  const table: ArtistLangTable = {
+    缺强度: { bucket: 'zh', hits: 3, updatedAt: 1 } as ArtistLangTable[string],
+    缺计数: { bucket: 'en', strength: 1, updatedAt: 1 } as ArtistLangTable[string],
+  }
+  updateArtistLangTable(table, ['缺强度'], 'en', 'lyric', 500, 500)
+  assert.equal(table['缺强度'].strength, 1, '缺 strength 不能再让两次比较同时为假')
+  assert.equal(table['缺强度'].bucket, 'en')
+  assert.ok(Number.isFinite(table['缺强度'].hits))
+
+  updateArtistLangTable(table, ['缺计数'], 'ja', 'lyric', 500, 3)
+  assert.ok(Number.isFinite(table['缺计数'].hits), '缺 hits 不能一路写成 NaN')
+  assert.equal(table['缺计数'].bucket, 'ja')
+  assert.ok(table['缺计数'].hits > 0, '救回来必须是可用计数，不能是 0 或负数')
+})
