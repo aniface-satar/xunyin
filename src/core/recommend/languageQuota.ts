@@ -16,6 +16,15 @@ export const OPTION_TO_BUCKET: Record<string, LangBucket> = {
   other: 'other',
 }
 
+/**
+ * 取队列尾部 windowSize 首。必须显式处理 0/负数：`arr.slice(-0)` 等于 `arr.slice(0)`，
+ * 不夹紧就会把"本轮没有窗口"算成"整段历史都是本轮用量"。
+ */
+const windowSlice = <T>(items: readonly T[], windowSize: number): readonly T[] => {
+  const size = Math.max(0, Math.floor(windowSize))
+  return size === 0 ? [] : items.slice(-size)
+}
+
 export interface LangTargets {
   /** 已声明桶的目标首数；未声明的桶不在这里。 */
   targets: Partial<Record<LangBucket, number>>
@@ -58,7 +67,7 @@ export const computeLangTargets = (
     percents[bucket] = (percents[bucket] ?? 0) + Math.max(0, Math.min(100, raw))
   }
   const sum = QUOTA_LANG_BUCKETS.reduce((acc, bucket) => acc + (percents[bucket] ?? 0), 0)
-  if (sum <= 0) return { targets: {}, free: windowSize, enforced: false }
+  if (sum <= 0) return { targets: {}, free: Math.max(0, Math.floor(windowSize)), enforced: false }
 
   const window = Math.max(0, Math.floor(windowSize))
   // 合计 >100 时全部名额都给声明桶；<100 时只给占比对应的那一段，剩下算自由名额
@@ -73,7 +82,7 @@ export const countLangUsed = (
   windowSize: number = recommendationConfig.channels.windowSize,
 ): Partial<Record<LangBucket, number>> => {
   const counts: Partial<Record<LangBucket, number>> = {}
-  for (const lang of recentLangs.slice(-Math.max(0, Math.floor(windowSize)))) {
+  for (const lang of windowSlice(recentLangs, windowSize)) {
     if (!lang || lang == 'unknown') continue
     counts[lang] = (counts[lang] ?? 0) + 1
   }
@@ -130,7 +139,7 @@ export const instrumentalAllowed = (
   maxPerWindow: number = recommendationConfig.language.instrumentalPerWindow,
 ): boolean => {
   let count = 0
-  for (const lang of recentLangs.slice(-Math.max(0, Math.floor(windowSize)))) {
+  for (const lang of windowSlice(recentLangs, windowSize)) {
     if (lang == 'instr') count += 1
   }
   return count < Math.max(0, Math.floor(maxPerWindow))

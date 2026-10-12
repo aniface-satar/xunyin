@@ -75,6 +75,17 @@ test('同语言连播硬规则只看尾部连续段，不看全窗口', () => {
   assert.equal(consecutiveLangAllowed(['en', 'en'], 'zh'), true)
   assert.equal(consecutiveLangAllowed(['unknown', 'unknown'], 'unknown'), true)
   assert.equal(consecutiveLangAllowed(['unknown', 'unknown'], 'zh'), true)
+  // 下面两条才是"尾部"而非"全窗口"的证据：全窗口计数会数到 2 个 zh 而误拦
+  assert.equal(consecutiveLangAllowed(['zh', 'en', 'en', 'en', 'zh'], 'zh'), true)
+  assert.equal(consecutiveLangAllowed(['en', 'en', 'en', 'zh', 'zh'], 'zh'), false)
+})
+
+test('名额不能整除时余数照最大余数法补齐，一个名额都不丢', () => {
+  // 20 首按 34/33/33 分：各得 floor 6，共 18；剩 2 首按余数补给 zh(.8) 与 en(.6)
+  // 这条是 allocateByPercents 里 `for (let i = allocated; i < total; i++)` 唯一的实跑证据
+  const result = computeLangTargets({ zh: 34, western: 33, ja: 33 })
+  assert.deepEqual(result.targets, { zh: 7, en: 7, ja: 6 })
+  assert.equal(result.free, 0)
 })
 
 test('纯音乐每窗口最多 2 首，且只数最近 20 首', () => {
@@ -82,6 +93,13 @@ test('纯音乐每窗口最多 2 首，且只数最近 20 首', () => {
   assert.equal(instrumentalAllowed(['instr', 'zh']), true)
   const long = ['instr' as const, 'instr' as const, ...Array.from({ length: 25 }, () => 'zh' as const)]
   assert.equal(instrumentalAllowed(long), true)
+})
+
+test('窗口 0 或负数按空窗口算，不能退化成看全历史', () => {
+  // arr.slice(-0) === arr.slice(0)：不夹紧的话 Task 5/6 传一个算出来的剩余窗口就会把全历史当本轮用量
+  assert.deepEqual(countLangUsed(['zh', 'zh', 'en'], 0), {})
+  assert.deepEqual(countLangUsed(['zh', 'zh', 'en'], -5), {})
+  assert.equal(instrumentalAllowed(['instr', 'instr'], 0), true)
 })
 
 test('池内按桶计数：lang 优先，判不出退 langHint，再不行算 unknown', () => {
