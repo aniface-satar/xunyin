@@ -286,6 +286,9 @@ export const planLangBucketFetch = (options: {
  * 分类轮换的加权抽样：概率正比于 exp(分类净权 / 温度)，取代旧的"每 4 轮留 1 轮全目录游走"等频轮转。
  * 等频轮转会让华语这类高权重分类只占 1/N 的出场机会，是召回侧过量抓华语的根因之一。
  * 没有任何正偏好分类时（冷启动）退回按轮次游走，保证不空转。
+ * 注意是有意的取舍：一旦学到了正偏好分类，净权为 0（没被学过）的分类就不在这条轮子里出现了，
+ * 旧写法的"1/4 轮全目录探索"没有保留。分类维度的多样性现在由两处提供——语种桶召回（candidate.ts 步骤 4.5）
+ * 按缺口补货，推荐 tab 的歌单区块（pickPlaylistTag）仍守 1/4 探索轮。别把它当 bug 改回去。
  */
 export const pickWeightedTag = (
   tags: readonly TagSummary[],

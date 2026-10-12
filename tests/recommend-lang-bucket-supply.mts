@@ -99,6 +99,14 @@ test('加权分类轮换在高权重档里抽样，被学成负偏好的分类�
   for (const roll of [0, 0.5, 0.99]) {
     assert.notEqual(pickWeightedTag(burnedFirst, themes, { now: 1000, temperature: 1, rng: () => roll })?.id, '3')
   }
+  // 重度用户的净权是累加量、没有上界。不减最大净权直接 exp(900) 会溢出成 Infinity，
+  // 减法全变 NaN、永远走不到 roll <= 0，最后静默返回权重最低的那个分类——正好是该压下去的那个。
+  const heavy = Object.fromEntries([theme('华语', 900), theme('欧美', 2), theme('飙升', -3)])
+  for (const roll of [0, 0.5, 0.99]) {
+    const picked = pickWeightedTag(tags, heavy, { now: 1000, temperature: 1, rng: () => roll })
+    assert.ok(picked, '溢出防护失效时这里会拿到 undefined')
+    assert.equal(picked?.id, '1', `roll ${roll} 应落在高权重分类，实拿 ${picked?.id}`)
+  }
 })
 
 test('没有正偏好分类时退回按轮次游走，冷启动不空转', () => {

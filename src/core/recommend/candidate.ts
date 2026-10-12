@@ -8,10 +8,10 @@ import { themeAffinityFactor, themeNetWeight } from './feedback.ts'
 import { computePlayCountNumber, computeWeakThemeScore, normalizePlaylistKey, upsertObservedPlaylist, type PlaylistObservationInput } from './playlistIndex.ts'
 import { getCatalogCapabilities, getChartBoards, getChartTracks, getPlaylistDetailPage, getPlaylistTags, getPlaylistsByTag, searchMusic, searchPlaylists } from './sdkCatalog.ts'
 import { computeBucketDetailReserve, countPoolLang } from './languageQuota.ts'
-import { pickWeightedTag, planLangBucketFetch } from './tabSections.ts'
+import { pickPlaylistSort, pickWeightedTag, planLangBucketFetch } from './tabSections.ts'
 import type { LangTargets } from './languageQuota.ts'
 import type { LangBucket } from './language.ts'
-import type { TagSummary } from './sdkCatalog.ts'
+import type { SortSummary, TagSummary } from './sdkCatalog.ts'
 import type { DislikeRules } from './filter.ts'
 import type { ChannelId, ObservedPlaylist, PoolCandidate, RadioProfile, RecommendationState } from './types.ts'
 
@@ -201,6 +201,16 @@ interface SummaryWithHints {
   langHint?: LangBucket
 }
 
+/**
+ * 分类/语种桶两条列表召回共用的排序档：最新:最热守 newestListRatio，
+ * 源没有"最新"档时降级到最热，并如实报 useNew=false（让调用方把摘要归到 D 而不是冒充 C）。
+ */
+const pickListSort = (sorts: readonly SortSummary[], rotation: number): { sortId: string, useNew: boolean } => {
+  const newSort = sorts.find(sort => /最新|新歌|new/i.test(`${sort.name} ${sort.tid ?? ''}`))
+  const useNew = rotation % 10 < Math.round(recommendationConfig.candidatePool.newestListRatio * 10) && newSort != null
+  return { sortId: (useNew ? newSort : pickPlaylistSort(sorts))?.id ?? '', useNew }
+}
+
 export const refreshExternalCandidates = async(params: CatalogRefreshParams): Promise<CatalogRefreshResult> => {
   const budget = params.budget ?? recommendationConfig.request.maxRequestsPerRefresh
   const { discoveryBudget } = planRefreshBudget(budget, recommendationConfig.candidatePool.detailFetchesPerRefresh)
@@ -316,13 +326,7 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
         })
         if (tag) {
           const tagNetWeight = tagNet(tag.name)
-          const sorts = caps.sorts
-          const newSort = sorts.find(sort => /最新|新歌|new/i.test(`${sort.name} ${sort.tid ?? ''}`))
-          const hotSort = sorts.find(sort => /最热|热歌|热门|popular|hot/i.test(`${sort.name} ${sort.tid ?? ''}`)) ?? sorts[0]
-          const wantNew = rotation % 10 < Math.round(recommendationConfig.candidatePool.newestListRatio * 10)
-          // 源没有"最新"排序时降级：取到的热门列表按 D（宽范围探索）归位，不冒充 C 通道。
-          const useNew = wantNew && newSort != null
-          const sortId = (useNew ? newSort : hotSort)?.id ?? ''
+          const { sortId, useNew } = pickListSort(caps.sorts, rotation)
           const page = 1 + (rotation % 3)
           ensureDiscoveryBudget()
           const playlists = await getPlaylistsByTag(source, tag.id, sortId, page, { signal: params.signal })
@@ -366,8 +370,11 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
   if (params.langTargets?.enforced) {
     const poolCandidates = params.state.candidateCache
     const poolCounts = countPoolLang(poolCandidates)
+    // 缺口折算要垫到 targetSize（池还小时也得按满池的目标推），
+    // 但 unknown 占比必须用真实长度：分母垫到 500 会让 spec §3.3 的"unknown > 30% 优先补货"
+    // 在冷启动阶段永远够不着阈值，而那正是 unknown 最浓、最需要 L1 补货的时候。
     const poolSize = Math.max(poolCandidates.length, recommendationConfig.candidatePool.targetSize)
-    unknownShare = (poolCounts.unknown ?? 0) / poolSize
+    unknownShare = poolCandidates.length ? (poolCounts.unknown ?? 0) / poolCandidates.length : 0
     const plan = planLangBucketFetch({
       source,
       targets: params.langTargets,
@@ -381,18 +388,16 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
       if (params.signal?.cancelled) break
       try {
         ensureDiscoveryBudget()
-        const sorts = caps.sorts
-        const newSort = sorts.find(sort => /最新|新歌|new/i.test(`${sort.name} ${sort.tid ?? ''}`))
-        const hotSort = sorts.find(sort => /最热|热歌|热门|popular|hot/i.test(`${sort.name} ${sort.tid ?? ''}`)) ?? sorts[0]
-        // 最新:最热仍守 newestListRatio（默认 7:3），与步骤 3 同一套轮换口径
-        const wantNew = rotation % 10 < Math.round(recommendationConfig.candidatePool.newestListRatio * 10)
-        const useNew = wantNew && newSort != null
-        const sortId = (useNew ? newSort : hotSort)?.id ?? ''
+        const { sortId, useNew } = pickListSort(caps.sorts, rotation)
+        // 分类归属要用目录里的真名：summary.category 缺失时若写 `lang:en` 这种合成串，
+        // 它会经 observedPlaylists.category 进到 behavior.ts 的点赞学习里，
+        // 而这个键永远匹配不到任何目录分类名——等于把这次学习信号扔进一个死键。
+        const bucketTagName = catalogTags.find(tag => String(tag.id) == entry.tagId)?.name
         const playlists = await getPlaylistsByTag(source, entry.tagId, sortId, 1 + (rotation % 3), { signal: params.signal })
         let added = 0
         for (const summary of playlists) {
           if (added >= recommendationConfig.candidatePool.bucketPlaylistsPerBucket) break
-          const registered = addSummary({ ...summary, category: summary.category ?? `lang:${entry.bucket}` }, [useNew ? 'C' : 'D'], undefined, entry.bucket)
+          const registered = addSummary({ ...summary, category: summary.category ?? bucketTagName ?? `lang:${entry.bucket}` }, [useNew ? 'C' : 'D'], undefined, entry.bucket)
           // 只有真的带上本桶语种提示才算数：被别的步骤先登记成无提示摘要时不重复排队
           if (registered?.langHint == entry.bucket && !bucketSummaries.includes(registered)) {
             bucketSummaries.push(registered)
@@ -414,26 +419,36 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
   // 给 C 通道预留一个详情位：否则 4 个额度永远被已知/搜索摘要吃光，最新/低曝光池恒为空
   // 语种桶召回同样要从这份常规份额里让位（bucketReserve），常规摘要永远至少留一格
   const detailBudget = recommendationConfig.candidatePool.detailFetchesPerRefresh
-  const bucketReserve = computeBucketDetailReserve({
-    detailBudget,
-    unknownShare,
-    escalateAt: recommendationConfig.candidatePool.unknownShareEscalate,
-    base: recommendationConfig.candidatePool.bucketDetailReserve,
-    escalateTo: recommendationConfig.candidatePool.bucketDetailReserveWhenUnknownHigh,
-  })
+  // 只预留真要用的格子：没召回到桶摘要时（问卷没滑语言的整轮、池里不缺货的整轮都算）预留必须是 0。
+  // 详情读是这个候选池唯一的进货口，白扣一格等于给**全体用户**（含没开配额的）砍掉 25% 吞吐，
+  // 而且桶只召回到 1 张时也要把没用完的格子还给常规摘要。
+  const bucketReserve = bucketSummaries.length
+    ? Math.min(bucketSummaries.length, computeBucketDetailReserve({
+      detailBudget,
+      unknownShare,
+      escalateAt: recommendationConfig.candidatePool.unknownShareEscalate,
+      base: recommendationConfig.candidatePool.bucketDetailReserve,
+      escalateTo: recommendationConfig.candidatePool.bucketDetailReserveWhenUnknownHigh,
+    }))
+    : 0
   const cSummaries = summaries.filter(summary => summary.hints.has('C') && !summary.langHint)
   const mainSummaries = summaries.filter(summary => !summary.hints.has('C') && !summary.langHint)
-  const orderedSummaries = [
+  const bucketPicks: SummaryWithHints[] = []
+  if (bucketReserve > 0) {
+    // 从轮换位起连续取，第一轮落空的那张会在下一轮被取到——这就是"空歌单换下一张"的实现方式
+    const start = Math.abs(rotation) % bucketSummaries.length
+    for (let i = 0; i < bucketReserve; i++) bucketPicks.push(bucketSummaries[(start + i) % bucketSummaries.length])
+  }
+  const regularPicks = [
     ...mainSummaries.slice(0, Math.max(1, detailBudget - (cSummaries.length ? 1 : 0) - bucketReserve)),
     ...(cSummaries.length ? [cSummaries[Math.abs(rotation) % cSummaries.length]] : []),
   ]
-  if (bucketSummaries.length && bucketReserve > 0) {
-    // 从轮换位起连续取，第一轮落空的那张会在下一轮被取到——这就是"空歌单换下一张"的实现方式
-    const start = Math.abs(rotation) % bucketSummaries.length
-    for (let i = 0; i < bucketReserve && i < bucketSummaries.length; i++) {
-      orderedSummaries.push(bucketSummaries[(start + i) % bucketSummaries.length])
-    }
-  }
+  // spec §3.3："池内 unknown 占比超过 30% 时，本轮预算优先给 kg/tx 的桶召回"。
+  // 优先级要体现在**读取顺序**上：详情循环是按 orderedSummaries 顺序走到预算上限就 break 的，
+  // 桶摘要排在最后时总预算一紧就先被牺牲掉的正是刚补进来的那几格，与"优先"相反。
+  const orderedSummaries = bucketPicks.length && unknownShare > recommendationConfig.candidatePool.unknownShareEscalate
+    ? [...bucketPicks, ...regularPicks]
+    : [...regularPicks, ...bucketPicks]
   const observedList = Object.values(params.state.observedPlaylists)
   for (const summary of orderedSummaries) {
     if (detailFetches >= detailBudget) break
