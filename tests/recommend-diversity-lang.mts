@@ -144,7 +144,9 @@ test('用掉最后一个合法名额不算放开配额：线索必须能分清�
     primaryArtist: 'shared-artist',
     artistKeys: ['shared-artist'],
   })
-  const recent = [asChorus(900, 'zh'), asChorus(901, 'en')]
+  // 同歌手挪到倒数第 3 首：第 0~3 档（间隔 8/8/6/4）全被它卡住，第 4 档（间隔 minArtistGap=2）
+  // 的窗口只盖末尾两首，于是升级原因仍然是歌手间隔，而不是语种配额
+  const recent = [asChorus(900, 'zh'), mkItem(901, 'unknown'), mkItem(902, 'en')]
   const plan = planChannelQuotas(1, [], { A: 20, B: 0, C: 0, D: 0 })
   const result = selectFinalQueue([asChorus(1, 'zh')], {
     target: 1,

@@ -209,8 +209,8 @@ export const recommendationConfig = {
     similarPlaylistThreshold: 0.35,
     /** 分类歌单列表按 最新:最热 = 7:3 轮转，让小众新歌单出现得更多。 */
     newestListRatio: 0.7,
-    /** 每轮直采的画像强歌手数（各搜一次热门歌，轮换不同歌手）。 */
-    artistHitsPerRefresh: 2,
+    /** 每轮直采的画像强歌手数（各搜一次热门歌，轮换不同歌手）。曾经取 2 人×15 首，单轮 30 首同批候选把池子带偏。 */
+    artistHitsPerRefresh: 1,
     /** 淘汰限额相对"窗口目标数按池规模等比放大"再乘的宽松系数。低于 1 会被抬到 1：再紧就会把某语种在池里清零、直接断供。 */
     poolEvictOverQuotaSlack: 1.5,
   },
@@ -241,7 +241,7 @@ export const recommendationConfig = {
    */
   antiRepeat: {
     artistGap: 8,
-    sameArtistInLast30: 3,
+    sameArtistInLast30: 2,
     samePlaylistInLast20: 2,
     sameAlbumInLast20: 2,
     sameSeedInLast20: 2,
@@ -253,8 +253,15 @@ export const recommendationConfig = {
     categoryRotationTemperature: 1.2,
     /** 相邻两个探索通道（C/D）曲目之间至少要隔多少首非探索曲目，防止连续 unfamiliar。 */
     explorationGap: 1,
-    /** 候选不足时按顺序放宽歌手间隔；下限 4 首——同歌手至少隔 4 首，最后一档兜底才归零。 */
+    /** 候选不足时按顺序放宽歌手间隔；下限 4 首——同歌手至少隔 4 首，最后一档由 minArtistGap 兜住。 */
     relaxArtistGaps: [8, 6, 4],
+    /** 最后一档（所有候选都满足不了间隔时）也保持的最小间隔；0 会直接造成同歌手连推。 */
+    minArtistGap: 2,
+    /** 抽样软惩罚：同歌手出现在最近 N 首内时权重乘该系数（硬门槛之外的第二道闸）。 */
+    recentArtistWindow: 6,
+    recentArtistFactor: 0.35,
+    midArtistWindow: 12,
+    midArtistFactor: 0.6,
     relaxSameArtistInLast30: 6,
     relaxSamePlaylistInLast20: 4,
     relaxSameAlbumInLast20: 4,

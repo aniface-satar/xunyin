@@ -131,7 +131,7 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       langQuotaEnforced: false,
     },
     {
-      // 最后一档：所有候选连"同歌手隔 4 首"都满足不了时才允许放宽到 0，避免候选枯竭时电台断粮
+      // 最后一档：所有候选连"同歌手隔 4 首"都满足不了时才允许降到 minArtistGap，避免候选枯竭时电台断粮
       artistGap: c.relaxArtistGaps[2] ?? 4,
       sameArtistInLast30: c.relaxSameArtistInLast30,
       samePlaylistInLast20: c.relaxSamePlaylistInLast20,
@@ -218,8 +218,9 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
   const temperature = options.temperature ?? recommendationConfig.softmax.temperature
   const explorationGap = Math.max(0, options.explorationGap ?? 0)
   const relaxConfigs = getRelaxConfigs()
-  // 用户约定同歌手至少隔 4 首；仅最后一档（所有候选都满足不了时）兜底归零
-  relaxConfigs[relaxConfigs.length - 1].artistGap = 0
+  // 最后一档也保持 minArtistGap，不再归零：同歌手连推是用户明确投诉过的观感问题，
+  // 候选枯竭时让它少出几首并记 no_candidate_after_relaxation（下面 fallback 分支的既有 reason），也不要连推
+  relaxConfigs[relaxConfigs.length - 1].artistGap = recommendationConfig.antiRepeat.minArtistGap
   const target = Math.max(0, options.target)
   const history: FinalQueueItem[] = (options.recent ?? []).slice(-60)
   // 必须克隆 caps：本函数是纯函数，直接扣 options.langCaps.caps 会把调用方的额度吃掉，
@@ -257,6 +258,17 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
     return false
   }
 
+  // 硬门槛（artistGap）之外的第二道闸：满足了最小间隔但仍离得很近的同一歌手，权重打折。
+  // 只降权重不排除，避免"整池都是同一歌手"时被降频把唯一候选也打死。
+  const recentArtistPenalty = (item: T) => {
+    if (!item.artistKeys.length) return 1
+    const sharesArtist = (entry: FinalQueueItem) => entry.artistKeys.some(artist => item.artistKeys.includes(artist))
+    const c = recommendationConfig.antiRepeat
+    if (countInLast(history, c.recentArtistWindow, sharesArtist) > 0) return c.recentArtistFactor
+    if (countInLast(history, c.midArtistWindow, sharesArtist) > 0) return c.midArtistFactor
+    return 1
+  }
+
   const weightFor = (item: T, channel: ChannelId) => {
     const base = item.channelWeights?.[channel] ?? item.weight
     const exposurePenalty = 1 / (1 + Math.max(0, item.exposureCount ?? 0) * 0.35)
@@ -264,7 +276,7 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
     const variantPenalty = item.workKey && countInLast(history, 20, entry => !!entry.workKey && entry.workKey == item.workKey) > 0
       ? recommendationConfig.antiRepeat.variantSoftFactor
       : 1
-    return Math.max(recommendationConfig.softmax.minWeight, base * exposurePenalty * variantPenalty)
+    return Math.max(recommendationConfig.softmax.minWeight, base * exposurePenalty * variantPenalty * recentArtistPenalty(item))
   }
 
   // 门槛只比较通道基础分（质量），不含曝光/同版本的软降频：否则软降频会被门槛放大成硬排除。

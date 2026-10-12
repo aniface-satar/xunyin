@@ -222,12 +222,12 @@ test('final selection enforces artist gap and per-artist caps when alternatives 
   }
 })
 
-test('selection relaxes constraints when only one artist is available instead of faking diversity', () => {
+test('a single-artist pool yields one song plus a reason instead of back-to-back repeats', () => {
   const candidates = Array.from({ length: 10 }, (_, i) => mkFinalItem(`only-${i}`, 'Only Artist', 'A', { sourcePlaylistId: `only-pl-${i}` }))
   const plan = planChannelQuotas(5, [], { A: 10, B: 0, C: 0, D: 0 }, { coldStart: true })
   const result = selectFinalQueue(candidates, { target: 5, channelPlan: plan, rng: seedRandom(1) })
-  assert.equal(result.items.length, 5)
-  assert.ok(result.reasons.some(reason => reason.startsWith('relax_level_')), `expected relaxation reason, got ${result.reasons.join(',')}`)
+  assert.equal(result.items.length, 1, '候选枯竭时宁可少给，也不同歌手连着放')
+  assert.ok(result.reasons.includes('no_candidate_after_relaxation'), `expected the starvation reason, got ${result.reasons.join(',')}`)
 })
 
 test('same playlist never fills the recent window without relaxation evidence', () => {
@@ -2030,6 +2030,7 @@ test('artist relaxation never dips below the four-song floor before the last run
   const { antiRepeat } = recommendationConfig
   assert.ok(antiRepeat.artistGap >= 4, 'baseline artist gap must keep at least four songs in between')
   assert.ok(antiRepeat.relaxArtistGaps.every(gap => gap >= 4), `relax ladder dipped below 4: ${antiRepeat.relaxArtistGaps.join(',')}`)
+  assert.ok(antiRepeat.minArtistGap >= 1, 'the last rung must still keep at least one song in between')
   assert.ok(antiRepeat.relaxArtistGaps.every((gap, i) => i == 0 || gap <= antiRepeat.relaxArtistGaps[i - 1]), 'relax ladder must not widen back up')
 
   // 备选充足时，任何歌手的两首歌之间至少隔着 4 首其他歌手的歌
@@ -2056,4 +2057,39 @@ test('artist relaxation never dips below the four-song floor before the last run
       }
     }
   }
+})
+
+test('a song whose artist appeared 11 slots back gets a soft penalty, not a hard block', () => {
+  const history = [
+    mkFinalItem('h0', 'Same', 'B'),
+    ...Array.from({ length: 11 }, (_, i) => mkFinalItem(`h${i + 1}`, `Other-${i}`, 'B')),
+  ]
+  const stale = mkFinalItem('c-stale', 'Same', 'A')
+  const fresh = mkFinalItem('c-fresh', 'Fresh', 'A')
+  const plan = { quotas: { A: 1, B: 0, C: 0, D: 0 }, total: 1, reasons: {} } as any
+  const result = selectFinalQueue([stale, fresh], {
+    target: 1,
+    channelPlan: plan,
+    recent: history,
+    temperature: 0.01,
+    rng: () => 0.5,
+  })
+  // 隔 11 首（history 长 12、同歌手在 index 0）：满足 artistGap 8 的硬门槛，但落在 12 首软惩罚窗口里
+  // 低温度下抽样几乎取 argmax（stale 权重 0.6 vs fresh 1.0），应当选 Fresh
+  assert.equal(result.items[0].item.key, 'c-fresh')
+  assert.equal(result.maxRelaxLevel, 0, '软惩罚不该把 stale 挤到放开档才出场')
+})
+
+test('a third song from the same artist inside 30 slots waits for the last rung', () => {
+  const history = [
+    mkFinalItem('h0', 'Same', 'B'),
+    mkFinalItem('h1', 'Same', 'B'),
+    ...Array.from({ length: 10 }, (_, i) => mkFinalItem(`h${i + 2}`, `Other-${i}`, 'B')),
+  ]
+  // 两首同歌手在 index 0、1：距末尾 11 与 10 首，都过了 artistGap 8 的间隔关，只差"30 首内出现次数"
+  const again = mkFinalItem('c-again', 'Same', 'A')
+  const plan = { quotas: { A: 1, B: 0, C: 0, D: 0 }, total: 1, reasons: {} } as any
+  const result = selectFinalQueue([again], { target: 1, channelPlan: plan, recent: history, rng: () => 0.5 })
+  assert.equal(result.items.length, 1)
+  assert.equal(result.maxRelaxLevel, 4, 'sameArtistInLast30 收紧到 2 之后，第三次同歌手只能靠最后一档放行')
 })

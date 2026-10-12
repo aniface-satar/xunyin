@@ -169,7 +169,7 @@ export const createArtistHitCandidates = (
   params: CatalogRefreshParams,
 ): PoolCandidate[] => {
   const top = params.profile.topArtists.find(item => item.artist == artist)
-  const affinity = Math.max(0.5, Math.min(1, top?.weight ?? 0))
+  const affinity = Math.max(0.6, Math.min(1, top?.weight ?? 0))
   const candidates: PoolCandidate[] = []
   for (const musicInfo of tracks) {
     if (isExcluded(musicInfo, params)) continue
@@ -568,7 +568,8 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
     }
   }
 
-  // 5.5 画像歌手热门歌直采：rotation 在强歌手列表上滑动，每轮只采 2 人避免重复抓同批人
+  // 5.5 画像歌手热门歌直采：rotation 在强歌手列表上滑动，每轮只采 1 人 8 首，
+  // 避免单轮就往池里灌一批同歌手候选（配 diversity 的软惩罚一起治连推）
   const topWeight = params.profile.topArtists[0]?.weight ?? 0
   const strongArtists = params.profile.topArtists
     .filter(artist => artist.weight >= topWeight * recommendationConfig.profile.coldStart.strongArtistWeightRatio && artist.weight > 0)
@@ -582,7 +583,7 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
       if (requests >= budget) break
       try {
         ensureDiscoveryBudget()
-        const tracks = await searchMusic(source, artistEntry.artist, 1, 15, { signal: params.signal })
+        const tracks = await searchMusic(source, artistEntry.artist, 1, 8, { signal: params.signal })
         mergedCandidates = mergePoolCandidates(
           mergedCandidates,
           createArtistHitCandidates(tracks, artistEntry.artist, params),
