@@ -1,5 +1,8 @@
 import { recommendationConfig } from './config.ts'
 import type { ChannelQuotaPlan } from './channels.ts'
+import { consecutiveLangAllowed, instrumentalAllowed, langWithinCap } from './languageQuota.ts'
+import type { LangCaps } from './languageQuota.ts'
+import type { LangBucket } from './language.ts'
 import { getArtistKeys, getPrimaryArtist } from './trackKey.ts'
 import type { ChannelId } from './types.ts'
 
@@ -33,6 +36,8 @@ export interface FinalQueueItem {
   primaryArtist: string
   artistKeys: string[]
   albumKey: string
+  /** 语种桶：配额与连播硬规则的唯一依据。undefined 与 unknown 同义——不受配额约束。 */
+  lang?: LangBucket
   /** 作品级 key（忽略 Live/Remix 等版本差异），用于软降频而非硬排除。 */
   workKey?: string
   sourcePlaylistId?: string
@@ -52,6 +57,8 @@ export interface FinalQueueSelectionOptions {
   temperature?: number
   /** 相邻两个探索通道（C/D）曲目之间至少要隔多少首非探索曲目；0 表示不限制。 */
   explorationGap?: number
+  /** 语种硬配额：由调用方按问卷 + 最近窗口算好传入；缺席即代表本轮不设配额。 */
+  langCaps?: LangCaps
 }
 
 export interface SelectedFinalQueueItem<T extends FinalQueueItem = FinalQueueItem> {
@@ -74,6 +81,8 @@ interface RelaxConfig {
   similarGroupRatioIn20: number
   sameSeedInLast20: number
   sameChartInLast20: number
+  /** 本档是否仍卡语种配额。放开档只放开配额，连播与纯音乐上限恒守。 */
+  langQuotaEnforced: boolean
 }
 
 const getRelaxConfigs = (): RelaxConfig[] => {
@@ -87,6 +96,7 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       similarGroupRatioIn20: c.similarGroupRatioIn20,
       sameSeedInLast20: c.sameSeedInLast20,
       sameChartInLast20: c.sameChartInLast20,
+      langQuotaEnforced: true,
     },
     {
       artistGap: c.artistGap,
@@ -96,6 +106,7 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       similarGroupRatioIn20: c.relaxSimilarGroupRatioIn20,
       sameSeedInLast20: c.sameSeedInLast20 + 1,
       sameChartInLast20: c.sameChartInLast20 + 1,
+      langQuotaEnforced: true,
     },
     {
       artistGap: c.relaxArtistGaps[1] ?? 6,
@@ -105,6 +116,7 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       similarGroupRatioIn20: c.relaxSimilarGroupRatioIn20,
       sameSeedInLast20: c.sameSeedInLast20 + 1,
       sameChartInLast20: c.sameChartInLast20 + 1,
+      langQuotaEnforced: true,
     },
     {
       artistGap: c.relaxArtistGaps[2] ?? 4,
@@ -114,6 +126,7 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       similarGroupRatioIn20: c.relaxSimilarGroupRatioIn20,
       sameSeedInLast20: c.sameSeedInLast20 + 1,
       sameChartInLast20: c.sameChartInLast20 + 1,
+      langQuotaEnforced: false,
     },
     {
       // 最后一档：所有候选连"同歌手隔 4 首"都满足不了时才允许放宽到 0，避免候选枯竭时电台断粮
@@ -124,6 +137,7 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       similarGroupRatioIn20: c.relaxSimilarGroupRatioIn20,
       sameSeedInLast20: c.sameSeedInLast20 + 2,
       sameChartInLast20: c.sameChartInLast20 + 2,
+      langQuotaEnforced: false,
     },
   ]
 }
@@ -141,11 +155,26 @@ const matchesAnyArtist = (item: FinalQueueItem, artist: string) => {
   return item.artistKeys.includes(artist)
 }
 
+interface LangGuardState {
+  /** 调用方是否真的设了配额（问卷全空时是 false）。 */
+  enforced: boolean
+  /** 本轮剩余额度，选走一首即减 1；缺席的桶代表不受约束。 */
+  remaining: Partial<Record<LangBucket, number>>
+  /** 与 history 同步维护的语种序列（旧→新），供连播与纯音乐规则读尾部。 */
+  langs: Array<LangBucket | undefined>
+}
+
 const checkItemConstraints = (
   item: FinalQueueItem,
   history: readonly FinalQueueItem[],
   relax: RelaxConfig,
+  langGuard: LangGuardState,
 ) => {
+  // 语种判定排在最前：它最便宜，且"连三四首中文"是用户最直接的感受，不该被后面的间隔检查稀释
+  if (relax.langQuotaEnforced && langGuard.enforced && !langWithinCap(item.lang, langGuard.remaining)) return false
+  if (!consecutiveLangAllowed(langGuard.langs, item.lang)) return false
+  // instrumentalAllowed 只在候选本身是纯音乐时调用：否则"池里已有 2 首纯音乐"会卡住所有歌
+  if (item.lang == 'instr' && !instrumentalAllowed(langGuard.langs)) return false
   // 合唱需要检查全部可靠识别出的参与歌手。
   for (const artist of item.artistKeys) {
     if (countInLast(history, relax.artistGap, entry => matchesAnyArtist(entry, artist)) > 0) return false
@@ -191,6 +220,13 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
   relaxConfigs[relaxConfigs.length - 1].artistGap = 0
   const target = Math.max(0, options.target)
   const history: FinalQueueItem[] = (options.recent ?? []).slice(-60)
+  // 必须克隆 caps：本函数是纯函数，直接扣 options.langCaps.caps 会把调用方的额度吃掉，
+  // 第二次生成队列就少一批名额
+  const langGuard: LangGuardState = {
+    enforced: options.langCaps?.enforced === true,
+    remaining: options.langCaps?.enforced ? { ...options.langCaps.caps } : {},
+    langs: history.map(item => item.lang),
+  }
   const picked: Array<SelectedFinalQueueItem<T>> = []
   const pickedByChannel: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0 }
   const reasons: string[] = []
@@ -246,7 +282,7 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
     for (let relaxLevel = 0; relaxLevel < relaxConfigs.length; relaxLevel++) {
       const relax = relaxConfigs[relaxLevel]
       for (const channel of channelList) {
-        const eligible = [...unused].filter(item => item.channels.includes(channel) && checkItemConstraints(item, history, relax))
+        const eligible = [...unused].filter(item => item.channels.includes(channel) && checkItemConstraints(item, history, relax, langGuard))
         if (!eligible.length) continue
         const pool = applyQualityGate(eligible, channel)
         return { chosen: softmaxSample(pool, item => weightFor(item, channel), temperature, rng), channel, relaxLevel }
@@ -274,7 +310,7 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
 
     if (!ladder) {
       const fallbackRelax = relaxConfigs[relaxConfigs.length - 1]
-      const pool = [...unused].filter(item => checkItemConstraints(item, history, fallbackRelax))
+      const pool = [...unused].filter(item => checkItemConstraints(item, history, fallbackRelax, langGuard))
       if (!pool.length) {
         reasons.push('no_candidate_after_relaxation')
         break
@@ -295,6 +331,17 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
     pickedByChannel[chosenChannel] = (pickedByChannel[chosenChannel] ?? 0) + 1
     history.push(chosen)
     if (history.length > 60) history.splice(0, history.length - 60)
+    langGuard.langs.push(chosen.lang)
+    if (langGuard.langs.length > 60) langGuard.langs.splice(0, langGuard.langs.length - 60)
+    if (chosen.lang && chosen.lang != 'unknown') {
+      const remaining = langGuard.remaining[chosen.lang]
+      if (remaining !== undefined) langGuard.remaining[chosen.lang] = Math.max(0, remaining - 1)
+    }
+    // 靠放开语种配额才收下这首：日志要能看出"没凑够是因为池里没货"，而不是假装满足
+    if (langGuard.enforced && !relaxConfigs[chosenRelax].langQuotaEnforced &&
+      !langWithinCap(chosen.lang, langGuard.remaining) && !reasons.includes('lang_quota_relaxed')) {
+      reasons.push('lang_quota_relaxed')
+    }
     if (chosenRelax > maxRelaxLevel) {
       maxRelaxLevel = chosenRelax
       if (chosenRelax > 0 && !reasons.includes(`relax_level_${chosenRelax}`)) reasons.push(`relax_level_${chosenRelax}`)

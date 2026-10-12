@@ -299,6 +299,7 @@ export const buildFinalQueueItems = (
       primaryArtist: candidate.primaryArtist,
       artistKeys: candidate.artistKeys,
       albumKey: candidate.albumKey,
+      lang: candidate.lang,
       workKey: canonicalWorkKey(candidate.musicInfo.name, candidate.musicInfo.singer),
       sourcePlaylistId: candidate.playlistIds[0],
       sourceSeedTrackKey: candidate.seedTrackKeys[0],

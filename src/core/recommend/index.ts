@@ -6,11 +6,13 @@ import { getPlayHistory } from '@/utils/data'
 import { getUserLists, userLists } from '@/utils/listManage'
 import { getDislikeInfo } from '@/utils/dislikeManage'
 import { buildTrackKey, getAlbumName, getArtistKeys, getPrimaryArtist } from './trackKey.ts'
-import { bucketFromLangField, bucketFromLyric } from './language.ts'
+import { bucketFromLangField, bucketFromLyric, resolveLang } from './language.ts'
+import type { LangBucket } from './language.ts'
+import { computeLangCaps, computeLangTargets, countLangUsed, countPoolLang } from './languageQuota.ts'
 import { recommendationConfig as cfg } from './config.ts'
 import { loadState, getState, saveState, resetState, trimState, flushState } from './storage.ts'
 import { loadCandidateCache, setCandidateCache, saveCandidateCache, clearCandidateCache } from './candidateStore.ts'
-import { loadArtistLangTable, observeArtistLangField, observeArtistLyric } from './artistLanguageStore.ts'
+import { getArtistLangTable, loadArtistLangTable, observeArtistLangField, observeArtistLyric } from './artistLanguageStore.ts'
 import { ensureLibraryIndex, getLibraryTrackOrigins, refreshLibraryIndex } from './library.ts'
 import { buildTrackPlaylistIndex, buildSessionCoOccurrence } from './similarity.ts'
 import { selectPlaylistEvictions, normalizePlaylistKey } from './playlistIndex.ts'
@@ -383,12 +385,22 @@ class RecommendationEngine {
     const state = getState()
     const items: FinalQueueItem[] = []
     const pushMusicInfo = (musicInfo: LX.Music.MusicInfo, channel?: ChannelId, playlistId?: string, seedKey?: string, groupId?: string, chartId?: string) => {
+      const artistKeys = getArtistKeys(musicInfo.singer)
       items.push({
         key: buildTrackKey(musicInfo),
         channels: channel ? [channel] : [],
         primaryArtist: getPrimaryArtist(musicInfo),
-        artistKeys: getArtistKeys(musicInfo.singer),
+        artistKeys,
         albumKey: getAlbumName(musicInfo),
+        lang: resolveLang({
+          source: musicInfo.source,
+          // 这里的 musicInfo 来自播放器状态/持久化队列，不保证带 meta（本模块 trackKey.ts:104,113、filter.ts:59 都按可缺处理）：
+          // 少一个 ?. 就是在选曲主流程里埋一个 TypeError，整批队列生成失败
+          langField: musicInfo.meta?.lang ?? null,
+          name: musicInfo.name,
+          singer: musicInfo.singer,
+          artistKeys,
+        }, getArtistLangTable()).bucket,
         sourcePlaylistId: playlistId,
         sourceSeedTrackKey: seedKey,
         sourceClusterId: groupId,
@@ -514,13 +526,17 @@ class RecommendationEngine {
       rng: randomGenerator,
       now: Date.now(),
     })
+    const recent = this.buildRecentSelectionItems()
+    const langTargets = computeLangTargets(state.onboarding.weights, cfg.channels.windowSize)
+    const langCaps = computeLangCaps(langTargets, countLangUsed(recent.map(item => item.lang), cfg.channels.windowSize))
     const selection = selectFinalQueue(finalItems, {
       target,
-      recent: this.buildRecentSelectionItems(),
+      recent,
       channelPlan: plan,
       rng: randomGenerator,
       temperature: health.safeMode ? cfg.softmax.safeModeTemperature : cfg.softmax.temperature,
       explorationGap,
+      langCaps,
     })
     if (!selection.items.length) return false
     const byKey = new Map(state.candidateCache.map(candidate => [candidate.trackKey, candidate]))
@@ -546,6 +562,11 @@ class RecommendationEngine {
     if (accepted) {
       this.maybeIdleCrawl()
     }
+    const poolLangCounts = countPoolLang(finalItems)
+    // 池里对这个桶一首都没有，配额这轮注定兑现不了——和"被配额挡住"是两种问题，日志要分开
+    const langUnmet = Object.keys(langTargets.targets)
+      .filter(bucket => (poolLangCounts[bucket as LangBucket] ?? 0) === 0)
+      .map(bucket => `lang_unmet:${bucket}`)
     recallLog('generate', {
       requested: target,
       selected: queueItems.length,
@@ -557,6 +578,8 @@ class RecommendationEngine {
       directions: profile.directions.length,
       relaxLevel: selection.maxRelaxLevel,
       reasons: selection.reasons,
+      langCaps: langCaps.caps,
+      langUnmet,
       health: {
         streak: health.negativeStreak,
         rate: health.negativeRate,
