@@ -1,5 +1,6 @@
 import { recommendationConfig } from './config.ts'
 import { QUOTA_LANG_BUCKETS } from './language.ts'
+import { NEUTRAL_PERCENT } from './onboarding.ts'
 import type { LangBucket } from './language.ts'
 
 /**
@@ -68,6 +69,9 @@ export const computeLangTargets = (
   for (const [optionId, raw] of Object.entries(weights)) {
     const bucket = OPTION_TO_BUCKET[optionId]
     if (!bucket || typeof raw != 'number' || !Number.isFinite(raw)) continue
+    // 中性点不是声明。写侧 sanitizeWeights 会丢掉它，但 v9 迁移把 Task 8/9 存量的 {zh: 50} 原样搬过来，
+    // 读侧不挡就等于让一条历史中性值冒充"华语占窗口一半"。
+    if (raw == NEUTRAL_PERCENT) continue
     percents[bucket] = (percents[bucket] ?? 0) + Math.max(0, Math.min(100, raw))
   }
   // "有没有滑过语言桶"要看声明集合，不能看 percent 之和：全滑到 0% 时和为 0，但用户明明表过态

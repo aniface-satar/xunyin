@@ -130,3 +130,13 @@ test('池内按桶计数：lang 优先，判不出退 langHint，再不行算 un
   ])
   assert.deepEqual(counts, { zh: 1, en: 1, ja: 1, unknown: 1 })
 })
+
+test('停在 50% 的桶不冒充配额声明：读路径自己认这条契约', () => {
+  // sanitizeWeights 现在丢 50，但 Task 8/9 写进盘上的 {zh: 50} 还在（v9 迁移原样搬运，不重新 sanitize）。
+  // 读侧不挡住它，一条存量中性值就会凭空占掉半窗名额。
+  assert.deepEqual(computeLangTargets({ zh: 50 }, 20), { targets: {}, free: 20, enforced: false })
+  const mixed = computeLangTargets({ zh: 50, western: 100 }, 20)
+  assert.equal('zh' in mixed.targets, false, '50% 的桶不进 targets，名额全归真正滑过的那一侧')
+  assert.equal(mixed.targets.en, 20)
+  assert.equal(mixed.free, 0)
+})
