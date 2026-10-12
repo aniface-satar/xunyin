@@ -27,6 +27,9 @@ export interface PoolCapOptions {
   resolveBucket?: (candidate: PoolCandidate) => LangBucket
 }
 
+/** 不做推导、只读候选上已存的语种事实；capPoolSize 与 poolStats 共用这一份默认判定。 */
+const defaultPoolBucket = (candidate: PoolCandidate): LangBucket => candidate.lang ?? candidate.langHint ?? 'unknown'
+
 /**
  * 读时推导（spec §3.4）：不往候选数据里写推导结果，用的时候现算。
  * 候选池落盘是整池 JSON 重写且没有版本戳，一次误写就把磁盘缓存改了；
@@ -185,9 +188,9 @@ export const capPoolSize = (
     if (scoreA != scoreB) return scoreB - scoreA
     return b.addedAt - a.addedAt
   })
-  const bucketOf = options?.resolveBucket ?? ((candidate: PoolCandidate) => candidate.lang ?? candidate.langHint ?? 'unknown')
   const limits = options?.limits
   if (!limits || !Object.keys(limits).length) return sorted.slice(0, maxSize)
+  const bucketOf = options?.resolveBucket ?? defaultPoolBucket
   const kept: PoolCandidate[] = []
   const overflow: PoolCandidate[] = []
   const used: Partial<Record<LangBucket, number>> = {}
@@ -382,10 +385,10 @@ export const buildFinalQueueItems = (
   })
 }
 
-export const poolStats = (candidates: readonly PoolCandidate[], resolveBucket?: (candidate: PoolCandidate) => LangBucket) => {
+export const poolStats = (candidates: readonly PoolCandidate[], resolveBucket?: PoolCapOptions['resolveBucket']) => {
   const byChannel: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0 }
   const byLang: Partial<Record<LangBucket, number>> = {}
-  const bucketOf = resolveBucket ?? ((candidate: PoolCandidate) => candidate.lang ?? candidate.langHint ?? 'unknown')
+  const bucketOf = resolveBucket ?? defaultPoolBucket
   for (const candidate of candidates) {
     for (const channel of candidate.channels) byChannel[channel] += 1
     const bucket = bucketOf(candidate)

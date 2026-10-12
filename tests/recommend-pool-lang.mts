@@ -46,6 +46,11 @@ test('capPoolSize 无限额时行为与今天完全一致', () => {
     createPoolCandidate(baseInput(entryOf({ songmid: `a${i}`, lang: '粤语' }).musicInfo as any)))
   const capped = capPoolSize(candidates, 10)
   assert.equal(capped.length, 10)
+  // 分数全同、addedAt 已钉死：活下来的必须是先入池的前 10 首，换一批就算"行为变了"
+  assert.deepEqual(capped.map(candidate => candidate.musicInfo.meta.songId), Array.from({ length: 10 }, (_, i) => `a${i}`))
+  // 空 options / 空 limits 必须与不传参一字不差：candidate.ts 的三处三参调用点靠这条保命
+  assert.deepEqual(capPoolSize(candidates, 10, {}), capped)
+  assert.deepEqual(capPoolSize(candidates, 10, { limits: {} }), capped)
 })
 
 test('capPoolSize 按桶限额淘汰：超配桶先出局，缺口由它补位且池子照样凑满', () => {
@@ -120,8 +125,16 @@ test('derive-on-read 只读不写：推导一轮之后候选对象一个键都�
   const table: ArtistLangTable = { 陌生人: { bucket: 'zh', hits: 2, strength: 1, updatedAt: 1 } }
   resolvePoolLang(candidates[0], table)
   resolvePoolLang(candidates[1], table)
-  capPoolSize(candidates, 2, { limits: { zh: 1 }, resolveBucket: candidate => resolvePoolLang(candidate, table).bucket })
+  capPoolSize(candidates, 1, { limits: { zh: 1 }, resolveBucket: candidate => resolvePoolLang(candidate, table).bucket })
   buildFinalQueueItems(candidates, { artistLangTable: table })
+  // 淘汰真正发生在合池那次裁剪，而合池产出的对象就是要落盘的那批：它们同样不许带推导键
+  const merged = mergePoolCandidates(candidates, [], 5, {
+    limits: { zh: 1 },
+    resolveBucket: candidate => resolvePoolLang(candidate, table).bucket,
+  })
+  assert.equal(merged.length, 2)
+  buildFinalQueueItems(merged, { artistLangTable: table })
   assert.deepEqual(candidates.map(candidate => Object.keys(candidate).sort().join(',')), before)
   assert.deepEqual(candidates.map(candidate => ({ lang: candidate.lang, langHint: candidate.langHint })), snapshot)
+  assert.deepEqual(merged.map(candidate => Object.keys(candidate).sort().join(',')), before)
 })

@@ -34,7 +34,7 @@ import { selectDeferredTrackKeys } from './queueDeferral.ts'
 import { startRadioPlaybackTracking, finishRadioPlaybackTracking, cancelRadioPlaybackTracking } from './playbackTracker.ts'
 import { getExclusionReason } from './filter.ts'
 import type { DislikeRules, ExclusionContext } from './filter.ts'
-import type { ChannelId, RadioMode, RecommendQueueItem } from './types.ts'
+import type { ChannelId, PoolCandidate, RadioMode, RecommendQueueItem } from './types.ts'
 import { recallLog } from './log.ts'
 import { computeTimeSlotAffinity } from './timeSlot.ts'
 
@@ -292,6 +292,8 @@ class RecommendationEngine {
       ])
       const exclusion = await this.buildExclusionContext()
       const langTargets = computeLangTargets(state.onboarding.weights, cfg.channels.windowSize)
+      // 淘汰与诊断必须同口径：两处各写一遍 resolver，改一处就会让日志和真实淘汰说不一样的话
+      const poolBucketOf = (candidate: PoolCandidate) => resolvePoolLang(candidate, getArtistLangTable()).bucket
       const poolLimits = computePoolBucketLimits({
         targets: langTargets,
         maxSize: cfg.candidatePool.maxSize,
@@ -331,7 +333,7 @@ class RecommendationEngine {
       state.trackPlaylistIndex = buildTrackPlaylistIndex(Object.values(observed))
       state.candidateCache = mergePoolCandidates(state.candidateCache, result.candidates, cfg.candidatePool.maxSize, {
         limits: poolLimits,
-        resolveBucket: candidate => resolvePoolLang(candidate, getArtistLangTable()).bucket,
+        resolveBucket: poolBucketOf,
       })
       // 用最新排除集重新过滤候选，避免抓取期间新增收藏或屏蔽的内容残留
       state.candidateCache = filterPoolCandidates(state.candidateCache, exclusion)
@@ -345,7 +347,7 @@ class RecommendationEngine {
       recallLog('refresh', {
         reason,
         requests: result.requests,
-        pool: poolStats(state.candidateCache, candidate => resolvePoolLang(candidate, getArtistLangTable()).bucket),
+        pool: poolStats(state.candidateCache, poolBucketOf),
         reasons: result.reasons.slice(-5),
       })
       return result.candidates.length > 0 || state.candidateCache.length >= cfg.candidatePool.minCacheForInstantStart
