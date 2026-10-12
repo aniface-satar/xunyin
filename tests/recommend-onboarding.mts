@@ -23,6 +23,10 @@ test('computeSeedWeights uses 50% as the neutral point: above seeds positive, be
   assert.equal(seeds['爵士'], undefined)
   assert.equal(seeds['r&b'], -1.6)
   assert.equal(seeds['节奏布鲁斯'], -1.6)
+  // 补齐数值表的中间两档：负支只取正支一半幅度（80 → +2.4、20 → -1.2），漏钉这档就看不出比例写反
+  const mid = computeSeedWeights({ jazz: 80, rnb: 20 })
+  assert.equal(mid['爵士'], 2.4)
+  assert.equal(mid['r&b'], -1.2)
 })
 
 // electronic:100 → +4、dj:20 → -1.2，都别名到 dj 键：同键取绝对值更大的一侧，结果仍是 +4
@@ -103,6 +107,9 @@ test('a v7 submitted onboarding is re-shown with its answers carried over', () =
     weights: { zh: 70 },
     seededThemeWeights: { 华语: 1.6, 国语: 1.6, 中文: 1.6, 内地: 1.6 },
   })
+  // completed 被重置成"要重填"，但播种照常写入：他下次提交问卷时 index.ts 精确退掉的正是这一笔
+  assert.equal(migrated.themeWeights['华语'].positiveWeight, 1.6)
+  assert.equal(Object.keys(migrated.themeWeights).length, 4, '四个别名各播一条，没播第二次也没漏一条')
 })
 
 test('a version 8 onboarding is reseeded with the neutral-point formula', () => {
@@ -175,6 +182,12 @@ test('running the v8 migration twice lands on the same place', () => {
     },
   }
   const once = migrateRecommendationState(legacy)
+  // 先钉死第一趟的真实落点：只比 once/twice 的话，两趟一起写错也照样绿
+  assert.deepEqual(once.onboarding.seededThemeWeights, {
+    华语: -1.6, 国语: -1.6, 中文: -1.6, 内地: -1.6,
+    欧美: 4, 英文: 4, 英语: 4, 西洋: 4,
+  })
+  assert.equal(Object.keys(once.themeWeights).length, 8, '老分量退干净了，新分量一条不多一条不少')
   const twice = migrateRecommendationState(once)
   assert.deepEqual(twice.onboarding, once.onboarding)
   assert.deepEqual(twice.themeWeights, once.themeWeights)

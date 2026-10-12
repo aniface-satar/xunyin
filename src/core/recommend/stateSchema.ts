@@ -66,7 +66,8 @@ export const migrateRecommendationState = (raw: Partial<RecommendationState> | n
   // v3 召回与限额逻辑已校准，旧候选池按作废处理；学习数据（tracks/playlists/session）保留
   const dropLegacyCandidates = (raw.version ?? 0) < 3
   // v8（1.1.0）起问卷升级为"人人填一次"：低版本存量数据一律重置 completed，
-  // 但保留旧答案与其播种分量，重新提交时仍能精确回退旧初值
+  // 但保留旧答案与其播种分量，重新提交时仍能精确回退旧初值。
+  // v9 起这份播种分量会在下面被按新公式重播替换：真正跨版本留下的只有百分比原值 weights。
   const onboarding: OnboardingState = (raw.version ?? 0) >= 8 && raw.onboarding
     ? {
         completed: !!raw.onboarding.completed,
