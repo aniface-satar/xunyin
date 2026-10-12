@@ -247,8 +247,13 @@ export const resolveLang = (
   if (input.langHint && input.langHint != 'unknown') return { bucket: input.langHint, level: 2 }
   if (table) {
     for (const artist of input.artistKeys ?? []) {
-      const entry = table[artist]
-      if (entry && entry.bucket != 'unknown') return { bucket: entry.bucket, level: 3 }
+      // 表是从磁盘读回来的，编译器管不到单条目：缺 bucket、bucket 不是合法桶名、
+      // 甚至整条目是个字符串都可能发生。不加这层形状校验，脏条目会返回
+      // { bucket: undefined, level: 3 }——既短路了本还能救回来的 L4 字面统计，
+      // 又把 "undefined" 投进 poolStats.byLang / langLevels 日志里。
+      // 校验不过就当作"这个歌手没记录"，继续往下级走。
+      const bucket = table[artist]?.bucket
+      if (bucket && bucket != 'unknown' && LANG_BUCKETS.includes(bucket)) return { bucket, level: 3 }
     }
   }
   const l4 = bucketFromScript(input.name ?? '', input.singer ?? '')

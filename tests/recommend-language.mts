@@ -147,3 +147,39 @@ test('resolveLang runs L1 -> L2 -> L3 -> L4 and lands on unknown', () => {
   assert.deepEqual(resolveLang({ name: '第一封情书', singer: '陌生人' }), { bucket: 'zh', level: 4 })
   assert.deepEqual(resolveLang({ name: 'Yesterday', singer: 'The Beatles' }), { bucket: 'unknown', level: 0 })
 })
+
+// 表由 artistLanguageStore 从磁盘读回，只校验过顶层是普通对象，单条目形状不受编译器保护。
+// 脏条目必须视同"这个歌手没记录"往下走：返回 { bucket: undefined, level: 3 } 既短路 L4，
+// 又把 "undefined" 投进 poolStats.byLang / langLevels 日志。
+test('resolveLang L3 drops malformed table entries instead of short-circuiting L4', () => {
+  const dirty = (entry: unknown): ArtistLangTable => ({ 怪人: entry }) as unknown as ArtistLangTable
+  // 1) 条目缺 bucket：落到 L4，靠曲名/歌手字面统计判出 zh
+  assert.deepEqual(
+    resolveLang({ name: '十年', singer: '怪人', artistKeys: ['怪人'] }, dirty({ hits: 3 })),
+    { bucket: 'zh', level: 4 },
+  )
+  // 2) bucket 是白名单外的中文词：同样落到 L4
+  assert.deepEqual(
+    resolveLang({ name: '十年', singer: '怪人', artistKeys: ['怪人'] }, dirty({ bucket: '中文', hits: 3, strength: 1, updatedAt: 1 })),
+    { bucket: 'zh', level: 4 },
+  )
+  // 2b) 字面统计判不出语种时，落 unknown 走自由名额，而不是把 '中文' 当桶名返回
+  assert.deepEqual(
+    resolveLang({ name: 'Yesterday', singer: '怪人', artistKeys: ['怪人'] }, dirty({ bucket: '中文', hits: 3, strength: 1, updatedAt: 1 })),
+    { bucket: 'unknown', level: 0 },
+  )
+  // 3) 整条目是个字符串：被忽略，既不抛异常也不占用 L3
+  assert.deepEqual(
+    resolveLang({ name: '十年', singer: '怪人', artistKeys: ['怪人'] }, dirty('zh')),
+    { bucket: 'zh', level: 4 },
+  )
+  // 守卫只淘汰坏条目，不能把 L3 整级打死：脏键在前、合法键在后仍然返回 level 3
+  const mixed = {
+    怪人: { hits: 3 },
+    陈奕迅: { bucket: 'yue', hits: 2, strength: 1, updatedAt: 1 },
+  } as unknown as ArtistLangTable
+  assert.deepEqual(
+    resolveLang({ name: '第一封情书', singer: '陌生人', artistKeys: ['怪人', '陈奕迅'] }, mixed),
+    { bucket: 'yue', level: 3 },
+  )
+})
