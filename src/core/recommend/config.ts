@@ -212,6 +212,12 @@ export const recommendationConfig = {
   language: {
     artistTableLimit: 500,
     saveDebounceMs: 20000,
+    /** 本轮上限相对缺口多给的余量（首）。只允许向下收紧，不回溯删除已排进队列的曲目。 */
+    capTolerance: 1,
+    /** 同一种语言最多连播几首（硬规则，配额放开档也守）。 */
+    maxConsecutiveSameLang: 2,
+    /** 纯音乐在 20 首窗口里的上限；不占语言名额。 */
+    instrumentalPerWindow: 2,
   },
 
   exclusions: {
