@@ -136,7 +136,7 @@ test('池里只有超配额语种时靠放开档出歌，并留下 lang_quota_re
 })
 
 test('用掉最后一个合法名额不算放开配额：线索必须能分清两者', () => {
-  // 阶梯升级的原因必须和语言无关：recent 两首与候选同歌手，0~3 档全被 artistGap 卡住，
+  // 阶梯升级的原因必须和语言无关：recent 里有一首与候选同歌手，0~3 档全被 artistGap 卡住，
   // 候选带着 1 个合法名额在第 4 档被收下。若埋点读的是"扣完之后"的额度，
   // 这条合法消耗会和真正的超额破例给出同一串 reasons。
   const asChorus = (index: number, lang: LangBucket | undefined) => ({

@@ -255,9 +255,11 @@ export const recommendationConfig = {
     explorationGap: 1,
     /** 候选不足时按顺序放宽歌手间隔；下限 4 首——同歌手至少隔 4 首，最后一档由 minArtistGap 兜住。 */
     relaxArtistGaps: [8, 6, 4],
-    /** 最后一档（所有候选都满足不了间隔时）也保持的最小间隔；0 会直接造成同歌手连推。 */
+    /** 最后一档（所有候选都满足不了间隔时）也保持的最小间隔；0 会直接造成同歌手连推。由 selectFinalQueue 取完档位后覆写末档；取值不得大于 relaxArtistGaps 的末值，否则阶梯越放宽越宽。 */
     minArtistGap: 2,
-    /** 抽样软惩罚：同歌手出现在最近 N 首内时权重乘该系数（硬门槛之外的第二道闸）。 */
+    /** 抽样软惩罚：同歌手出现在最近 N 首内时权重乘该系数（硬门槛之外的第二道闸）。
+     * 注意：把这两档系数改成相同值，没有单测会变红。applyQualityGate 先按基础分比值 0.6 把弱候选整个剔出池，
+     * 能区分 0.35 与 0.6 的那个权重恰好落在被剔的区间里，所以档位差在选歌结果上不可单独证伪——调它只认真机观感。 */
     recentArtistWindow: 6,
     recentArtistFactor: 0.35,
     midArtistWindow: 12,

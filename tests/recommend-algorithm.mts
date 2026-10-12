@@ -2032,6 +2032,9 @@ test('artist relaxation never dips below the four-song floor before the last run
   assert.ok(antiRepeat.relaxArtistGaps.every(gap => gap >= 4), `relax ladder dipped below 4: ${antiRepeat.relaxArtistGaps.join(',')}`)
   assert.ok(antiRepeat.minArtistGap >= 1, 'the last rung must still keep at least one song in between')
   assert.ok(antiRepeat.relaxArtistGaps.every((gap, i) => i == 0 || gap <= antiRepeat.relaxArtistGaps[i - 1]), 'relax ladder must not widen back up')
+  // 末档由 minArtistGap 覆写，所以单调性还得把它算进来：比 relaxArtistGaps 末值还大就等于最后一档反而更严
+  assert.ok(antiRepeat.minArtistGap <= antiRepeat.relaxArtistGaps[antiRepeat.relaxArtistGaps.length - 1],
+    `last rung dipped below the previous one: minArtistGap=${antiRepeat.minArtistGap} vs ${antiRepeat.relaxArtistGaps.join(',')}`)
 
   // 备选充足时，任何歌手的两首歌之间至少隔着 4 首其他歌手的歌
   const repeats = ['X', 'Y', 'Z'].flatMap(artist => Array.from(
@@ -2076,6 +2079,7 @@ test('a song whose artist appeared 11 slots back gets a soft penalty, not a hard
   })
   // 隔 11 首（history 长 12、同歌手在 index 0）：满足 artistGap 8 的硬门槛，但落在 12 首软惩罚窗口里
   // 低温度下抽样几乎取 argmax（stale 权重 0.6 vs fresh 1.0），应当选 Fresh
+  assert.equal(result.items.length, 1, '队列不该被软惩罚掏空')
   assert.equal(result.items[0].item.key, 'c-fresh')
   assert.equal(result.maxRelaxLevel, 0, '软惩罚不该把 stale 挤到放开档才出场')
 })

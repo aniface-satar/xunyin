@@ -131,7 +131,9 @@ const getRelaxConfigs = (): RelaxConfig[] => {
       langQuotaEnforced: false,
     },
     {
-      // 最后一档：所有候选连"同歌手隔 4 首"都满足不了时才允许降到 minArtistGap，避免候选枯竭时电台断粮
+      // 最后一档：连"同歌手隔 4 首"都满足不了时才走到这里
+      // 下一行的字面值只是占位：selectFinalQueue 取完档位后会把它改写成 minArtistGap，所以第 3、4 档的间隔并不相同。
+      // 候选枯竭时的新契约是宁可少出几首（并记 no_candidate_after_relaxation），不再靠把间隔归零把队列凑满
       artistGap: c.relaxArtistGaps[2] ?? 4,
       sameArtistInLast30: c.relaxSameArtistInLast30,
       samePlaylistInLast20: c.relaxSamePlaylistInLast20,
@@ -279,7 +281,7 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
     return Math.max(recommendationConfig.softmax.minWeight, base * exposurePenalty * variantPenalty * recentArtistPenalty(item))
   }
 
-  // 门槛只比较通道基础分（质量），不含曝光/同版本的软降频：否则软降频会被门槛放大成硬排除。
+  // 门槛只比较通道基础分（质量），不含曝光/同版本/同歌手这三种软降频：否则软降频会被门槛放大成硬排除。
   const qualityWeightOf = (item: T, channel: ChannelId) => item.channelWeights?.[channel] ?? item.weight
 
   const applyQualityGate = (pool: T[], channel: ChannelId) => {
