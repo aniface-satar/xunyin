@@ -185,6 +185,8 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
 
   void getLyricInfo({ musicInfo }).then((lyricInfo) => {
     if (musicInfo.id != playMusicInfo.musicInfo?.id) return
+    // 下载任务（ListItem）没有 name/singer/meta 形状，语种观察只认真实曲目
+    if (!('progress' in musicInfo)) recommendationEngine.observeLyricLanguage(musicInfo, lyricInfo.lyric)
     setMusicInfo({
       lrc: lyricInfo.lyric,
       tlrc: lyricInfo.tlyric,
@@ -217,6 +219,8 @@ const debouncePlay = debounceBackgroundTimer((musicInfo: LX.Player.PlayMusic) =>
 
   void getLyricInfo({ musicInfo }).then((lyricInfo) => {
     if (musicInfo.id != playerState.playMusicInfo.musicInfo?.id) return
+    // 同上：下载任务不进语言表
+    if (!('progress' in musicInfo)) recommendationEngine.observeLyricLanguage(musicInfo, lyricInfo.lyric)
     setMusicInfo({
       lrc: lyricInfo.lyric,
       tlrc: lyricInfo.tlyric,

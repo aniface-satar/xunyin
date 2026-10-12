@@ -23,6 +23,7 @@ declare namespace LX {
       albumName: string // 歌曲专辑名称
       picUrl?: string | null // 歌曲图片链接
       releaseDate?: string | null // 歌曲发行日期，例：2020-01-01，部分源提供
+      lang?: string | number | null // 语种原始值：kg 源是中文词（例：粤语），tx 源是数字码（例：1），各源形态不一，由引擎分桶
       toggleMusicInfo?: MusicInfoOnline | null
     }
 

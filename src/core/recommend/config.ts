@@ -203,6 +203,17 @@ export const recommendationConfig = {
     artistHitsPerRefresh: 2,
   },
 
+  /**
+   * 歌手语言表（spec §3.1 L3/§9）。表只存归一化歌手名→单一分桶，
+   * artistTableLimit：容量，超出按"得票最低、最久没再听见"淘汰；
+   * saveDebounceMs：换歌很频繁，观察合并成批写。
+   * 语种配额相关的 capTolerance / maxConsecutive / bucketFetchesPerRefresh 等键由 Task 4、Task 6 各自补。
+   */
+  language: {
+    artistTableLimit: 500,
+    saveDebounceMs: 20000,
+  },
+
   exclusions: {
     /** 最近 7 天电台已播歌曲不再作为候选。 */
     recentRadioDays: 7,

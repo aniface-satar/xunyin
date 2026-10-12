@@ -6,9 +6,11 @@ import { getPlayHistory } from '@/utils/data'
 import { getUserLists, userLists } from '@/utils/listManage'
 import { getDislikeInfo } from '@/utils/dislikeManage'
 import { buildTrackKey, getAlbumName, getArtistKeys, getPrimaryArtist } from './trackKey.ts'
+import { bucketFromLangField, bucketFromLyric } from './language.ts'
 import { recommendationConfig as cfg } from './config.ts'
 import { loadState, getState, saveState, resetState, trimState, flushState } from './storage.ts'
 import { loadCandidateCache, setCandidateCache, saveCandidateCache, clearCandidateCache } from './candidateStore.ts'
+import { loadArtistLangTable, observeArtistLangField, observeArtistLyric } from './artistLanguageStore.ts'
 import { ensureLibraryIndex, getLibraryTrackOrigins, refreshLibraryIndex } from './library.ts'
 import { buildTrackPlaylistIndex, buildSessionCoOccurrence } from './similarity.ts'
 import { selectPlaylistEvictions, normalizePlaylistKey } from './playlistIndex.ts'
@@ -94,6 +96,7 @@ class RecommendationEngine {
   private async doInitialize() {
     await loadState()
     this.stateReady = true
+    void loadArtistLangTable().catch(() => {})
     const cachedCandidates = await loadCandidateCache()
     if (cachedCandidates.length) {
       setCandidateCache(cachedCandidates)
@@ -123,6 +126,19 @@ class RecommendationEngine {
 
   setRandomGenerator(generator: () => number) {
     randomGenerator = generator
+  }
+
+  /**
+   * 歌词到手后喂歌手语言表（spec §3.1 L3）。同一首歌的两个信号各自记：
+   * 接口语种字段强度高（strength=2），歌词字面统计强度低（strength=1），冲突时字段赢；
+   * 两个都判不出（null）什么都不写。
+   */
+  observeLyricLanguage(musicInfo: LX.Music.MusicInfo, lyric: string | null | undefined) {
+    const artists = getArtistKeys(musicInfo.singer)
+    if (!artists.length) return
+    const fieldBucket = bucketFromLangField(musicInfo.source, musicInfo.meta.lang)
+    if (fieldBucket) observeArtistLangField(artists, fieldBucket)
+    observeArtistLyric(artists, bucketFromLyric(lyric, musicInfo.name))
   }
 
   private async getDislikeRules(): Promise<DislikeRules> {
