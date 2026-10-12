@@ -2034,7 +2034,7 @@ test('artist relaxation never dips below the four-song floor before the last run
   assert.ok(antiRepeat.relaxArtistGaps.every((gap, i) => i == 0 || gap <= antiRepeat.relaxArtistGaps[i - 1]), 'relax ladder must not widen back up')
   // 末档由 minArtistGap 覆写，所以单调性还得把它算进来：比 relaxArtistGaps 末值还大就等于最后一档反而更严
   assert.ok(antiRepeat.minArtistGap <= antiRepeat.relaxArtistGaps[antiRepeat.relaxArtistGaps.length - 1],
-    `last rung dipped below the previous one: minArtistGap=${antiRepeat.minArtistGap} vs ${antiRepeat.relaxArtistGaps.join(',')}`)
+    `last rung turned out stricter than the one before it: minArtistGap=${antiRepeat.minArtistGap} vs ${antiRepeat.relaxArtistGaps.join(',')}`)
 
   // 备选充足时，任何歌手的两首歌之间至少隔着 4 首其他歌手的歌
   const repeats = ['X', 'Y', 'Z'].flatMap(artist => Array.from(
@@ -2096,4 +2096,27 @@ test('a third song from the same artist inside 30 slots waits for the last rung'
   const result = selectFinalQueue([again], { target: 1, channelPlan: plan, recent: history, rng: () => 0.5 })
   assert.equal(result.items.length, 1)
   assert.equal(result.maxRelaxLevel, 4, 'sameArtistInLast30 收紧到 2 之后，第三次同歌手只能靠最后一档放行')
+})
+
+test('the closer soft-penalty tier decides between two artists that both wait for the last rung', () => {
+  // 两个候选都卡在 sameArtistInLast30（历史里各出现 2 次），所以它们在同一档（末档）才同时合格：
+  // 质量闸门看基础分，两者基础分只差一点、都过 0.6 比值，于是唯一决定选谁的就是软惩罚的档位差。
+  // 近侧歌手在 index 8、2（距末尾 5 与 11 首，落在 6 首窗口）；中间档歌手在 index 4、0（距 9 与 13 首）。
+  const history: FinalQueueItem[] = Array.from({ length: 13 }, (_, i) =>
+    mkFinalItem(`h${i}`, i == 8 || i == 2 ? 'Near' : i == 4 || i == 0 ? 'Mid' : `Other-${i}`, 'B'))
+  const near = mkFinalItem('c-near', 'Near', 'A')
+  const mid = mkFinalItem('c-mid', 'Mid', 'A', { channelWeights: { A: 0.9 } })
+  const plan = { quotas: { A: 1, B: 0, C: 0, D: 0 }, total: 1, reasons: {} } as any
+  const result = selectFinalQueue([near, mid], {
+    target: 1,
+    channelPlan: plan,
+    recent: history,
+    temperature: 0.01,
+    rng: () => 0.5,
+  })
+  assert.equal(result.items.length, 1)
+  assert.equal(result.maxRelaxLevel, 4, '两个候选都只能靠末档的 sameArtistInLast30 放行')
+  // 0.35（近侧）× 1.0 = 0.35 输给 0.6（中间档）× 0.9 = 0.54；把 0.35 抬到 0.6、或把窗口挪到 4/12，
+  // 两边就会反过来（0.6 > 0.54），这条用例会红——这就是这两个键唯一的自动化护栏
+  assert.equal(result.items[0].item.key, 'c-mid')
 })
