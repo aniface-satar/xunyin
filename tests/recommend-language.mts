@@ -49,6 +49,9 @@ test('tx numeric language codes map and mixed-semantics codes return null', () =
   assert.equal(mapTxLanguageCode(12), null)
   assert.equal(mapTxLanguageCode(99), null)
   assert.equal(mapTxLanguageCode(null), null)
+  // 空串会被 Number() 折成 0，而 0 在码表里是 'zh'：必须先拦掉
+  assert.equal(mapTxLanguageCode(''), null)
+  assert.equal(mapTxLanguageCode('   '), null)
 })
 
 test('bucketFromLangField dispatches by source only', () => {
@@ -115,6 +118,9 @@ test('updateArtistLangTable: strength beats hits, same strength votes by hits', 
   assert.equal(table['周杰伦'].strength, 2)
   // unknown 不入库
   updateArtistLangTable(table, ['新人'], 'unknown', 'lyric', 500, 1005)
+  assert.equal(table['新人'], undefined)
+  // instr 同样不入库：伴奏是单曲属性，钉到歌手身上会让其真唱曲目逃出语种配额
+  updateArtistLangTable(table, ['新人'], 'instr', 'field', 500, 1006)
   assert.equal(table['新人'], undefined)
 })
 

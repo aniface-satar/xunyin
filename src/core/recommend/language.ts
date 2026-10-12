@@ -57,6 +57,9 @@ const TX_LANGUAGE_CODES: Record<number, LangBucket> = {
  * 实测与内容不符或语义混合，返回 null 让上层继续往下推。
  */
 export const mapTxLanguageCode = (code: string | number | null | undefined): LangBucket | null => {
+  // 空串/纯空白必须先拦：Number('') === 0，而 0 在码表里是 'zh'，
+  // 否则"接口没给语种"会被当成最高可信度的 L1=中文。
+  if (typeof code == 'string' && !code.trim()) return null
   const num = typeof code == 'string' ? Number(code) : code
   if (num == null || !Number.isInteger(num)) return null
   return TX_LANGUAGE_CODES[num] ?? null
@@ -185,7 +188,9 @@ export const updateArtistLangTable = (
   limit = 500,
   now = Date.now(),
 ): void => {
-  if (!bucket || bucket == 'unknown') return
+  // instr 是"单首曲"的属性，不是歌手的：几首伴奏就把歌手钉成 instr，
+  // 会让他的真唱曲目在 L3 拿到 instr，而 instr 不在配额桶里 => 整首逃出语种硬约束。
+  if (!bucket || bucket == 'unknown' || bucket == 'instr') return
   const strength = ARTIST_LANG_STRENGTH[source]
   for (const rawKey of artists) {
     const key = typeof rawKey == 'string' ? rawKey.trim() : ''
