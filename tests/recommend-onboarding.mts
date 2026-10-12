@@ -11,9 +11,29 @@ test('ONBOARDING_OPTIONS ids are unique', () => {
   assert.equal(new Set(ids).size, ids.length)
 })
 
-test('sanitizeWeights drops invalid ids, clamps and rounds to tens, removes zeros', () => {
+test('sanitizeWeights keeps 0% as a declaration and drops the neutral 50%', () => {
   const out = sanitizeWeights({ zh: 50, bogus: 80, pop: 105, rock: -20, folk: 35, jazz: 0 })
-  assert.deepEqual(out, { zh: 50, pop: 100, folk: 40 })
+  // 0 是"明确不要"，键必须在；滑在中性点 50 才是"没表态"，键必须不在
+  assert.equal(out.jazz, 0, '0% 要留着')
+  assert.equal('jazz' in out, true)
+  assert.equal('zh' in out, false, '停在 50% 等于没滑过')
+  assert.equal('bogus' in out, false, '非法 id 照旧丢掉')
+  assert.equal(out.pop, 100, '105 钳到 100')
+  assert.equal(out.folk, 40, '35 取整到 10 的倍数')
+  assert.equal(out.rock, 0, '-20 钳到 0，并因此作为 0% 声明保留')
+  assert.deepEqual(out, { pop: 100, rock: 0, folk: 40, jazz: 0 })
+})
+
+test('0% 与没滑过是两件事：0% 播最强负分量，停在 50% 什么都不播', () => {
+  const zero = computeSeedWeights({ zh: 0 })
+  const ten = computeSeedWeights({ zh: 10 })
+  for (const key of ['华语', '国语', '中文', '内地']) {
+    assert.equal(zero[key], -2, `0% 要给 ${key} 落上最强负分量`)
+    assert.ok(zero[key] < 0, `${key} 必须是负分量`)
+    assert.ok(Math.abs(zero[key]) > Math.abs(ten[key]), `${key} 上 0% 要比 10% 更狠`)
+  }
+  assert.deepEqual(computeSeedWeights({}), {})
+  assert.deepEqual(computeSeedWeights({ zh: 50 }), {}, '中性点 50% 不是声明，一条都不播')
 })
 
 test('computeSeedWeights uses 50% as the neutral point: above seeds positive, below seeds negative', () => {

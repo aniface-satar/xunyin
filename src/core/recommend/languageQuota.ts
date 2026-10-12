@@ -26,7 +26,7 @@ const windowSlice = <T>(items: readonly T[], windowSize: number): readonly T[] =
 }
 
 export interface LangTargets {
-  /** 已声明桶的目标首数；未声明的桶不在这里。 */
+  /** 已声明桶的目标首数；滑到 0% 也算声明，目标是 0 首。没滑过的桶不在这里。 */
   targets: Partial<Record<LangBucket, number>>
   /** 窗口里没被任何声明桶占走的名额。 */
   free: number
@@ -37,7 +37,11 @@ export interface LangTargets {
 /** 最大余数法：按占比把 total 首分给声明桶，同余数按声明顺序排前（照 channels.ts allocateByWeights）。 */
 const allocateByPercents = (total: number, percents: Partial<Record<LangBucket, number>>): Partial<Record<LangBucket, number>> => {
   const result: Partial<Record<LangBucket, number>> = {}
-  const buckets = QUOTA_LANG_BUCKETS.filter(bucket => (percents[bucket] ?? 0) > 0)
+  // 声明过的桶（含 0%）先各占一位 0：0% 桶必须留在结果里，否则 caps 查不到它、按"缺席即不限"放行
+  const declaredBuckets = QUOTA_LANG_BUCKETS.filter(bucket => percents[bucket] !== undefined)
+  for (const bucket of declaredBuckets) result[bucket] = 0
+  // 余数补位只在正 percent 的桶里轮：0% 桶吃进一个名额就是替用户改口，别靠"算出来刚好是 0"的运气
+  const buckets = declaredBuckets.filter(bucket => (percents[bucket] ?? 0) > 0)
   const sum = buckets.reduce((acc, bucket) => acc + (percents[bucket] ?? 0), 0)
   if (sum <= 0 || total <= 0) return result
   const remainders: Array<{ bucket: LangBucket, remainder: number }> = []
@@ -66,10 +70,12 @@ export const computeLangTargets = (
     if (!bucket || typeof raw != 'number' || !Number.isFinite(raw)) continue
     percents[bucket] = (percents[bucket] ?? 0) + Math.max(0, Math.min(100, raw))
   }
-  const sum = QUOTA_LANG_BUCKETS.reduce((acc, bucket) => acc + (percents[bucket] ?? 0), 0)
-  if (sum <= 0) return { targets: {}, free: Math.max(0, Math.floor(windowSize)), enforced: false }
+  // "有没有滑过语言桶"要看声明集合，不能看 percent 之和：全滑到 0% 时和为 0，但用户明明表过态
+  const declaredBuckets = QUOTA_LANG_BUCKETS.filter(bucket => percents[bucket] !== undefined)
+  if (!declaredBuckets.length) return { targets: {}, free: Math.max(0, Math.floor(windowSize)), enforced: false }
 
   const window = Math.max(0, Math.floor(windowSize))
+  const sum = declaredBuckets.reduce((acc, bucket) => acc + (percents[bucket] ?? 0), 0)
   // 合计 >100 时全部名额都给声明桶；<100 时只给占比对应的那一段，剩下算自由名额
   const declared = Math.min(window, Math.round(window * Math.min(sum, 100) / 100))
   const targets = allocateByPercents(declared, percents)
@@ -105,7 +111,8 @@ export const computeLangCaps = (
   for (const bucket of QUOTA_LANG_BUCKETS) {
     const target = targets.targets[bucket]
     if (target === undefined) continue
-    caps[bucket] = Math.max(0, target - (used[bucket] ?? 0)) + Math.max(0, Math.floor(tolerance))
+    // 容差是给非零配额的四舍五入留的余地；0% 是"明确不要"，加容差等于替用户改口
+    caps[bucket] = target === 0 ? 0 : Math.max(0, target - (used[bucket] ?? 0)) + Math.max(0, Math.floor(tolerance))
   }
   return { enforced: true, caps }
 }

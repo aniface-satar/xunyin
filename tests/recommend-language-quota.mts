@@ -29,6 +29,24 @@ test('问卷全空时不设配额', () => {
   assert.deepEqual(computeLangTargets({ pop: 80 }), { targets: {}, free: 20, enforced: false })
 })
 
+test('0% 是明确不要：目标 0 首、照常 enforced，且不吃余数名额', () => {
+  assert.deepEqual(computeLangTargets({ zh: 0 }, 20), { targets: { zh: 0 }, free: 20, enforced: true })
+  const mixed = computeLangTargets({ zh: 0, western: 100 }, 20)
+  assert.equal(mixed.targets.zh, 0, '0% 桶要出现在 targets 里')
+  assert.equal(mixed.targets.en, 20, '窗口名额全给滑过的那个桶，0% 桶一个都不分')
+  assert.equal(mixed.free, 0)
+  assert.equal(mixed.enforced, true)
+})
+
+test('0% 桶的上限不给容差，非零目标才留四舍五入的余地', () => {
+  const zero = computeLangCaps({ enforced: true, targets: { zh: 0 }, free: 20 }, {})
+  assert.equal(zero.caps.zh, 0, '0% 是明确不要，加容差等于替用户改口')
+  assert.equal(langWithinCap('zh', zero.caps), false)
+  // 对照组：目标 1 首时容差照旧 +1，证明只有零配额不吃容差
+  const one = computeLangCaps({ enforced: true, targets: { zh: 1 }, free: 19 }, {})
+  assert.equal(one.caps.zh, 2)
+})
+
 test('声明合计超过 100 时按比例缩进窗口，用最大余数法不丢名额', () => {
   const result = computeLangTargets({ zh: 60, western: 30, ja: 30 })
   assert.deepEqual(result.targets, { zh: 10, en: 5, ja: 5 })

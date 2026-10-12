@@ -48,14 +48,25 @@ export const ONBOARDING_OPTIONS: readonly OnboardingOption[] = [
   { id: 'dj', question: 'genre', aliases: ['DJ', 'REMIX', '串烧'] },
 ]
 
-/** 只留合法 id，钳到 0-100 并取整到 10 的倍数，0 值删除。 */
+/**
+ * 问卷百分比的中性点：50% = 没意见。
+ * UI 拿它当"没滑过"的显示值，`sanitizeWeights` 把停在这里的项当"没表态"丢弃——别再写第二个字面量 50。
+ */
+export const NEUTRAL_PERCENT = 50
+
+/**
+ * 只留合法 id，钳到 0-100 并取整到 10 的倍数。
+ * 0 值保留（键存在 = 明确不要），滑在中性点 50% 按"没表态"丢弃
+ * （播种分量为 0，留着只会让它冒充一条有效配额声明）。
+ */
 export const sanitizeWeights = (weights: Record<string, number>): Record<string, number> => {
   const result: Record<string, number> = {}
   for (const option of ONBOARDING_OPTIONS) {
     const raw = weights[option.id]
     if (typeof raw != 'number' || !Number.isFinite(raw)) continue
     const percent = Math.round(Math.max(0, Math.min(100, raw)) / 10) * 10
-    if (percent > 0) result[option.id] = percent
+    if (percent == NEUTRAL_PERCENT) continue
+    result[option.id] = percent
   }
   return result
 }
@@ -64,8 +75,8 @@ export const sanitizeWeights = (weights: Record<string, number>): Record<string,
  * 问卷百分比 → 分类净权初值，以 50% 为中轴：高于 50 给正分量，低于 50 给负分量。
  * 老写法是 percent/100×saturation，"中文 10%" 会被记成正偏好、把华语越推越多的锅有一半在这里。
  * 50% 恰为 0（不播种），负支幅度只取正支的一半——误伤比误爱便宜，但也别狠到把用户没听过的分类一棒打死。
+ * 已接受的取舍：0% 同时是"最强负播种"和"配额 0 首"，两个消费方读同一个数字的两个侧面，不是冲突。
  */
-const NEUTRAL_PERCENT = 50
 const NEGATIVE_SEED_RATIO = 0.5
 
 const seedValueFor = (percent: number): number => {
@@ -74,12 +85,12 @@ const seedValueFor = (percent: number): number => {
   return -((NEUTRAL_PERCENT - percent) / NEUTRAL_PERCENT * saturation * NEGATIVE_SEED_RATIO)
 }
 
-/** optionId→百分比 映射成 themeWeights 键→初值分量（可正可负）；同键多选项命中取绝对值更大的一侧。 */
+/** optionId→百分比 映射成 themeWeights 键→初值分量（可正可负）；同键多选项命中取绝对值更大的一侧。键缺席才是"没滑过"，0% 是最强负分量。 */
 export const computeSeedWeights = (weights: Record<string, number>): Record<string, number> => {
   const seeds: Record<string, number> = {}
   for (const option of ONBOARDING_OPTIONS) {
     const percent = weights[option.id]
-    if (!percent) continue
+    if (percent == null) continue
     const value = seedValueFor(percent)
     if (value == 0) continue
     for (const alias of option.aliases) {
