@@ -96,6 +96,24 @@ test('纯音乐在窗口里另设上限，不占语言名额', () => {
   const result = selectFinalQueue(candidates, { target: 10, channelPlan: plan, rng: seedRandom(5) })
   assert.equal(result.items.length, 10)
   assert.ok(result.items.filter(entry => entry.item.lang == 'instr').length <= 2)
+
+  // 另一半断言：纯音乐不能吃语言名额。zh 只给 1 个名额，2 首 instr 各占一格的话
+  // 第 3 首 zh 就得靠放开档出歌（reasons 里会出现 lang_quota_relaxed）——那是错的。
+  const mixed = [
+    ...Array.from({ length: 4 }, (_, i) => mkItem(20 + i, 'instr', 3)),
+    ...Array.from({ length: 4 }, (_, i) => mkItem(120 + i, 'zh', 2)),
+  ]
+  const smallPlan = planChannelQuotas(3, [], { A: 8, B: 0, C: 0, D: 0 })
+  const mixedResult = selectFinalQueue(mixed, {
+    target: 3,
+    channelPlan: smallPlan,
+    rng: seedRandom(5),
+    langCaps: { enforced: true, caps: { zh: 1 } },
+  })
+  assert.equal(mixedResult.items.length, 3)
+  assert.equal(mixedResult.items.filter(entry => entry.item.lang == 'instr').length, 2)
+  assert.equal(mixedResult.reasons.includes('lang_quota_relaxed'), false,
+    `instrumentals must not eat the language headroom, got ${mixedResult.reasons.join(',')}`)
 })
 
 test('池里只有超配额语种时靠放开档出歌，并留下 lang_quota_relaxed 线索', () => {
@@ -115,6 +133,30 @@ test('池里只有超配额语种时靠放开档出歌，并留下 lang_quota_re
   })
   assert.equal(result.items.length, 3, 'quota relaxation must still fill the queue')
   assert.ok(result.reasons.includes('lang_quota_relaxed'), `expected lang_quota_relaxed, got ${result.reasons.join(',')}`)
+})
+
+test('用掉最后一个合法名额不算放开配额：线索必须能分清两者', () => {
+  // 阶梯升级的原因必须和语言无关：recent 两首与候选同歌手，0~3 档全被 artistGap 卡住，
+  // 候选带着 1 个合法名额在第 4 档被收下。若埋点读的是"扣完之后"的额度，
+  // 这条合法消耗会和真正的超额破例给出同一串 reasons。
+  const asChorus = (index: number, lang: LangBucket | undefined) => ({
+    ...mkItem(index, lang),
+    primaryArtist: 'shared-artist',
+    artistKeys: ['shared-artist'],
+  })
+  const recent = [asChorus(900, 'zh'), asChorus(901, 'en')]
+  const plan = planChannelQuotas(1, [], { A: 20, B: 0, C: 0, D: 0 })
+  const result = selectFinalQueue([asChorus(1, 'zh')], {
+    target: 1,
+    recent,
+    channelPlan: plan,
+    rng: seedRandom(11),
+    langCaps: { enforced: true, caps: { zh: 1 } },
+  })
+  assert.equal(result.maxRelaxLevel, 4, 'escalation must come from the artist gap, not the quota')
+  assert.equal(result.items.length, 1, 'the last legal unit of the quota must still be pickable')
+  assert.equal(result.reasons.includes('lang_quota_relaxed'), false,
+    `legal consumption must not look like a bypass, got ${result.reasons.join(',')}`)
 })
 
 test('判不出语言的歌直接放行，不触发放开档', () => {

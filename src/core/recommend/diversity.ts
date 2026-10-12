@@ -333,13 +333,16 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
     if (history.length > 60) history.splice(0, history.length - 60)
     langGuard.langs.push(chosen.lang)
     if (langGuard.langs.length > 60) langGuard.langs.splice(0, langGuard.langs.length - 60)
+    // 必须在扣额度**之前**读：`langWithinCap` 判的是 cap > 0，扣完之后"合法用掉最后一个名额"
+    // 和"本来就超额"都是 0，两者就分不开了（实测：caps {zh:1} 与 {zh:0} 会给出同一条线索）
+    const langOverCapAtPickTime = langGuard.enforced && !langWithinCap(chosen.lang, langGuard.remaining)
     if (chosen.lang && chosen.lang != 'unknown') {
       const remaining = langGuard.remaining[chosen.lang]
       if (remaining !== undefined) langGuard.remaining[chosen.lang] = Math.max(0, remaining - 1)
     }
-    // 靠放开语种配额才收下这首：日志要能看出"没凑够是因为池里没货"，而不是假装满足
-    if (langGuard.enforced && !relaxConfigs[chosenRelax].langQuotaEnforced &&
-      !langWithinCap(chosen.lang, langGuard.remaining) && !reasons.includes('lang_quota_relaxed')) {
+    // 这首是在"语种配额已放开"的档位下才收下的：日志要能看出配额本轮没兑现，而不是假装满足
+    if (langOverCapAtPickTime && !relaxConfigs[chosenRelax].langQuotaEnforced &&
+      !reasons.includes('lang_quota_relaxed')) {
       reasons.push('lang_quota_relaxed')
     }
     if (chosenRelax > maxRelaxLevel) {
