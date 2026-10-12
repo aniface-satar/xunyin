@@ -31,6 +31,7 @@ export const toNewMusicInfo = (oldMusicInfo: any): LX.Music.MusicInfo => {
     albumName: oldMusicInfo.albumName, // 歌曲专辑名称
     picUrl: oldMusicInfo.img, // 歌曲图片链接
   }
+  if (oldMusicInfo.releaseDate != null) meta.releaseDate = oldMusicInfo.releaseDate // 歌曲发行日期，用于按年份排序
   const newInfo = {
     id: `${oldMusicInfo.source as string}_${oldMusicInfo.songmid as string}`,
     name: oldMusicInfo.name,
@@ -90,6 +91,7 @@ export const toOldMusicInfo = (minfo: LX.Music.MusicInfo): any => {
     img: minfo.meta.picUrl ?? '',
     typeUrl: {},
   }
+  if (minfo.meta.releaseDate != null) oInfo.releaseDate = minfo.meta.releaseDate
   if (minfo.source == 'local') {
     oInfo.filePath = minfo.meta.filePath
     oInfo.ext = minfo.meta.ext

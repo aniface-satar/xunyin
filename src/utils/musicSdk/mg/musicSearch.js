@@ -171,7 +171,7 @@ export default {
         })
 
         let img = data.img3 || data.img2 || data.img1 || null
-        if (img && !/https?:/.test(data.img3)) img = 'http://d.musicapp.migu.cn' + img
+        if (img && !/https?:/.test(img)) img = 'http://d.musicapp.migu.cn' + img
 
         list.push({
           singer: formatSingerName(data.singerList),

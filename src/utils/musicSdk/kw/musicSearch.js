@@ -77,19 +77,20 @@ export default {
 
       let interval = parseInt(info.DURATION)
 
+      // web_albumpic_short 是 <size>/<path> 形式的短链，取 path 部分换成 500，与 pic.web 接口返回的地址同一路径
+      let picPath = info.web_albumpic_short?.split('/').slice(1).join('/')
+      let img = picPath ? `http://img1.kwcdn.kuwo.cn/star/albumcover/500/${picPath}` : null
+
       result.push({
         name: decodeName(info.SONGNAME),
         singer: formatSinger(decodeName(info.ARTIST)),
         source: 'kw',
-        // img = (info.album.name === '' || info.album.name === '空')
-        //   ? `http://player.kuwo.cn/webmusic/sj/dtflagdate?flag=6&rid=MUSIC_160911.jpg`
-        //   : `https://y.gtimg.cn/music/photo_new/T002R500x500M000${info.album.mid}.jpg`
         songmid: songId,
         albumId: decodeName(info.ALBUMID || ''),
         interval: Number.isNaN(interval) ? 0 : formatPlayTime(interval),
         albumName: info.ALBUM ? decodeName(info.ALBUM) : '',
         lrc: null,
-        img: null,
+        img,
         otherSource: null,
         types,
         _types,

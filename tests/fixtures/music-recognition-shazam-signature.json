@@ -1,0 +1,138 @@
+{
+ "rich8": {
+  "seconds": 8,
+  "number_samples": 128000,
+  "bands": {
+   "2": 179,
+   "1": 102,
+   "0": 8
+  },
+  "uri": "data:audio/vnd.shazam.sig;base64,gCX+ym1KoNfIBQAAAJwRlAAAAAAAAAAAAAAAAAAAABgAAAAAAAAAAAADAgAAAHwAAAAAQMgFAABAAANgKAAAAEjqY5sLqLtjnQtvgGOhC1izY54LO6ZjnQt302OdC2PAY5wLWa5jngtBAANg/gEAAA3hVbkYAc1kphEAklsOFQbvT9cmC1pe/SIDeENVKgv2XGscDJlO7S0NP1DRJgyfZKYRCTpGLyoEX1sMFQuRVMsfAkle/SIh5URJKgTuXG4cAWpVuRgEl1sMFQgvXv0iBgFP5i0r6lxvHAF6XvwiBbZkphEBL1DZJgPyRCoqCaJTxR8Be1WzGB/yXf8iBUBQ1CYH4VsMFQQlTvItCLxVshgBEl1uHAvDZKURAIVHGSoOAl7+IhKdTugtC4tR1SYCFVPDHwbMWw8VBZpkphEIil4AIx/tUscfAu5FLCoCAFDUJhvMZKYRALtO5y0f6VW4GAb9UNcmAUpe/yIStFsLFREGT/ItCrpSyB8EtVDFJgE2XgIjBThdbxwGlmSnEQaaVbQYIO1bDhUBeV78IgUBU8ofJPxO6C0IpGSmEQErXgAjFwBWtRgNvFLLHwoUR2YqAlxR0yYCI11yHBfcWwkVAzRe9iIKwFWzGBStUscfEo5bChUDcF75IgItXXQcAYZkphECw07sLQvBUNUmAMtFOyoSpVW1GBAvXvkiA8xkpREBZk7uLQYVU8YfEvZbDBUG21xwHAxsVbcYB8JkphEsslDXJgEHT/AtAlVe+SICElPMHwffZKURBS9dchwGjERKKgOXVboYGFhR0yYDSV79IgS3UscfBeRbDBUGqE/uLQAAQgADYH8DAAALUUoHQwOSSCxKAAZUUFgA9UsyWwHgR0tfBXNIa20GsFFaVQvyVeI4AylRXlEByUdcRgS/TilNAo5NRWkKt08mPwHFVGhmC6BZ+TQAC0YjYgQnUhgxB81RTlUT50V5bQPjSKhGBdFRYVEHp0hDXwS7TTFbBv1KE0oHs1blOAJ/Wfg0AO9MJE0EcFRoZgFKTBFDDH9Ham0KA1IWMQZVTyhpAhxIVF8HZEwzWwgJTyw/CCZJp0YETFRHWAo6TQVDBddRGzELElJQVQA+VGpmAFZOQGkEqFFoURMeTDVbBiZKMUoExE4aPwNTWfY0BRJIV18NpFXjOAKJTiNNF/JRU1UBylRIWAaFSyhKBPhIR18L4U4xPwEoUmdRA8lLCkMK+0Z5bQLuURwxAsxNJU0ImkwyWwEySb5GAXBFSGII2VNtZgPQVeU4B7NOMmkERFFgUQVnQsliDlZIaV8Da0s8SgBQVERYCflPGj8Co1FSVQJGWfQ0AZFUa2YNilEQMQAXTSdbAU9SZlEG0EiJRgL6QYRuBbBLD0MHIEPEbBSOVuQ4AihZ9DQTGUmvRgWYSUdfBz1OKE0BkEkWSgKwSHhtArtLGEMGnk4qPwFiVGhmBS9DK2IB0FITMQHlTjNbCbFRYlEQr1NFWAp+SxZDEflUa2YCbVn5NAibTSVNAfNRGDEBZUd4RgcaRfdhAqZOJT8CK1JeUQTwQa5sBA9MQFsEuVXoOAo0SyVKAQpORGkBv0aEbQxYUhwxAYpZ+TQINEsUQwHiSbNGAedEQmACPlJRVQjEVGlmCcVIT18Gqk49aQNBR41tBx9PIj8Bs1BeUQi+Rb5sAYRW5DgBdlRHWAEJURcxBxhJIUYL7k4pTQv+RXVtBstKPkoHj08cPwVZVuY4A/ZJD0MGxEipRgseWfc0A+dNI00ARVFtUQNjVWdmAdpLN1sLjEpZbQheUVtVBClSFTEFOEpTXw9aTBFDCI1D6mIBhk8ePwGwSatGAnJUbmYWtEo9SgFtRGBiAvZSWVUGMk00WwJRWfU0ByVVQ1gCzEl/bQadQjxeAWRUa2YGXE8XPwI5SaZGAUhNLk0C/lEYMQBHUmJRCJ1IUV8GQ040aQiTVuQ4C/9F+mICo1n3NAGySy5KAXhIlG0GL0wXQwqBRDRiAvdMKFsHg0iGRgQ6VGRmBfJC2WwBXlRKWApiU25RAA==",
+  "has_ff_escape": true,
+  "decoded_peak_count": 289,
+  "max_fft_pass": 954,
+  "pcm_sum": -6887076,
+  "pcm_checksum": 4187416924,
+  "pcm_first8": [
+   1144,
+   511,
+   749,
+   971,
+   463,
+   957,
+   525,
+   666
+  ],
+  "pcm_last8": [
+   -727,
+   -176,
+   -729,
+   -631,
+   -409,
+   -91,
+   -146,
+   -152
+  ]
+ },
+ "rich2": {
+  "seconds": 2,
+  "number_samples": 32000,
+  "bands": {
+   "2": 37,
+   "1": 20,
+   "0": 1
+  },
+  "uri": "data:audio/vnd.shazam.sig;base64,gCX+ylPHISFIAQAAAJwRlAAAAAAAAAAAAAAAAAAAABgAAAAAAAAAAACMAAAAAHwAAAAAQEgBAABAAANgBQAAAEjqY5sLAAAAQQADYGQAAAAN4VW5GAHNZKYRAJJbDhUG70/XJgtaXv0iA3hDVSoL9lxrHAyZTu0tDT9Q0SYMn2SmEQk6Ri8qBF9bDBULkVTLHwJJXv0iIeVESSoE7lxuHAFqVbkYBJdbDBUIL179IgYBT+YtQgADYLkAAAALUUoHQwOSSCxKAAZUUFgA9UsyWwHgR0tfBXNIa20GsFFaVQvyVeI4AylRXlEByUdcRgS/TilNAo5NRWkKt08mPwHFVGhmC6BZ+TQAC0YjYgQnUhgxB81RTlUT50V5bQPjSKhGBdFRYVEHp0hDXwS7TTFbBv1KE0oHs1blOAJ/Wfg0AO9MJE0EcFRoZgFKTBFDDH9Ham0KA1IWMQZVTyhpAhxIVF8HZEwzWwgJTyw/CCZJp0YETFRHWAAAAA==",
+  "has_ff_escape": false,
+  "decoded_peak_count": 58,
+  "max_fft_pass": 195,
+  "pcm_sum": -1654650,
+  "pcm_checksum": 1046921350,
+  "pcm_first8": [
+   1144,
+   511,
+   749,
+   971,
+   463,
+   957,
+   525,
+   666
+  ],
+  "pcm_last8": [
+   70,
+   355,
+   196,
+   -91,
+   518,
+   256,
+   317,
+   -36
+  ]
+ },
+ "gap5": {
+  "seconds": 5,
+  "number_samples": 80000,
+  "bands": {
+   "2": 44,
+   "1": 21,
+   "0": 2
+  },
+  "uri": "data:audio/vnd.shazam.sig;base64,gCX+ytVTNnWEAQAAAJwRlAAAAAAAAAAAAAAAAAAAABgAAAAAAAAAAIBHAQAAAHwAAAAAQIQBAABAAANgDwAAAEjqY5sL/xACAAAAoGOeCwBBAANgbgAAAA3hVbkYAc1kphEAklsOFQbvT9cmC1pe/SIDeENVKgv2XGscDJlO7S0NP1DRJgyfZKYRCTpGLyoEX1sMFQuRVMsfAkle/SIR8k3rLf8HAgAAAJZkpxEGmlW0GAcuXW4cGe1bDhUBeV78IgUBU8ofAABCAANg4QAAAAtRSgdDA5JILEoABlRQWAD1SzJbAeBHS18Fc0hrbQawUVpVC/JV4jgDKVFeUQHJR1xGBL9OKU0Cjk1FaQq3TyY/AcVUaGYLoFn5NAALRiNiBCdSGDEHzVFOVRPnRXltAS9MJk0C40ioRgXRUWFRBVVUZmYBUEsAQwGnSENfBLtNMVsDAFRHWAP9ShNK//8BAAAAl0M3YgGHU2JmAPtGfm0B4FISMQHnTjNbCbFRYlEFm1XjOAMbSU5fBIhNGj8Er1NFWAp+SxZDEflUa2YCbVn5NAibTSVNAfNRGDEBZUd4RgAAAA==",
+  "has_ff_escape": true,
+  "decoded_peak_count": 67,
+  "max_fft_pass": 578,
+  "pcm_sum": -1688703,
+  "pcm_checksum": 2619751297,
+  "pcm_first8": [
+   1144,
+   511,
+   749,
+   971,
+   463,
+   957,
+   525,
+   666
+  ],
+  "pcm_last8": [
+   255,
+   -246,
+   86,
+   -411,
+   -214,
+   -97,
+   -765,
+   -666
+  ]
+ },
+ "silence4": {
+  "seconds": 4,
+  "number_samples": 64000,
+  "bands": {},
+  "uri": "data:audio/vnd.shazam.sig;base64,gCX+yi4NygYIAAAAAJwRlAAAAAAAAAAAAAAAAAAAABgAAAAAAAAAAAAJAQAAAHwAAAAAQAgAAAA=",
+  "has_ff_escape": false,
+  "decoded_peak_count": 0,
+  "max_fft_pass": 0,
+  "pcm_sum": 0,
+  "pcm_checksum": 2097152000,
+  "pcm_first8": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "pcm_last8": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ]
+ }
+}

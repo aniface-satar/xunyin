@@ -22,6 +22,7 @@ declare namespace LX {
       songId: string | number // 歌曲ID，mg源为copyrightId，local为文件路径
       albumName: string // 歌曲专辑名称
       picUrl?: string | null // 歌曲图片链接
+      releaseDate?: string | null // 歌曲发行日期，例：2020-01-01，部分源提供
       toggleMusicInfo?: MusicInfoOnline | null
     }
 
