@@ -117,7 +117,7 @@ export const bucketFromScript = (name: string, singer = ''): LangBucket | null =
   return null
 }
 
-const INSTR_NAME_RE = /(纯音乐|伴奏|无人声|instrumental|inst\.?|piano version)/i
+const INSTR_NAME_RE = /(纯音乐|伴奏|无人声|instrumental|\binst\b\.?|piano version)/i
 
 /** 歌词里的粤语虚词。汉字统计本身分不开 zh/yue，这几个字是可靠的方言信号。 */
 const YUE_MARKER_RE = /[嘅唔冇俾佢哋嚟咗乜嗰咪]/g

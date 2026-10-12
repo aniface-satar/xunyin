@@ -72,6 +72,8 @@ test('bucketFromScript pins ja/ko/zh/other and refuses to guess en', () => {
   assert.equal(bucketFromScript('Despacito', 'Luis Fonsi'), null)
   // 纯拉丁不判 en（翻唱率最高，误判代价最大）
   assert.equal(bucketFromScript('Shape of You', 'Ed Sheeran'), null)
+  // 西里尔等非拉丁非中日韩文字走 otherLetter 占比通道
+  assert.equal(bucketFromScript('Bello', 'Михаил Круг'), 'other')
   assert.equal(bucketFromScript('1234', ''), null)
 })
 
@@ -84,6 +86,8 @@ test('bucketFromLyric uses lyric body, not the filename', () => {
   assert.equal(bucketFromLyric(null, 'Shape of You'), null)
   assert.equal(bucketFromLyric('', 'Shape of You'), null)
   assert.equal(bucketFromLyric('', '卡农（纯音乐）'), 'instr')
+  // 曲名只是包含 inst 这个子串，不算显式标记
+  assert.equal(bucketFromLyric('', 'Instinct'), null)
   assert.equal(bucketFromLyric('  \n[00:00.00]\n', 'Canon in D'), null)
 })
 
