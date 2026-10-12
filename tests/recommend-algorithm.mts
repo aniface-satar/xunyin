@@ -850,7 +850,7 @@ test('legacy v1 state migrates without losing learning data and restart defaults
     dislikedTracks: { bad: 123 },
     recentlyPlayed: [{ trackKey: 'old', timestamp: 1 }],
   } as any)
-  assert.equal(migrated.version, 8)
+  assert.equal(migrated.version, 9)
   assert.equal(migrated.tracks.old.score, 3)
   assert.equal(migrated.playlists.p1.positiveWeight, 3)
   assert.equal(migrated.playlists.p1.negativeWeight, 1)
@@ -869,7 +869,7 @@ test('legacy v1 state migrates without losing learning data and restart defaults
   assert.equal(stalePool.candidateCacheFetchedAt, 0)
   assert.ok(stalePool.tracks.keep, 'dropping the stale pool must keep the learning data')
   const defaults = createDefaultState()
-  assert.equal(defaults.version, 8)
+  assert.equal(defaults.version, 9)
   assert.ok(Array.isArray(defaults.radioHistory))
   assert.deepEqual(defaults.tokenWeights, {})
   assert.deepEqual(defaults.channelBandit, {})

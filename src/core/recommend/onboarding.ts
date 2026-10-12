@@ -60,46 +60,70 @@ export const sanitizeWeights = (weights: Record<string, number>): Record<string,
   return result
 }
 
-const seedValueFor = (percent: number) => percent / 100 * recommendationConfig.themeFeedback.saturation
+/**
+ * 问卷百分比 → 分类净权初值，以 50% 为中轴：高于 50 给正分量，低于 50 给负分量。
+ * 老写法是 percent/100×saturation，"中文 10%" 会被记成正偏好、把华语越推越多的锅有一半在这里。
+ * 50% 恰为 0（不播种），负支幅度只取正支的一半——误伤比误爱便宜，但也别狠到把用户没听过的分类一棒打死。
+ */
+const NEUTRAL_PERCENT = 50
+const NEGATIVE_SEED_RATIO = 0.5
 
-/** optionId→百分比 映射成 themeWeights 键→初值分量；同键多选项命中取 max。 */
+const seedValueFor = (percent: number): number => {
+  const saturation = recommendationConfig.themeFeedback.saturation
+  if (percent >= NEUTRAL_PERCENT) return (percent - NEUTRAL_PERCENT) / (100 - NEUTRAL_PERCENT) * saturation
+  return -((NEUTRAL_PERCENT - percent) / NEUTRAL_PERCENT * saturation * NEGATIVE_SEED_RATIO)
+}
+
+/** optionId→百分比 映射成 themeWeights 键→初值分量（可正可负）；同键多选项命中取绝对值更大的一侧。 */
 export const computeSeedWeights = (weights: Record<string, number>): Record<string, number> => {
   const seeds: Record<string, number> = {}
   for (const option of ONBOARDING_OPTIONS) {
     const percent = weights[option.id]
     if (!percent) continue
+    const value = seedValueFor(percent)
+    if (value == 0) continue
     for (const alias of option.aliases) {
       const key = normalizeText(alias)
       if (!key) continue
-      seeds[key] = Math.max(seeds[key] ?? 0, seedValueFor(percent))
+      if (Math.abs(value) > Math.abs(seeds[key] ?? 0)) seeds[key] = value
     }
   }
   return seeds
 }
 
-/** 把初值分量加进分类净权的正反馈侧；直接改动传入 map（与状态存储共享引用）。 */
+/** 把初值分量按符号并进分类净权的正/负反馈侧；直接改动传入 map（与状态存储共享引用）。 */
 export const applySeedWeights = (
   themes: Record<string, ThemePreference>,
   seeds: Record<string, number>,
   now = Date.now(),
 ): void => {
   for (const [key, seed] of Object.entries(seeds)) {
+    if (!seed) continue
     const base = themes[key] ?? createThemePreference(key, now)
-    themes[key] = { ...base, positiveWeight: base.positiveWeight + seed, lastUsedTime: now }
+    themes[key] = seed > 0
+      ? { ...base, positiveWeight: base.positiveWeight + seed, lastUsedTime: now }
+      : { ...base, negativeWeight: base.negativeWeight - seed, lastUsedTime: now }
   }
 }
 
-/** 只回退记录在案的初值分量：减后钳 0，正负皆 0 才删条目，用户反馈净权保留。 */
+/** 只回退记录在案的初值分量：按符号分两支对称回退，减后钳 0，两侧皆 0 才删条目，用户反馈净权保留。 */
 export const revokeSeedWeights = (
   themes: Record<string, ThemePreference>,
   seeds: Record<string, number>,
 ): void => {
   for (const [key, seed] of Object.entries(seeds)) {
+    if (!seed) continue
     const pref = themes[key]
     if (!pref) continue
-    const positiveWeight = Math.max(0, pref.positiveWeight - seed)
-    if (positiveWeight == 0 && pref.negativeWeight == 0) delete themes[key]
-    else themes[key] = { ...pref, positiveWeight }
+    if (seed > 0) {
+      const positiveWeight = Math.max(0, pref.positiveWeight - seed)
+      if (positiveWeight == 0 && pref.negativeWeight == 0) delete themes[key]
+      else themes[key] = { ...pref, positiveWeight }
+    } else {
+      const negativeWeight = Math.max(0, pref.negativeWeight + seed)
+      if (negativeWeight == 0 && pref.positiveWeight == 0) delete themes[key]
+      else themes[key] = { ...pref, negativeWeight }
+    }
   }
 }
 

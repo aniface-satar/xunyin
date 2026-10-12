@@ -1,8 +1,9 @@
 import { createSession } from './session.ts'
 import { createPlaylistPreference } from './feedback.ts'
-import type { RecommendationState, PlaylistPreference, OnboardingState } from './types.ts'
+import { applySeedWeights, computeSeedWeights, revokeSeedWeights } from './onboarding.ts'
+import type { RecommendationState, PlaylistPreference, OnboardingState, ThemePreference } from './types.ts'
 
-export const STATE_VERSION = 8
+export const STATE_VERSION = 9
 
 export const createDefaultOnboarding = (): OnboardingState => ({
   completed: false,
@@ -77,13 +78,23 @@ export const migrateRecommendationState = (raw: Partial<RecommendationState> | n
         weights: raw.onboarding?.weights ?? {},
         seededThemeWeights: raw.onboarding?.seededThemeWeights ?? {},
       }
+  const themeWeights: Record<string, ThemePreference> = { ...(raw.themeWeights ?? {}) }
+  // v9 起问卷播种以 50% 为中轴（10% 要产生负权）。存量用户不会再过问卷，
+  // 所以这里先用他们记录在案的老分量精确退掉，再拿一直没丢的百分比原值按新公式重播。
+  // 只改代码不加这条闸门，这次修正对他们永远不落地。
+  if ((raw.version ?? 0) < 9 && Object.keys(onboarding.weights).length > 0) {
+    revokeSeedWeights(themeWeights, onboarding.seededThemeWeights)
+    const seeds = computeSeedWeights(onboarding.weights)
+    applySeedWeights(themeWeights, seeds)
+    onboarding.seededThemeWeights = seeds
+  }
   return {
     ...base,
     ...raw,
     version: STATE_VERSION,
     tracks: raw.tracks ?? {},
     playlists,
-    themeWeights: raw.themeWeights ?? {},
+    themeWeights,
     trackPlaylists: raw.trackPlaylists ?? {},
     dislikedTracks: raw.dislikedTracks ?? {},
     hiddenPlaylists: raw.hiddenPlaylists ?? {},
