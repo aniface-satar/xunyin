@@ -185,8 +185,6 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
 
   void getLyricInfo({ musicInfo }).then((lyricInfo) => {
     if (musicInfo.id != playMusicInfo.musicInfo?.id) return
-    // 下载任务（ListItem）没有 name/singer/meta 形状，语种观察只认真实曲目
-    if (!('progress' in musicInfo)) recommendationEngine.observeLyricLanguage(musicInfo, lyricInfo.lyric)
     setMusicInfo({
       lrc: lyricInfo.lyric,
       tlrc: lyricInfo.tlyric,
@@ -195,6 +193,9 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
       rawlrc: lyricInfo.rawlrcInfo.lyric,
     })
     global.app_event.lyricUpdated()
+    // 歌词已经显示出去了才喂语言表：推荐侧的同步异常不能挡住当前这首歌的歌词渲染。
+    // 下载任务（ListItem）没有 name/singer/meta 形状，语种观察只认真实曲目
+    if (!('progress' in musicInfo)) recommendationEngine.observeLyricLanguage(musicInfo, lyricInfo.lyric)
   }).catch((err) => {
     console.log(err)
     if (musicInfo.id != playMusicInfo.musicInfo?.id) return
@@ -219,8 +220,6 @@ const debouncePlay = debounceBackgroundTimer((musicInfo: LX.Player.PlayMusic) =>
 
   void getLyricInfo({ musicInfo }).then((lyricInfo) => {
     if (musicInfo.id != playerState.playMusicInfo.musicInfo?.id) return
-    // 同上：下载任务不进语言表
-    if (!('progress' in musicInfo)) recommendationEngine.observeLyricLanguage(musicInfo, lyricInfo.lyric)
     setMusicInfo({
       lrc: lyricInfo.lyric,
       tlrc: lyricInfo.tlyric,
@@ -229,6 +228,8 @@ const debouncePlay = debounceBackgroundTimer((musicInfo: LX.Player.PlayMusic) =>
       rawlrc: lyricInfo.rawlrcInfo.lyric,
     })
     global.app_event.lyricUpdated()
+    // 同上：先显示歌词再喂语言表；下载任务不进语言表
+    if (!('progress' in musicInfo)) recommendationEngine.observeLyricLanguage(musicInfo, lyricInfo.lyric)
   }).catch((err) => {
     console.log(err)
     if (musicInfo.id != playerState.playMusicInfo.musicInfo?.id) return
