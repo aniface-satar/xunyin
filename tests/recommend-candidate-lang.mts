@@ -81,4 +81,10 @@ test('mergePoolCandidates output survives a JSON round trip', () => {
   const withoutLang = revived.find((c: any) => c.musicInfo.id == 'kg_b')
   assert.equal(withLang.lang, 'yue')
   assert.equal('lang' in withoutLang, false)
+
+  // 读盘后的两条同名同歌手候选再合并，才真的走合并分支：键缺席要一路保持
+  const sameAsBare = createPoolCandidate(baseInput(musicInfoOf({ songmid: 'b', name: '泡沫' })))
+  const [remerged] = mergePoolCandidates([withoutLang], [sameAsBare])
+  assert.equal('lang' in remerged, false)
+  assert.equal('langHint' in remerged, false)
 })
