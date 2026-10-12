@@ -1,4 +1,7 @@
 import { artistPriorFactor, type ArtistStatsMap } from './artistPrior.ts'
+import { QUOTA_LANG_BUCKETS } from './language.ts'
+import type { LangBucket } from './language.ts'
+import type { LangTargets } from './languageQuota.ts'
 import { themeNetWeight } from './feedback.ts'
 import type { DislikeRules } from './filter.ts'
 import { normalizePlaylistKey } from './playlistIndex.ts'
@@ -210,10 +213,12 @@ export const rankPlaylistTags = (
 }
 
 /**
- * 推荐歌单的分类挑选，与电台候选发现同一条配方：
- * 4 轮里 3 轮在学习到正偏好的分类里轮换，1 轮放开到全目录轮换探索——
- * 语种/场景/心情等普通分组由此轮流登场，分类不再困在目录首位（官方组）里。
- * 冷启动没有正偏好分类时全程在全目录里按轮次游走。
+ * 推荐歌单（tab 歌单区块）的分类挑选：4 轮里 3 轮在学习到正偏好的分类里轮换，
+ * 1 轮放开到全目录轮换探索——语种/场景/心情等普通分组由此轮流登场，
+ * 分类不再困在目录首位（官方组）里。冷启动没有正偏好分类时全程在全目录里按轮次游走。
+ *
+ * 注意：电台候选发现（candidate.ts 步骤 3）走的不是这条配方，它用 pickWeightedTag
+ * 按学习权重抽样——那里要给语种硬配额补货，浏览位的等频轮转会过量抓华语分类。
  */
 export const pickPlaylistTag = (
   tags: readonly TagSummary[],
@@ -234,4 +239,77 @@ export const pickPlaylistTag = (
 /** 歌单列表默认按最热取（封面齐全、质量稳），源没有最热档时退回目录首档。 */
 export const pickPlaylistSort = (sorts: readonly SortSummary[]): SortSummary | null => {
   return sorts.find(sort => HOT_SORT_PATTERN.test(`${sort.name} ${sort.tid ?? ''}`)) ?? sorts[0] ?? null
+}
+
+/**
+ * 语种桶 → 该源分类目录里的标签 id。只登记有逐曲语种字段（L1）的两个源，
+ * 桶召回抓回来的歌每首都带真语种，闭环才可信。
+ */
+export const LANG_BUCKET_TAGS: Partial<Record<LX.OnlineSource, Partial<Record<LangBucket, string>>>> = {
+  kg: { zh: '84', yue: '19', en: '20', ja: '21', ko: '23', other: '24' },
+  tx: { zh: '1', yue: '146', en: '3', ja: '5', ko: '4', other: '6' },
+}
+
+/**
+ * 缺口驱动召回的规划：把"20 首窗口里的目标首数"按池规模等比放大成池内应有候选数，
+ * 再跟池内实际计数相减，只留真正缺货的桶、按缺口降序取前几个。
+ * knownTagIds 传该源实时分类目录时，不在目录里的标签 id 直接跳过（源改版后不浪费请求）。
+ */
+export const planLangBucketFetch = (options: {
+  source: LX.OnlineSource
+  targets: LangTargets
+  poolCounts: Partial<Record<LangBucket, number>>
+  poolSize: number
+  windowSize: number
+  maxBuckets: number
+  knownTagIds?: ReadonlySet<string>
+}): Array<{ bucket: LangBucket, tagId: string, deficit: number }> => {
+  if (!options.targets.enforced) return []
+  const tagIds = LANG_BUCKET_TAGS[options.source]
+  if (!tagIds) return []
+  const window = Math.max(1, Math.floor(options.windowSize))
+  const scale = Math.max(1, Math.floor(options.poolSize)) / window
+  const planned: Array<{ bucket: LangBucket, tagId: string, deficit: number }> = []
+  for (const bucket of QUOTA_LANG_BUCKETS) {
+    const target = options.targets.targets[bucket]
+    const tagId = tagIds[bucket]
+    if (target === undefined || !tagId) continue
+    if (options.knownTagIds && !options.knownTagIds.has(tagId)) continue
+    const deficit = Math.ceil(target * scale) - (options.poolCounts[bucket] ?? 0)
+    if (deficit > 0) planned.push({ bucket, tagId, deficit })
+  }
+  planned.sort((a, b) => b.deficit - a.deficit)
+  return planned.slice(0, Math.max(0, Math.floor(options.maxBuckets)))
+}
+
+/**
+ * 分类轮换的加权抽样：概率正比于 exp(分类净权 / 温度)，取代旧的"每 4 轮留 1 轮全目录游走"等频轮转。
+ * 等频轮转会让华语这类高权重分类只占 1/N 的出场机会，是召回侧过量抓华语的根因之一。
+ * 没有任何正偏好分类时（冷启动）退回按轮次游走，保证不空转。
+ */
+export const pickWeightedTag = (
+  tags: readonly TagSummary[],
+  themes: Record<string, ThemePreference>,
+  options: { rotation?: number, temperature?: number, now?: number, rng?: () => number } = {},
+): TagSummary | null => {
+  if (!tags.length) return null
+  const now = options.now ?? Date.now()
+  const temperature = Math.max(0.0001, options.temperature ?? 1)
+  const preferred = tags
+    .map(tag => ({ tag, net: themeNetWeight(themes, normalizeText(tag.name), now) }))
+    .filter(entry => entry.net > 0)
+    .sort((a, b) => b.net - a.net)
+  if (!preferred.length) return tags[Math.abs(Math.floor(options.rotation ?? 0)) % tags.length]
+  // 必须减去最大净权再取 exp：`themeNetWeight` 是累加量、没有上界，直接 exp(net/温度) 在重度用户的
+  // 画像上会溢出成 Infinity，减法全变 NaN、永远走不到 `roll <= 0`，最后静默返回权重最低的分类。
+  // 这与 diversity.ts 的 softmaxSample 同一写法，但这里不 import 它——tabSections 不该依赖选曲器。
+  const maxNet = preferred[0].net
+  const weights = preferred.map(entry => Math.exp((entry.net - maxNet) / temperature))
+  const rng = options.rng ?? Math.random
+  let roll = rng() * weights.reduce((acc, weight) => acc + weight, 0)
+  for (let i = 0; i < preferred.length; i++) {
+    roll -= weights[i]
+    if (roll <= 0) return preferred[i].tag
+  }
+  return preferred[preferred.length - 1].tag
 }

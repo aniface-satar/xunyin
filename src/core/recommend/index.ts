@@ -306,6 +306,7 @@ class RecommendationEngine {
         explicitKeywords: computePreferenceKeywords(state.onboarding.weights),
         now: Date.now(),
         budget,
+        langTargets: computeLangTargets(state.onboarding.weights, cfg.channels.windowSize),
         rotation: Math.floor(Date.now() / (5 * 60 * 1000)),
       }
       const result = await refreshExternalCandidates(params)

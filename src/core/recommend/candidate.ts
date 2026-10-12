@@ -7,6 +7,11 @@ import { createPoolCandidate, mergePoolCandidates, planRefreshBudget } from './c
 import { themeAffinityFactor, themeNetWeight } from './feedback.ts'
 import { computePlayCountNumber, computeWeakThemeScore, normalizePlaylistKey, upsertObservedPlaylist, type PlaylistObservationInput } from './playlistIndex.ts'
 import { getCatalogCapabilities, getChartBoards, getChartTracks, getPlaylistDetailPage, getPlaylistTags, getPlaylistsByTag, searchMusic, searchPlaylists } from './sdkCatalog.ts'
+import { computeBucketDetailReserve, countPoolLang } from './languageQuota.ts'
+import { pickWeightedTag, planLangBucketFetch } from './tabSections.ts'
+import type { LangTargets } from './languageQuota.ts'
+import type { LangBucket } from './language.ts'
+import type { TagSummary } from './sdkCatalog.ts'
 import type { DislikeRules } from './filter.ts'
 import type { ChannelId, ObservedPlaylist, PoolCandidate, RadioProfile, RecommendationState } from './types.ts'
 
@@ -36,6 +41,8 @@ export interface CatalogRefreshParams {
   explicitKeywords?: readonly string[]
   /** 轮换计数，避免每次只抓第一页/第一张榜。 */
   rotation?: number
+  /** 语种硬配额的目标数（由引擎按问卷算好传入）；本模块据此决定要不要补哪个语种的货。 */
+  langTargets?: LangTargets
 }
 
 export interface CatalogRefreshResult {
@@ -74,6 +81,7 @@ export const createPlaylistCandidates = (
   tracks: readonly LX.Music.MusicInfoOnline[],
   params: CatalogRefreshParams,
   channel: ChannelId,
+  langHint?: LangBucket,
 ): PoolCandidate[] => {
   const candidates: PoolCandidate[] = []
   const profileSeedCount = Math.max(1, params.profile.seedKeys.size)
@@ -112,6 +120,7 @@ export const createPlaylistCandidates = (
       playCount: observed.playCount,
       confirmedSeedPlaylist: observed.confirmed,
       reason: reasons.join(','),
+      langHint,
       now: params.now,
     }))
   }
@@ -189,6 +198,7 @@ interface SummaryWithHints {
   category?: string
   hints: Set<ChannelId>
   keyword?: string
+  langHint?: LangBucket
 }
 
 export const refreshExternalCandidates = async(params: CatalogRefreshParams): Promise<CatalogRefreshResult> => {
@@ -217,16 +227,18 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
     requests += 1
   }
 
-  const addSummary = (summary: { id: string, source: LX.OnlineSource, name?: string, author?: string, desc?: string, playCount?: string | number | null, total?: string | number | null, category?: string }, hints: ChannelId[], keyword?: string) => {
-    if (!summary.id) return
+  const addSummary = (summary: { id: string, source: LX.OnlineSource, name?: string, author?: string, desc?: string, playCount?: string | number | null, total?: string | number | null, category?: string }, hints: ChannelId[], keyword?: string, langHint?: LangBucket): SummaryWithHints | null => {
+    if (!summary.id) return null
     const normalizedId = String(summary.id)
     const key = normalizePlaylistKey(source, normalizedId)
     const existing = summaries.find(item => normalizePlaylistKey(item.source, item.id) == key)
     if (existing) {
       for (const hint of hints) existing.hints.add(hint)
-      return
+      // 同一张歌单也可能被别的步骤先登记过：语种提示只在缺席时补，不让后续批次覆盖
+      if (langHint && !existing.langHint) existing.langHint = langHint
+      return existing
     }
-    if (summaryKeys.has(key)) return
+    if (summaryKeys.has(key)) return null
     summaryKeys.add(key)
     summaries.push({
       id: normalizedId,
@@ -239,7 +251,9 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
       category: summary.category,
       hints: new Set(hints),
       keyword,
+      langHint,
     })
+    return summaries[summaries.length - 1]
   }
 
   // 1. 已在本地记录过 source/sourceListId 的外部歌单（用户歌单同步来源）。
@@ -286,38 +300,39 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
     }
   }
 
-  // 3. 分类歌单列表轮换：优先画像加权过的分类，按 最新:最热=7:3 抓列表，让小众新歌单更多。
+  // 3. 分类歌单列表轮换：按学习到的分类权重抽样，按 最新:最热=7:3 抓列表，让小众新歌单更多。
+  let catalogTags: TagSummary[] = []
   if (caps.canTags && caps.canList) {
     try {
       ensureDiscoveryBudget()
       const tags = await getPlaylistTags(source, { signal: params.signal })
       if (tags.length) {
+        catalogTags = tags
         const tagNet = (name: string | undefined) => themeNetWeight(params.state.themeWeights, name ? normalizeText(name) : undefined, now)
-        const preferredTags = tags
-          .map(tag => ({ tag, net: tagNet(tag.name) }))
-          .filter(item => item.net > 0)
-          .sort((a, b) => b.net - a.net)
-        // 每 4 轮留 1 轮按全局轮换探索未加权分类，避免分类视野锁死
-        const tag = preferredTags.length && rotation % 4 != 3
-          ? preferredTags[rotation % preferredTags.length].tag
-          : tags[rotation % tags.length]
-        const tagNetWeight = tagNet(tag.name)
-        const sorts = caps.sorts
-        const newSort = sorts.find(sort => /最新|新歌|new/i.test(`${sort.name} ${sort.tid ?? ''}`))
-        const hotSort = sorts.find(sort => /最热|热歌|热门|popular|hot/i.test(`${sort.name} ${sort.tid ?? ''}`)) ?? sorts[0]
-        const wantNew = rotation % 10 < Math.round(recommendationConfig.candidatePool.newestListRatio * 10)
-        // 源没有"最新"排序时降级：取到的热门列表按 D（宽范围探索）归位，不冒充 C 通道。
-        const useNew = wantNew && newSort != null
-        const sortId = (useNew ? newSort : hotSort)?.id ?? ''
-        const page = 1 + (rotation % 3)
-        ensureDiscoveryBudget()
-        const playlists = await getPlaylistsByTag(source, tag.id, sortId, page, { signal: params.signal })
-        for (const summary of playlists) {
-          const hints: ChannelId[] = [useNew ? 'C' : 'D']
-          // 自带分类缺失时落到 tag 名，保证主题学习有归属
-          const category = summary.category ?? tag.name
-          if (tagNetWeight > 0) hints.push('A')
-          addSummary({ ...summary, category }, hints, tag.name)
+        const tag = pickWeightedTag(tags, params.state.themeWeights, {
+          rotation,
+          temperature: recommendationConfig.antiRepeat.categoryRotationTemperature,
+          now,
+        })
+        if (tag) {
+          const tagNetWeight = tagNet(tag.name)
+          const sorts = caps.sorts
+          const newSort = sorts.find(sort => /最新|新歌|new/i.test(`${sort.name} ${sort.tid ?? ''}`))
+          const hotSort = sorts.find(sort => /最热|热歌|热门|popular|hot/i.test(`${sort.name} ${sort.tid ?? ''}`)) ?? sorts[0]
+          const wantNew = rotation % 10 < Math.round(recommendationConfig.candidatePool.newestListRatio * 10)
+          // 源没有"最新"排序时降级：取到的热门列表按 D（宽范围探索）归位，不冒充 C 通道。
+          const useNew = wantNew && newSort != null
+          const sortId = (useNew ? newSort : hotSort)?.id ?? ''
+          const page = 1 + (rotation % 3)
+          ensureDiscoveryBudget()
+          const playlists = await getPlaylistsByTag(source, tag.id, sortId, page, { signal: params.signal })
+          for (const summary of playlists) {
+            const hints: ChannelId[] = [useNew ? 'C' : 'D']
+            // 自带分类缺失时落到 tag 名，保证主题学习有归属
+            const category = summary.category ?? tag.name
+            if (tagNetWeight > 0) hints.push('A')
+            addSummary({ ...summary, category }, hints, tag.name)
+          }
         }
       }
     } catch (error) {
@@ -345,17 +360,80 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
     }
   }
 
+  // 4.5 语种桶缺口召回：配额能不能兑现取决于池里有没有货，所以先按缺口补货再读详情。
+  const bucketSummaries: SummaryWithHints[] = []
+  let unknownShare = 0
+  if (params.langTargets?.enforced) {
+    const poolCandidates = params.state.candidateCache
+    const poolCounts = countPoolLang(poolCandidates)
+    const poolSize = Math.max(poolCandidates.length, recommendationConfig.candidatePool.targetSize)
+    unknownShare = (poolCounts.unknown ?? 0) / poolSize
+    const plan = planLangBucketFetch({
+      source,
+      targets: params.langTargets,
+      poolCounts,
+      poolSize,
+      windowSize: recommendationConfig.channels.windowSize,
+      maxBuckets: recommendationConfig.candidatePool.bucketFetchesPerRefresh,
+      knownTagIds: catalogTags.length ? new Set(catalogTags.map(tag => String(tag.id))) : undefined,
+    })
+    for (const entry of plan) {
+      if (params.signal?.cancelled) break
+      try {
+        ensureDiscoveryBudget()
+        const sorts = caps.sorts
+        const newSort = sorts.find(sort => /最新|新歌|new/i.test(`${sort.name} ${sort.tid ?? ''}`))
+        const hotSort = sorts.find(sort => /最热|热歌|热门|popular|hot/i.test(`${sort.name} ${sort.tid ?? ''}`)) ?? sorts[0]
+        // 最新:最热仍守 newestListRatio（默认 7:3），与步骤 3 同一套轮换口径
+        const wantNew = rotation % 10 < Math.round(recommendationConfig.candidatePool.newestListRatio * 10)
+        const useNew = wantNew && newSort != null
+        const sortId = (useNew ? newSort : hotSort)?.id ?? ''
+        const playlists = await getPlaylistsByTag(source, entry.tagId, sortId, 1 + (rotation % 3), { signal: params.signal })
+        let added = 0
+        for (const summary of playlists) {
+          if (added >= recommendationConfig.candidatePool.bucketPlaylistsPerBucket) break
+          const registered = addSummary({ ...summary, category: summary.category ?? `lang:${entry.bucket}` }, [useNew ? 'C' : 'D'], undefined, entry.bucket)
+          // 只有真的带上本桶语种提示才算数：被别的步骤先登记成无提示摘要时不重复排队
+          if (registered?.langHint == entry.bucket && !bucketSummaries.includes(registered)) {
+            bucketSummaries.push(registered)
+            added += 1
+          }
+        }
+        reasons.push(`lang_bucket:${entry.bucket}:${entry.tagId}:lists=${added}`)
+        if (!added) reasons.push(`lang_bucket_empty:${entry.bucket}`)
+      } catch (error) {
+        reasons.push(`lang_bucket_failed:${entry.bucket}`)
+        if ((error as Error).message == 'request_cancelled' || (error as Error).message == 'request_budget_exhausted') break
+      }
+    }
+  }
+
   // 5. 分批读取歌单详情，记录覆盖情况；只有读取详情后才确认是否包含种子歌曲。
   const playlistCandidates: PoolCandidate[] = []
   let detailFetches = 0
   // 给 C 通道预留一个详情位：否则 4 个额度永远被已知/搜索摘要吃光，最新/低曝光池恒为空
+  // 语种桶召回同样要从这份常规份额里让位（bucketReserve），常规摘要永远至少留一格
   const detailBudget = recommendationConfig.candidatePool.detailFetchesPerRefresh
-  const cSummaries = summaries.filter(summary => summary.hints.has('C'))
-  const mainSummaries = summaries.filter(summary => !summary.hints.has('C'))
+  const bucketReserve = computeBucketDetailReserve({
+    detailBudget,
+    unknownShare,
+    escalateAt: recommendationConfig.candidatePool.unknownShareEscalate,
+    base: recommendationConfig.candidatePool.bucketDetailReserve,
+    escalateTo: recommendationConfig.candidatePool.bucketDetailReserveWhenUnknownHigh,
+  })
+  const cSummaries = summaries.filter(summary => summary.hints.has('C') && !summary.langHint)
+  const mainSummaries = summaries.filter(summary => !summary.hints.has('C') && !summary.langHint)
   const orderedSummaries = [
-    ...mainSummaries.slice(0, Math.max(1, detailBudget - (cSummaries.length ? 1 : 0))),
+    ...mainSummaries.slice(0, Math.max(1, detailBudget - (cSummaries.length ? 1 : 0) - bucketReserve)),
     ...(cSummaries.length ? [cSummaries[Math.abs(rotation) % cSummaries.length]] : []),
   ]
+  if (bucketSummaries.length && bucketReserve > 0) {
+    // 从轮换位起连续取，第一轮落空的那张会在下一轮被取到——这就是"空歌单换下一张"的实现方式
+    const start = Math.abs(rotation) % bucketSummaries.length
+    for (let i = 0; i < bucketReserve && i < bucketSummaries.length; i++) {
+      orderedSummaries.push(bucketSummaries[(start + i) % bucketSummaries.length])
+    }
+  }
   const observedList = Object.values(params.state.observedPlaylists)
   for (const summary of orderedSummaries) {
     if (detailFetches >= detailBudget) break
@@ -388,6 +466,7 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
         seenTracks.add(key)
         uniqueTracks.push(track)
       }
+      if (!uniqueTracks.length && summary.langHint) reasons.push(`lang_bucket_empty:${summary.id}`)
       const seedTrackKeys: string[] = []
       let seedOverlap = 0
       for (const track of uniqueTracks) {
@@ -432,7 +511,7 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
       // 最新/low-exposure 歌单归 C；已确认种子重合的强关联归 A。
       if (summary.hints.has('C')) hints.add('C')
       const primaryChannel = hints.has('A') ? 'A' : hints.has('B') ? 'B' : hints.has('D') ? 'D' : 'C'
-      const created = createPlaylistCandidates(observed, uniqueTracks, params, primaryChannel)
+      const created = createPlaylistCandidates(observed, uniqueTracks, params, primaryChannel, summary.langHint)
       for (const candidate of created) {
         candidate.channels = [...new Set([...candidate.channels, ...hints])]
         candidate.observedPlaylistFrequency = Math.max(1, candidate.observedPlaylistFrequency)

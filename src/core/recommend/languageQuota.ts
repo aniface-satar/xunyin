@@ -156,3 +156,18 @@ export const countPoolLang = (
   }
   return counts
 }
+
+/**
+ * 桶召回该占几格详情额度：unknown 占比过高时多给一格，但永远给常规摘要留至少一格，
+ * 否则语种补齐会把画像通道（A/B）饿死。
+ */
+export const computeBucketDetailReserve = (options: {
+  detailBudget: number
+  unknownShare: number
+  escalateAt: number
+  base: number
+  escalateTo: number
+}): number => {
+  const want = options.unknownShare > options.escalateAt ? options.escalateTo : options.base
+  return Math.max(0, Math.min(want, Math.max(0, Math.floor(options.detailBudget) - 1)))
+}

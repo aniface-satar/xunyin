@@ -190,6 +190,16 @@ export const recommendationConfig = {
   candidatePool: {
     targetSize: 500,
     maxSize: 1500,
+    /** 每轮最多为几个缺货语种桶抓歌单列表（各 1 次发现请求）。 */
+    bucketFetchesPerRefresh: 1,
+    /** 每个缺货桶取前几张歌单当摘要：第一张读到空歌单时靠下一张替补。 */
+    bucketPlaylistsPerBucket: 2,
+    /** 详情额度里为语种桶召回预留几格（从常规摘要份额里让）。 */
+    bucketDetailReserve: 1,
+    /** 池内 unknown 占比过高时预留位加到几格。 */
+    bucketDetailReserveWhenUnknownHigh: 2,
+    /** 触发上面这条扩容的 unknown 占比阈值。 */
+    unknownShareEscalate: 0.3,
     playlistFetchTracks: 50,
     maxPagesPerPlaylist: 2,
     searchSeedsPerRefresh: 4,
@@ -238,6 +248,8 @@ export const recommendationConfig = {
     similarGroupRatioIn20: 0.4,
     /** 同一作品不同版本（Live/Remix 等）在最近 20 首内再次入选时的软降频系数。 */
     variantSoftFactor: 0.4,
+    /** 分类轮换的 softmax 温度：越小越只顾高权重分类，越大越均匀。 */
+    categoryRotationTemperature: 1.2,
     /** 相邻两个探索通道（C/D）曲目之间至少要隔多少首非探索曲目，防止连续 unfamiliar。 */
     explorationGap: 1,
     /** 候选不足时按顺序放宽歌手间隔；下限 4 首——同歌手至少隔 4 首，最后一档兜底才归零。 */
