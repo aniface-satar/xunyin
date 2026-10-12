@@ -53,6 +53,7 @@ export default {
       albumId: rawData.AlbumID,
       songmid: rawData.Audioid,
       source: 'kg',
+      lang: rawData.trans_param?.language ?? null, // 中文词表（国语/粤语/英语…），键名是小写 trans_param
       interval: formatPlayTime(rawData.Duration),
       _interval: rawData.Duration,
       img: rawData.Image ? String(rawData.Image).replace('{size}', '400') : null,

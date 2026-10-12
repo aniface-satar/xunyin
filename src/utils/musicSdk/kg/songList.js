@@ -322,13 +322,24 @@ export default {
     }).then(data => data.map(s => s[0])))
   },
   async getMusicInfos(list) {
+    // global.data 每项自带 trans_param.language，但下面的 createTask 只把 hash 送给 gateway 接口，
+    // 回来的对象没有语种——先按 hash/songid 建索引，交给 filterData2 回填，否则 L1 在这条路上恒为空
+    const langIndex = new Map()
+    for (const item of list) {
+      const lang = item.trans_param?.language
+      if (!lang) continue
+      if (item.hash) langIndex.set(String(item.hash).toUpperCase(), lang)
+      const id = item.audio_id ?? item.songid ?? item.SongID
+      if (id != null && id !== '') langIndex.set(`a${id}`, lang)
+    }
     return this.filterData2(
       await Promise.all(
         this.createTask(
           this.deDuplication(list)
             .map(item => ({ hash: item.hash })),
         ))
-        .then(([...datas]) => datas.flat()))
+        .then(([...datas]) => datas.flat()),
+      langIndex)
   },
 
   async getUserListDetailByCode(id) {
@@ -812,7 +823,7 @@ export default {
   // },
 
   // hash list filter
-  filterData2(rawList) {
+  filterData2(rawList, langIndex = new Map()) {
     // console.log(rawList)
     let ids = new Set()
     let list = []
@@ -861,6 +872,9 @@ export default {
         albumId: item.album_info.album_id,
         songmid: item.audio_info.audio_id,
         source: 'kg',
+        lang: langIndex.get(String(item.audio_info.hash).toUpperCase()) ??
+          langIndex.get(`a${item.audio_info.audio_id}`) ??
+          null,
         interval: formatPlayTime(parseInt(item.audio_info.timelength) / 1000),
         img: item.album_info?.sizable_cover ? String(item.album_info.sizable_cover).replace('{size}', '400') : null,
         lrc: null,

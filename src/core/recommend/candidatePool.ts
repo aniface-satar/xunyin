@@ -1,5 +1,6 @@
 import { recommendationConfig } from './config.ts'
 import { buildTrackKey, canonicalWorkKey, getAlbumName, getArtistKeys, getPrimaryArtist, normalizeText } from './trackKey.ts'
+import { bucketFromLangField, type LangBucket } from './language.ts'
 import { getExclusionReason, type ExclusionContext } from './filter.ts'
 import { computePlaylistScore, computeProfileAffinity, decayWeight } from './similarity.ts'
 import { sessionPenaltyFactor, sessionPenaltyScore, type SessionPenalties } from './sessionHealth.ts'
@@ -36,6 +37,8 @@ export interface CreatePoolCandidateInput {
   exploration?: number
   confirmedSeedPlaylist?: boolean
   reason?: string
+  /** L2 语种桶批次提示（桶召回用）；L1 由 musicInfo.meta.lang 自动推导，不需要入参。 */
+  langHint?: LangBucket | null
   now?: number
 }
 
@@ -45,6 +48,8 @@ export const createPoolCandidate = (input: CreatePoolCandidateInput): PoolCandid
   const channelSourceId: Partial<Record<ChannelId, string>> = {}
   for (const channel of channels) channelSourceId[channel] = input.sourceId
   const primaryArtist = getPrimaryArtist(input.musicInfo)
+  // L1：音源逐曲语种字段；判不出就不写这个键，让 derive-on-read 去走 L2~L4
+  const lang = bucketFromLangField(input.musicInfo.source, input.musicInfo.meta.lang)
   return {
     trackKey,
     musicInfo: input.musicInfo,
@@ -68,6 +73,8 @@ export const createPoolCandidate = (input: CreatePoolCandidateInput): PoolCandid
     primaryArtist,
     addedAt: input.now ?? Date.now(),
     confirmedSeedPlaylist: input.confirmedSeedPlaylist ?? false,
+    ...(lang ? { lang } : {}),
+    ...(input.langHint ? { langHint: input.langHint } : {}),
     reasons: input.reason ? [input.reason] : [],
   }
 }
@@ -111,6 +118,10 @@ export const mergePoolCandidates = (
       observedPlaylistFrequency: Math.max(prev.observedPlaylistFrequency, candidate.observedPlaylistFrequency),
       confirmedSeedPlaylist: prev.confirmedSeedPlaylist || candidate.confirmedSeedPlaylist,
       reasons: [...new Set([...prev.reasons, ...candidate.reasons])],
+      // L1 事实以较新的一份为准（同一首不同批次里，后到的更可能是重新拉取的现值）；
+      // 只有旧的一边有 L1 时保留它；langHint 同理取先出现的那个（提示来自更可信的批次）
+      lang: candidate.lang ?? prev.lang,
+      langHint: prev.langHint ?? candidate.langHint,
       addedAt: Math.min(prev.addedAt, candidate.addedAt),
     })
   }

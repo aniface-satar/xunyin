@@ -325,6 +325,7 @@ export default {
         albumName: item.album.name,
         albumId: item.album.mid,
         source: 'tx',
+        lang: item.language ?? null, // 数字码，见 recommend/language.ts 的 TX_LANGUAGE_CODES
         interval: formatPlayTime(item.interval),
         songId: item.id,
         albumMid: item.album.mid,

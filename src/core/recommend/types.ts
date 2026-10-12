@@ -1,3 +1,5 @@
+import type { LangBucket } from './language.ts'
+
 export type ChannelId = 'A' | 'B' | 'C' | 'D'
 
 /** 电台模式：radio 按画像推荐，explore 主打低曝光与榜单。 */
@@ -185,6 +187,10 @@ export interface PoolCandidate {
   primaryArtist: string
   addedAt: number
   confirmedSeedPlaylist: boolean
+  /** L1 事实：音源逐曲语种字段分桶结果。判不出时不写该键（旧缓存候选靠 derive-on-read 补）。 */
+  lang?: LangBucket
+  /** L2 提示：候选来源语种桶批次线索，可信度低于 lang。 */
+  langHint?: LangBucket
   reasons: string[]
 }
 
