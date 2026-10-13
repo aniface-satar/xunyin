@@ -52,7 +52,7 @@
 **修改**
 | 文件 | 改动 |
 | --- | --- |
-| `package.json` | 新依赖 + `test` 脚本追加 3 个测试文件 |
+| `package.json` | Task 1 只加 `dependencies`；`test` 脚本追加 3 个 monet 测试放在 Task 8（该行带着别人的未提交 WIP，见 Ruling P7） |
 | `android/app/src/main/java/cn/toside/music/mobile/MainApplication.java:20` 后 | import + `packages.add(new PalettePackage())` |
 | `src/types/app_setting.d.ts:96` 后 | 新增 `'theme.dynamicBg': boolean` |
 | `src/config/defaultSetting.ts:80` 后 | `'theme.dynamicBg': false` |
@@ -278,6 +278,43 @@ test('scrimAlpha 恒在 [0.45, 0.9] 且保留两位小数', () => {
 test('字体色非法时返回 null，让调用方回落', () => {
   assert.equal(buildCoverSurface(ORANGE, ORANGE, 0x00000000), null)
 })
+
+// —— 以下 5 条是任务评审补的用例。前 3 条对旧实现（未钳制通道、未挡 NaN/透明、未做 gamut 后校验）
+//    实测为红；后 2 条实测旧实现也为绿 —— 它们守的是"循环/削彩真的在起作用"，删掉对应防护才红。
+//    每条期望值都本机复现过，见行内注释。
+
+test('底色 tone 钳制循环真的会触发：中灰字色逼底色压到暗锚以下', () => {
+  const font = 0xFF787878 // tone 50.43，走暗分支
+  assert.ok(Hct.fromInt(font).tone > 50)
+  const base = Hct.fromInt(parseCssColor(buildCoverSurface(ORANGE, ORANGE, font)!.base)!)
+  assert.ok(base.tone < DARK_ANCHOR_TONE, `baseTone ${base.tone} 应低于暗锚 ${DARK_ANCHOR_TONE}，实测 1.93`)
+  assert.ok(Contrast.ratioOfTones(base.tone, Hct.fromInt(font).tone) >= MIN_CONTRAST)
+})
+
+test('两端都够不到 4.5 时返回 null，不交一个不达标的底色', () => {
+  // 旧实现这里交 rgb(255,255,255)，与字色对比度实测 4.4962 < 4.5
+  const font = Hct.from(0, 20, 49.95).toInt() >>> 0
+  assert.ok(Hct.fromInt(font).tone < 50, '夹具要落在判亮/判暗的边界带上')
+  assert.equal(buildCoverSurface(ORANGE, ORANGE, font), null)
+})
+
+test('削彩上限真的在削：hue 115 在高 tone 端有色度空间，必须压到 CHROMA_CAP 以下', () => {
+  const src = Hct.from(115, 120, 50).toInt() >>> 0
+  assert.ok(Hct.fromInt(src).chroma > CHROMA_CAP + 10, '夹具要能被上限咬到')
+  const base = Hct.fromInt(parseCssColor(buildCoverSurface(src, src, LIGHT_FONT)!.base)!)
+  assert.ok(base.chroma <= CHROMA_CAP + 1, `base chroma ${base.chroma} 实测 36.07；不削彩则为 50.21`)
+})
+
+test('CSS 通道越界按 255 钳制，不做位运算溢出', () => {
+  assert.equal(parseCssColor('rgb(300, 0, 0)'), 0xFFFF0000)
+})
+
+test('入参非整数或 alpha 不足 255 一律 null，不被 >>> 0 吞成黑色', () => {
+  assert.equal(buildCoverSurface(NaN, ORANGE, LIGHT_FONT), null)
+  assert.equal(buildCoverSurface(ORANGE, NaN, LIGHT_FONT), null)
+  assert.equal(buildCoverSurface(ORANGE, ORANGE, NaN), null)
+  assert.equal(buildCoverSurface(0x80E8551F, ORANGE, LIGHT_FONT), null)
+})
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -316,19 +353,25 @@ export interface CoverSurface {
 const cssRgb = (argb: number) => `rgb(${redFromArgb(argb)}, ${greenFromArgb(argb)}, ${blueFromArgb(argb)})`
 
 const rgbColorRxp = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/
+// CSS 语义是"超过 255 钳到 255"。少了这一步，`300 << 16` 会溢出污染相邻通道，
+// 交出去一个看起来正常的暗色，比抛错更难查。
+const clampChannel = (value: string) => Math.min(255, Number(value))
 
 export const parseCssColor = (color: string): number | null => {
   const matched = rgbColorRxp.exec(color.trim())
   if (!matched) return null
-  return ((255 << 24) | (Number(matched[1]) << 16) | (Number(matched[2]) << 8) | Number(matched[3])) >>> 0
+  return ((255 << 24) | (clampChannel(matched[1]) << 16) | (clampChannel(matched[2]) << 8) | clampChannel(matched[3])) >>> 0
 }
 
-export const buildCoverSurface = (sourceArgb: number, coverAvgArgb: number, fontArgb: number): CoverSurface | null => {
-  const font = Hct.fromInt(fontArgb >>> 0)
-  if (!fontArgb || !Number.isFinite(font.tone)) return null
-  const source = Hct.fromInt(sourceArgb >>> 0)
-  if (!Number.isFinite(source.tone)) return null
+// 上游（原生像素与 parseCssColor）保证 alpha=255；非整数或带透明通道就是取色失败。
+// 注意 `NaN >>> 0 === 0`：不在这一层挡住，失败会被静默当成"不透明黑"参与配色。
+const isUsableArgb = (argb: number) => Number.isInteger(argb) && (argb >>> 24) === 255
 
+export const buildCoverSurface = (sourceArgb: number, coverAvgArgb: number, fontArgb: number): CoverSurface | null => {
+  if (!isUsableArgb(fontArgb) || !isUsableArgb(sourceArgb) || !isUsableArgb(coverAvgArgb)) return null
+
+  const font = Hct.fromInt(fontArgb)
+  const source = Hct.fromInt(sourceArgb)
   const isDark = font.tone > 50
   const chroma = Math.min(source.chroma, CHROMA_CAP)
 
@@ -337,9 +380,14 @@ export const buildCoverSurface = (sourceArgb: number, coverAvgArgb: number, font
     tone = isDark ? Math.max(0, tone - 4) : Math.min(100, tone + 3)
   }
   const base = Hct.from(source.hue, chroma, tone).toInt() >>> 0
+  // HCT→sRGB 夹色域后真正铺出来的底色 tone 才是给用户看的那个值，判断以它为准。
+  // 字色 tone 落在 49.9~50.0 且带彩度时（例：Hct.from(0, 20, 49.95)）两端都够不到 4.5，
+  // 此时必须 null 回落到主题纯色，而不是交一个不达标的底色。
+  const baseTone = Hct.fromInt(base).tone
+  if (Contrast.ratioOfTones(baseTone, font.tone) < MIN_CONTRAST) return null
 
   // 合成 ≈ scrim(base, a) 盖在模糊封面(平均色) 上：偏离量 = (1 - a) * |封面 tone - 底色 tone|
-  const drift = Math.abs(Hct.fromInt(coverAvgArgb >>> 0).tone - tone)
+  const drift = Math.abs(Hct.fromInt(coverAvgArgb).tone - baseTone)
   let scrimAlpha = drift <= TONE_DRIFT_LIMIT ? SCRIM_MIN : 1 - TONE_DRIFT_LIMIT / drift
   scrimAlpha = Math.min(SCRIM_MAX, Math.max(SCRIM_MIN, scrimAlpha))
 
@@ -353,7 +401,7 @@ export const buildCoverSurface = (sourceArgb: number, coverAvgArgb: number, font
 node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-surface.mts
 ```
 
-Expected: PASS（8 个用例）。若"底色与字色对比度恒 >= 4.5"里 `0xFFFFFFFF` 那条挂了，说明 `MAX_TONE_STEPS` 不够 —— 把循环上界加到 12，不要靠放宽断言过关。
+Expected: PASS（13 个用例）。`MAX_TONE_STEPS = 8` 实测够用，别去放宽它：两个主题字色在锚点处就已达标（tone 12.74 vs 96 → 14.57；tone 90.94 vs 10 → 13.61），循环根本不跑；真正逼循环下探的是 `0xFF787878`（tone 50.43），2 步即 10→6→2 拿到 4.555。若有用例挂了，改实现不要改断言。
 
 - [ ] **Step 5: 提交**
 
@@ -1200,7 +1248,7 @@ node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-
   tests/monet-source-color.mts tests/monet-surface.mts tests/monet-cover-palette.mts 2>&1 | tail -6
 ```
 
-Expected: `fail 0`；`pass` 计数 = 21（T3 6 + T2 8 + T5 7）。
+Expected: `fail 0`；`pass` 计数 = 26（T3 6 + T2 13 + T5 7）。
 
 - [ ] **Step 8: 过静态检查**
 
@@ -1322,13 +1370,37 @@ git commit -m "feat(theme): PlayerOverlay 展开态背景接入封面莫奈取�
 
 ## Task 8: 回归 + 收尾
 
-- [ ] **Step 1: 全量单测**
+- [ ] **Step 1: 把三个 monet 测试挂进 `npm test`，再跑全量**
+
+`package.json` 的 `test` 脚本行（HEAD 与工作区都只有 1 行，`git show HEAD:package.json` 可取基线）当前**末尾带着别人未提交的 WIP**：工作区比 HEAD 多 ` tests/lyric-copy-text.mts`。直接 `git add package.json` 会把那半行提交进本功能，所以照 Task 1 的做法只暂存自己那一处：
 
 ```bash
-npm test
+mkdir -p .scratch
+node -e '
+const fs = require("fs")
+const add = " tests/monet-source-color.mts tests/monet-surface.mts tests/monet-cover-palette.mts"
+// 纯文本改那一行：JSON 往返重排会让 diff 变成整文件重写，git apply --cached 的上下文也对不上索引里的原始 blob
+const withMonet = (text) => text.replace(/("test": ")([^"]*)(")/, (m, a, body, c) =>
+  body.includes("monet-surface.mts") ? m : a + body + add + c)
+fs.writeFileSync("package.json", withMonet(fs.readFileSync("package.json", "utf8")))
+const head = require("child_process").execSync("git show HEAD:package.json", { encoding: "utf8" })
+fs.writeFileSync(".scratch/pkg-head.json", head)
+fs.writeFileSync(".scratch/pkg-index.json", withMonet(head))
+'
+diff -u .scratch/pkg-head.json .scratch/pkg-index.json | sed "1s|.*|--- a/package.json|;2s|.*|+++ b/package.json|" > .scratch/pkg.patch
+git apply --cached .scratch/pkg.patch
+git diff --cached -- package.json
 ```
 
-Expected: 全绿。若 `tests/*.mts` 里出现**改动前就红**的用例，按记忆纪律记录"既有红"并单独确认，不要顺手改别人的测试。
+Expected: `git diff --cached` 里**只有 `test` 那一行**，且新增的三个文件名都是 `monet-`，**不出现 `lyric-copy-text.mts`**（上面这段已在本机 `.scratch/pkgcheck/` 空跑过：`grep -c lyric-copy-text .scratch/pkg.patch` = 0，工作区改动是干净的 `14c14` 单行，行数 114 不变，JSON 仍可 parse）。工作区的 `package.json` 此时同时带着别人的 WIP 和这三个文件（`git diff -- package.json` 仍显示 lyric 那半行未暂存）。
+
+跑全量：
+
+```bash
+npm test 2>&1 | tail -8
+```
+
+Expected: `fail 0`。若 `tests/*.mts` 里出现**改动前就红**的用例，先 `git stash` 之外的方式确认（按文件跑那个用例），记录"既有红"并单独确认，不要顺手改别人的测试。
 
 - [ ] **Step 2: 类型与 lint 对账**
 
