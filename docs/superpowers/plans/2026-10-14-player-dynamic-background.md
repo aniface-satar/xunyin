@@ -1260,7 +1260,7 @@ npx tsc --noEmit -p tsconfig.json
 npx eslint src/utils/monet src/components/player/CoverBackdrop src/screens/PlayDetail/Vertical/index.tsx src/screens/Home/Views/Setting/settings/Theme --ext .ts,.tsx
 ```
 
-Expected: **本机 tsc 基线实测 137**（不是记忆里那个 107 —— 其中 88 条在 `src/components/player/PlayerOverlay/index.tsx`，16/6/3/3 条在既有 `tests/*.mts` 的 `as` 断言噪音，都与本功能无关）。闸门按"**自己新增/改动的文件 0 报错**"判定：`npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "monet|CoverBackdrop|DynamicBg"` 应为空。总数只允许持平或下降，**不要**去修别人的 88 条。lint 对新增文件 0 error。
+Expected: **本机 tsc 实测总数 137**（记忆那个 107 是"落在 `src/` 的子集"，不是总数，别拿它当总数比 —— 其中 88 条在 `src/components/player/PlayerOverlay/index.tsx`，16/6/3/3 条在既有 `tests/*.mts` 的 `as` 断言噪音，都与本功能无关）。闸门按"**自己新增/改动的文件 0 报错**"判定：`npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "monet|CoverBackdrop|DynamicBg"` 应为空。总数只允许持平或下降，**不要**去修别人的 88 条。lint 对新增文件 0 error。
 
 - [ ] **Step 9: 编译验证（真机验收移交控制方）**
 
