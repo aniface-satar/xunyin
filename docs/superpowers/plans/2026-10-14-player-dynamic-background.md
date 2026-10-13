@@ -25,6 +25,7 @@
 - **主题自带背景图优先**：`theme['bg-image'] != null` 时不启用封面取色（用户显式设过背景图）。
 - **默认关闭**：`theme.dynamicBg` 默认 `false`，老用户零感知。
 - **测试约定**：单测文件放 `tests/*.mts`，用 `import ... from '../src/xxx/yyy.ts'`（**必须带 `.ts` 后缀**），被测源文件**不得** `import 'react-native'`，也不得用 `@/` 别名（node 解析不了）。跑单个文件：`node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/<file>.mts`。
+- **被 node 加载的 src 模块，自己内部的相对 import 也必须带 `.ts`**：`src/utils/monet/coverPalette.ts` 会 import `sourceColor` / `surface`，无扩展名时 `node --test` 直接 `ERR_MODULE_NOT_FOUND`（实测）；Metro 0.80.12 两种写法都能解析（已用探针 bundle 验过 `.ts` 那侧），所以 monet 目录内部统一写显式 `.ts`。**只限被单测加载的纯逻辑模块** —— UI 侧文件（`useCoverSurface.ts`、`CoverBackdrop`、`DynamicBg.tsx`）沿用仓库无扩展名写法，不要顺手全改。
 - **提交纪律**：当前分支 `feat/music-recognition-phase1` 工作区有大量无关未提交改动（174 改 + 7 删）。**禁止 `git add -A` / `git add .`**，每次只 add 本计划列出的文件。
 
 ## File Structure
@@ -619,9 +620,11 @@ public class PaletteModule extends ReactContextBaseJavaModule {
 
   private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-  // 封面实际几十到几百 KB，4MB 已经宽得离谱。不设上限时 readAll 靠 ByteArrayOutputStream 成倍扩容，
-  // 一个"自称是图片"的巨大响应就能把堆撑爆 —— 那是 OOM 最直接的入口。
+  // 网络响应 4MB：封面实际几十到几百 KB，超了就是"自称是图片"的东西在撑堆。
   private static final int MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024;
+  // 本地文件单独放宽到 32MB：本机歌曲的封面是内嵌图抽出来的文件（src/core/music/local.ts:112 会拼成 file://），
+  // FLAC/高码率的内嵌封面超 4MB 很常见，用网络那个上限会把它们静默判成取色失败。
+  private static final int MAX_LOCAL_BYTES = 32 * 1024 * 1024;
 
   PaletteModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -700,7 +703,7 @@ public class PaletteModule extends ReactContextBaseJavaModule {
       File file = new File(path);
       FileInputStream in = new FileInputStream(file);
       try {
-        return readAll(in);
+        return readAll(in, MAX_LOCAL_BYTES);
       } finally {
         in.close();
       }
@@ -720,7 +723,7 @@ public class PaletteModule extends ReactContextBaseJavaModule {
       InputStream in = conn.getInputStream();
       if (in == null) throw new Exception("empty body");
       try {
-        return readAll(in);
+        return readAll(in, MAX_DOWNLOAD_BYTES);
       } finally {
         in.close();
       }
@@ -729,12 +732,12 @@ public class PaletteModule extends ReactContextBaseJavaModule {
     }
   }
 
-  private byte[] readAll(InputStream in) throws Exception {
+  private byte[] readAll(InputStream in, int maxBytes) throws Exception {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     byte[] buffer = new byte[8192];
     int read;
     while ((read = in.read(buffer)) != -1) {
-      if (out.size() + read > MAX_DOWNLOAD_BYTES) throw new Exception("image too large");
+      if (out.size() + read > maxBytes) throw new Exception("image too large");
       out.write(buffer, 0, read);
     }
     return out.toByteArray();
@@ -853,7 +856,7 @@ Create `tests/monet-cover-palette.mts`:
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createCoverPalette } from '../src/utils/monet/coverPalette.ts'
+import { PIXEL_LIMIT, createCoverPalette } from '../src/utils/monet/coverPalette.ts'
 import { Hct } from '@material/material-color-utilities/hct/hct.js'
 
 const GRAY = 0xFF808080
@@ -933,6 +936,25 @@ test('缓存有上限，超出后淘汰最早的 key', async() => {
   assert.equal(calls, 71)
 })
 
+test('像素层按自己的 PIXEL_LIMIT 淘汰，不跟配色层共用 60', async() => {
+  // 探测像素层必须换 font：同一 url + 同一 font 会先命中配色层（cache.has(key) 直接返回），
+  // 根本走不到 fetchOnce，那样的话这条用例测的是配色层而不是像素层。换 DARK_FONT 后 surface key 变了、
+  // pixel key 没变，才真正问的是"这张封面的像素还在不在缓存里"。
+  // 若实现误用 CACHE_LIMIT(60)：21 条不触发淘汰，第二个 assert 就会红（calls 停在 21），所以这条是承重的。
+  // fetcher 恒返回 null：失败条目同样占位（第 4 条用例钉的行为），顺带省掉真量化开销。
+  let calls = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    return null
+  })
+  for (let i = 0; i < PIXEL_LIMIT + 1; i++) await getCoverSurface(`https://example.com/${i}.jpg`, LIGHT_FONT)
+  assert.equal(calls, PIXEL_LIMIT + 1)
+  await getCoverSurface('https://example.com/0.jpg', DARK_FONT)
+  assert.equal(calls, PIXEL_LIMIT + 2)
+  await getCoverSurface(`https://example.com/${PIXEL_LIMIT}.jpg`, DARK_FONT)
+  assert.equal(calls, PIXEL_LIMIT + 2)
+})
+
 test('clearCache 后重新取色', async() => {
   let calls = 0
   const { getCoverSurface, clearCache } = createCoverPalette(async() => {
@@ -959,23 +981,37 @@ Expected: FAIL —— `Cannot find module '.../coverPalette.ts'`
 Create `src/utils/monet/coverPalette.ts`:
 
 ```ts
-import { analyzeArgbPixels } from './sourceColor'
-import { buildCoverSurface, parseCssColor, type CoverSurface } from './surface'
+// 相对 import 必须带 .ts：这个文件被 `node --test` 直接加载，Node ESM 不认无扩展名的相对路径
+// （实测 ERR_MODULE_NOT_FOUND: .../monet/sourceColor），而 Metro 0.80.12 带扩展名照样解析成功（已用探针 bundle 验过）。
+import { analyzeArgbPixels } from './sourceColor.ts'
+import { buildCoverSurface, parseCssColor, type CoverSurface } from './surface.ts'
 
 export const CACHE_LIMIT = 60
+// 像素层单独设上限，而且要比 CACHE_LIMIT 小：一个 value 是最多 16384 个数字的数组，
+// 比一条 CoverSurface 贵两个量级。pixelCache 原先只有 clearCache() 能清空，而全计划没有任何调用方，
+// 长时间连播会把听过的每一张封面的原始像素都留在内存里。
+export const PIXEL_LIMIT = 20
 
 export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[] | null>) => {
   // 两层缓存：像素按 url 缓存（下载+量化只一次），配色按 url|font 缓存（暗/亮主题各一份）
   const pixelCache = new Map<string, Promise<number[] | null>>()
+  const pixelOrder: string[] = []
   const cache = new Map<string, CoverSurface | null>()
   const cacheOrder: string[] = []
   const pending = new Map<string, Promise<CoverSurface | null>>()
 
   const fetchOnce = (picUrl: string) => {
-    let task = pixelCache.get(picUrl)
-    if (!task) {
-      task = Promise.resolve(fetchPixels(picUrl)).catch(() => null)
-      pixelCache.set(picUrl, task)
+    const cached = pixelCache.get(picUrl)
+    if (cached) return cached
+    // 取色失败（null）也进缓存，这是 Task 5 第 4 条用例钉住的行为：原生侧是单线程队列，
+    // 坏源封面若不缓存就会每跳一次这首歌再排一次失败请求，把当前这首歌的上色挤到一串失败后面。
+    // 代价是"瞬时失败即整会话不再上色"，出口在 Task 6：翻动"动态背景"开关时 clearCoverPaletteCache()。
+    const task = Promise.resolve(fetchPixels(picUrl)).catch(() => null)
+    pixelCache.set(picUrl, task)
+    pixelOrder.push(picUrl)
+    if (pixelOrder.length > PIXEL_LIMIT) {
+      const oldest = pixelOrder.shift()!
+      if (oldest !== picUrl) pixelCache.delete(oldest)
     }
     return task
   }
@@ -1024,6 +1060,7 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
     },
     clearCache() {
       pixelCache.clear()
+      pixelOrder.length = 0
       cache.clear()
       cacheOrder.length = 0
       pending.clear()
@@ -1054,7 +1091,7 @@ export const clearCoverPaletteCache = palette.clearCache
 node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-cover-palette.mts
 ```
 
-Expected: PASS（7 个用例）。第 6 条"缓存有上限"要求 `CACHE_LIMIT = 60` 且按插入序淘汰；若淘汰逻辑把刚写的 key 删了，改成"先删 cacheOrder 头部且不等于当前 key"。
+Expected: PASS（**8** 个用例）。第 6 条"缓存有上限"要求 `CACHE_LIMIT = 60` 且按插入序淘汰；若淘汰逻辑把刚写的 key 删了，改成"先删 cacheOrder 头部且不等于当前 key"。第 7 条"像素层按自己的 PIXEL_LIMIT 淘汰"是**承重的**：控制方实测把 `pixelOrder.length > PIXEL_LIMIT` 改成 `> CACHE_LIMIT` 后这条会红（`calls` 停在 21、期望 22），别把它当摆设放宽。
 
 - [ ] **Step 6: 提交**
 
@@ -1129,12 +1166,17 @@ import { createStyle } from '@/utils/tools'
 import { useI18n } from '@/lang'
 import { updateSetting } from '@/core/common'
 import { useSettingValue } from '@/store/setting/hook'
+import { clearCoverPaletteCache } from '@/utils/monet'
 
 export default memo(() => {
   const t = useI18n()
   const dynamicBg = useSettingValue('theme.dynamicBg')
   const setDynamicBg = (dynamicBg: boolean) => {
     updateSetting({ 'theme.dynamicBg': dynamicBg })
+    // Task 5 会把取色失败的封面按 url 缓存到会话结束（那是它第 4 条用例钉住的行为），
+    // 而 clearCoverPaletteCache 在全计划里原本没有任何调用方 —— 翻开关就是用户唯一够得到的重试出口：
+    // 关掉再打开，慢网/瞬时失败的封面会重新取色，而不是永远灰着。
+    clearCoverPaletteCache()
   }
 
   return (
