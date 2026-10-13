@@ -1000,7 +1000,10 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
   const cacheOrder: string[] = []
   const pending = new Map<string, Promise<CoverSurface | null>>()
 
-  const fetchOnce = (picUrl: string) => {
+  // async 是仓库规则要求的（@typescript-eslint/promise-function-async：非 async 函数返回 Promise 会报），
+  // 不是功能需要。去重靠 pixelCache 里那条原始 promise：async 包装只是再套一层壳，
+  // 命中缓存时不会第二次调用 fetchPixels，第 2、5 条用例仍然量得到。
+  const fetchOnce = async(picUrl: string): Promise<number[] | null> => {
     const cached = pixelCache.get(picUrl)
     if (cached) return cached
     // 取色失败（null）也进缓存，这是 Task 5 第 4 条用例钉住的行为：原生侧是单线程队列，
@@ -1027,9 +1030,10 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
     cache.set(key, value)
   }
 
-  const load = (picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
+  // 同上：async 只为过 lint。pending 里的原始 promise 仍是去重的那一条。
+  const load = async(picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
     const key = `${picUrl}|${fontArgb}`
-    if (cache.has(key)) return Promise.resolve(cache.get(key)!)
+    if (cache.has(key)) return cache.get(key)!
     const inFlight = pending.get(key)
     if (inFlight) return inFlight
 
@@ -1049,10 +1053,10 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
   }
 
   return {
-    getCoverSurface(picUrl: string | null | undefined, fontColor: string) {
-      if (!picUrl) return Promise.resolve(null)
+    getCoverSurface: async(picUrl: string | null | undefined, fontColor: string): Promise<CoverSurface | null> => {
+      if (!picUrl) return null
       const fontArgb = parseCssColor(fontColor)
-      if (fontArgb == null) return Promise.resolve(null)
+      if (fontArgb == null) return null
       return load(picUrl, fontArgb).then(surface => {
         remember(`${picUrl}|${fontArgb}`, surface)
         return surface
@@ -1079,10 +1083,16 @@ import { createCoverPalette } from './coverPalette'
 
 export { type CoverSurface } from './surface'
 
+// 直接写 `export const getCoverSurface = palette.getCoverSurface` 会报
+// @typescript-eslint/unbound-method（把对象方法当函数引用导出），所以两个导出都包一层箭头。
 const palette = createCoverPalette(getArgbPixels)
 
-export const getCoverSurface = palette.getCoverSurface
-export const clearCoverPaletteCache = palette.clearCache
+export const getCoverSurface = async(picUrl: string | null | undefined, fontColor: string) =>
+  palette.getCoverSurface(picUrl, fontColor)
+
+export const clearCoverPaletteCache = () => {
+  palette.clearCache()
+}
 ```
 
 - [ ] **Step 5: 跑测试确认通过**
@@ -1092,6 +1102,15 @@ node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-
 ```
 
 Expected: PASS（**8** 个用例）。第 6 条"缓存有上限"要求 `CACHE_LIMIT = 60` 且按插入序淘汰；若淘汰逻辑把刚写的 key 删了，改成"先删 cacheOrder 头部且不等于当前 key"。第 7 条"像素层按自己的 PIXEL_LIMIT 淘汰"是**承重的**：控制方实测把 `pixelOrder.length > PIXEL_LIMIT` 改成 `> CACHE_LIMIT` 后这条会红（`calls` 停在 21、期望 22），别把它当摆设放宽。
+
+再加两道闸门（本机实测过的目标值）：
+
+```bash
+npx eslint src/utils/monet/coverPalette.ts src/utils/monet/index.ts
+npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "monet/(coverPalette|index)"
+```
+
+Expected：两条命令都为**空输出**。这两个文件里所有 `async` 都不是风格选择，是仓库规则逼出来的 —— 少一个就报 `@typescript-eslint/promise-function-async`（fetchOnce/load/getCoverSurface 三处）或 `@typescript-eslint/unbound-method`（index.ts 两个导出）。**不要**为了让代码"更干净"把 async 去掉或把包装箭头改成直接导出方法引用，那样 lint 立刻红回去。禁用 `eslint --fix`。
 
 - [ ] **Step 6: 提交**
 
