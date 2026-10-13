@@ -4,14 +4,12 @@ import { StyleSheet, View } from 'react-native'
 import ImageBackground from '@/components/common/ImageBackground'
 import { defaultHeaders } from '@/components/common/Image'
 import { useCoverSurface } from '@/utils/monet/useCoverSurface'
-import { useTheme } from '@/store/theme/hook'
 
 const BLUR_RADIUS = 90
 
-export default memo(({ enabled = true }: { enabled?: boolean }) => {
-  const theme = useTheme()
+export default memo(() => {
   const { picUrl, surface } = useCoverSurface()
-  const active = enabled && surface != null
+  const active = surface != null
 
   const source = useMemo(() => (active && picUrl
     ? {
@@ -21,15 +19,20 @@ export default memo(({ enabled = true }: { enabled?: boolean }) => {
       }
     : null), [active, picUrl])
 
+  // 没上色就整层不存在。早先计划版本在这里铺一层不透明的 theme['c-content-background'] 当底色，
+  // 控制方实测那会盖掉 5 个内置主题（black / mid_autumn / naruto / china_ink / happy_new_year）的主题背景图 ——
+  // 它们的 `c-main-background` 是 0.95/0.9/0.8 半透明，PageContent 特意让背景图从下面透出来；
+  // 结果是"功能没打开就改了观感"，直接违反验收第 ① 条。另外 12 个主题 c-main-background 是全不透明白，本来就没有透出，不受影响。
+  // 顺带：`surface` 非空必然意味着 picUrl 非空（取色是拿 url 换来的），所以 active 为真时下面那个三元一定拿到 source。
+  if (!active) return null
+
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: active ? surface.base : theme['c-content-background'] }]}>
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: surface.base }]} pointerEvents="none">
       {
         source ? (
           <>
             <ImageBackground style={StyleSheet.absoluteFill} source={source} resizeMode="cover" blurRadius={BLUR_RADIUS} />
-            {/* 这一处必须留 `!`：`source` 不是 `active` 的别名，TS 的 aliased narrowing 只认得出上面那行的三元。
-                删掉它 tsc 报 TS18047，加上它 lint 报 no-unnecessary-type-assertion —— 两处写法不同是被这两条闸门夹出来的。 */}
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: surface!.base, opacity: surface!.scrimAlpha }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: surface.base, opacity: surface.scrimAlpha }]} />
           </>
         ) : null
       }
