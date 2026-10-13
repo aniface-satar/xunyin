@@ -18,6 +18,7 @@ import cn.toside.music.mobile.userApi.UserApiPackage;
 import cn.toside.music.mobile.utils.UtilsPackage;
 import cn.toside.music.mobile.volumeBalancer.VolumeBalancerPackage;
 import cn.toside.music.mobile.audioRecord.AudioRecordPackage;
+import cn.toside.music.mobile.palette.PalettePackage;
 
 public class MainApplication extends NavigationApplication {
 
@@ -43,6 +44,7 @@ public class MainApplication extends NavigationApplication {
           packages.add(new VolumeBalancerPackage());
           packages.add(new AudioFeaturePackage());
           packages.add(new AudioRecordPackage());
+          packages.add(new PalettePackage());
           return packages;
         }
 
