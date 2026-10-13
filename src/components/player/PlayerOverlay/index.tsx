@@ -117,6 +117,13 @@ var OverlayBackdrop = function OverlayBackdrop(_refBackdrop) {
   var theme = (0, require("../../../store/theme/hook").useTheme)();
   var backdropImageSource = theme['bg-image'];
   var hasBackdropImage = backdropImageSource != null;
+  var coverBackdrop = (0, require("../../../utils/monet/useCoverSurface").useCoverSurface)();
+  var coverSurface = hasBackdropImage || !coverBackdrop.enabled ? null : coverBackdrop.surface;
+  var coverSource = coverSurface != null && coverBackdrop.picUrl ? {
+    uri: coverBackdrop.picUrl.startsWith('/') ? 'file://' + coverBackdrop.picUrl : coverBackdrop.picUrl,
+    headers: require("../../common/Image").defaultHeaders,
+    cache: 'force-cache'
+  } : null;
   var backdropOffsetX = progress.interpolate({
     inputRange: [0, 1],
     outputRange: [-source.bar.x, 0]
@@ -133,7 +140,7 @@ var OverlayBackdrop = function OverlayBackdrop(_refBackdrop) {
       top: 0,
       width: winWidth,
       height: winHeight,
-      backgroundColor: theme['c-content-background'],
+      backgroundColor: coverSurface != null ? coverSurface.base : theme['c-content-background'],
       transform: [{ translateX: backdropOffsetX }, { translateY: backdropOffsetY }]
     },
     children: (0, _jsxRuntime.jsxs)(_jsxRuntime.Fragment, {
@@ -142,10 +149,15 @@ var OverlayBackdrop = function OverlayBackdrop(_refBackdrop) {
         source: backdropImageSource,
         resizeMode: "cover",
         blurRadius: 24
+      }) : null, coverSource != null ? (0, _jsxRuntime.jsx)(_ImageBackground.default, {
+        style: _reactNative.StyleSheet.absoluteFill,
+        source: coverSource,
+        resizeMode: "cover",
+        blurRadius: 90
       }) : null, (0, _jsxRuntime.jsx)(_reactNative.View, {
         style: [_reactNative.StyleSheet.absoluteFill, {
-          backgroundColor: theme['c-content-background'],
-          opacity: hasBackdropImage ? 0.58 : 0.64
+          backgroundColor: coverSurface != null ? coverSurface.base : theme['c-content-background'],
+          opacity: coverSurface != null ? coverSurface.scrimAlpha : hasBackdropImage ? 0.58 : 0.64
         }]
       })]
     })
