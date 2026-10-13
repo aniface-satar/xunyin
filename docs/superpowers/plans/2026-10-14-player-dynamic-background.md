@@ -560,6 +560,8 @@ git commit -m "feat(theme): ARGB 像素走官方 Monet 取源色，灰封面回�
 
 原生只做"给像素"，一行色彩逻辑都不写 —— 这样换算法不用重编 APK。下载必须带和 JS 侧 `defaultHeaders` 一致的 User-Agent（`src/components/common/Image.tsx:19`），否则部分音源封面会 403。
 
+控制方已核实的现场（不用再查）：① 上面的 UA 串与 `defaultHeaders['User-Agent']` **逐字相等**，别改；② `MainApplication.java` 工作区**干净**（无别人 WIP），锚点 `packages.add(new AudioRecordPackage());` 实测在第 **45** 行，本任务可直接整文件 `git add`；③ `android/app/src/main/res/xml/network_security_config.xml` 是 `base-config cleartextTrafficPermitted="true"`，所以 `http://` 封面走 `HttpURLConnection` 不会被拦，无需额外配置；④ Java 的 `int` 过 JS 边界是**有符号**的（`0xFFE8551F` 变成负数），下游 `analyzeArgbPixels` 已用 `>>> 0` 归一，本模块不要为此特殊处理。
+
 **Files:**
 - Create: `android/app/src/main/java/cn/toside/music/mobile/palette/PaletteModule.java`
 - Create: `android/app/src/main/java/cn/toside/music/mobile/palette/PalettePackage.java`
@@ -680,7 +682,9 @@ public class PaletteModule extends ReactContextBaseJavaModule {
     try {
       int code = conn.getResponseCode();
       if (code < 200 || code >= 400) throw new Exception("http " + code);
-      InputStream in = code >= 300 ? conn.getErrorStream() : conn.getInputStream();
+      // 走到这里只剩 2xx/3xx：3xx 没跟随时响应体在 getInputStream()，getErrorStream() 恒为 null，
+      // 那样会把"靠 UA 才拿得到的 CDN 跳转封面"误判成取色失败。
+      InputStream in = conn.getInputStream();
       if (in == null) throw new Exception("empty body");
       try {
         return readAll(in);
