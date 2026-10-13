@@ -23,7 +23,7 @@ export default memo(() => {
   // 控制方实测那会盖掉 5 个内置主题（black / mid_autumn / naruto / china_ink / happy_new_year）的主题背景图 ——
   // 它们的 `c-main-background` 是 0.95/0.9/0.8 半透明，PageContent 特意让背景图从下面透出来；
   // 结果是"功能没打开就改了观感"，直接违反验收第 ① 条。另外 12 个主题 c-main-background 是全不透明白，本来就没有透出，不受影响。
-  // 顺带：`surface` 非空必然意味着 picUrl 非空（取色是拿 url 换来的），所以 active 为真时下面那个三元一定拿到 source。
+  // 顺带：surface 是用 picUrl 换来的，所以 active 为真时下面那个三元一般都有 source；切歌那一帧 picUrl 可能先变空，三元退化成纯色，由 `source ? … : null` 兜住。
   if (!active) return null
 
   return (

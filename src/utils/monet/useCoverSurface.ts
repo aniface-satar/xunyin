@@ -12,10 +12,12 @@ export interface CoverBackdropState {
 }
 
 export const useCoverSurface = (): CoverBackdropState => {
-  const enabled = useSettingValue('theme.dynamicBg')
   const theme = useTheme()
+  const dynamicBg = useSettingValue('theme.dynamicBg')
   const { pic } = usePlayerMusicInfo()
   const fontColor = theme['c-font']
+  // 真值判断而不是 != null：这就是 PageContent 拿去画背景图的同一个值，主题自带背景图时封面取色整条让路
+  const enabled = dynamicBg && !theme['bg-image']
 
   const [surface, setSurface] = useState<CoverSurface | null>(null)
 
