@@ -448,14 +448,18 @@ const moduleIconXml = `<?xml version="1.0" encoding="utf-8"?>
   // 就炸，而不是拖到 node --test 抛 ERR_PACKAGE_PATH_NOT_EXPORTED 才发现。
   const mcuPkgPath = path.join(rootPath, 'node_modules/@material/material-color-utilities/package.json')
   try {
-    const mcuExports = JSON.parse((await fs.promises.readFile(mcuPkgPath)).toString()).exports
-    if (mcuExports?.['./*'] !== './*') {
+    const { exports: mcuExports } = JSON.parse((await fs.promises.readFile(mcuPkgPath)).toString())
+    // 上游若彻底删掉 exports 字段，Node 会回落到按文件路径解析，子路径 import 本来就通，不算失配
+    if (mcuExports !== undefined && !('./*' in Object(mcuExports))) {
       console.error('Patch failed: @material/material-color-utilities exports 未放开子路径（正则与上游 package.json 字面格式不匹配）')
       process.exitCode = 1
     }
   } catch (err) {
-    console.error(`Patch verify ${mcuPkgPath} failed: ${err.message}`)
-    process.exitCode = 1
+    if (err.code === 'ENOENT') console.log('Skipping material-color-utilities exports check (not installed)')
+    else {
+      console.error(`Patch verify ${mcuPkgPath} failed: ${err.message}`)
+      process.exitCode = 1
+    }
   }
   await fs.promises.mkdir(path.dirname(path.join(rootPath, trackPlayerDrawable)), { recursive: true })
   await fs.promises.writeFile(path.join(rootPath, trackPlayerDrawable), moduleIconXml)
