@@ -1,0 +1,1299 @@
+# 播放页"动态背景"（封面莫奈取色）Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 全屏播放页背景跟随当前歌曲封面的莫奈（Material You / HCT 色调）配色，前景字色完全不变，并在外观设置里提供"动态背景"开关。
+
+**Architecture:** 三层分工。Android 原生模块只负责"下载封面 → 降采样 → 吐 ARGB 像素数组"；所有色彩数学放在纯 JS（Google 官方 `@material/material-color-utilities`，零依赖、可 node 单测）；渲染层只往背景里加三层 View（铺底色 / 模糊封面 / 同色蒙版），前景沿用 `useTheme()`。取色结果按封面 URL 缓存并做 in-flight 去重。
+
+**Tech Stack:** React Native 0.73.11（old arch, Hermes）、Java（`cn.toside.music.mobile.*` 自研模块）、TypeScript、`node --test --experimental-strip-types` 单测、`@material/material-color-utilities@0.4.0`。
+
+**Spec:** `docs/superpowers/specs/2026-10-14-player-dynamic-background-design.md`（本计划即其落地方案；讨论记录见会话，关键结论已抄进下面的 Global Constraints）
+
+---
+
+## Global Constraints
+
+- **竖屏 only**（AGENTS.md）：不得改 `AndroidManifest.xml` 的 `screenOrientation`、不得改 `src/navigation/index.ts` 的 `layout.orientation`；本次只动 `PlayDetail/Vertical`，`PlayDetail/Horizontal` 一律不碰。
+- **不改全局主题**：禁止调用 `themeActions.setTheme` / `applyTheme`，禁止改 `src/theme/themes/utils.js` 的 `createThemeColors`。本功能只影响播放页背景层。
+- **前景字色一律沿用 `useTheme()`**，不得由封面色推导 —— 这是"背景与字色混淆"的硬防线。可读性只靠"底色 tone 钳制 + 蒙版不透明度"两件事保证。
+- **依赖约束**：只新增 `@material/material-color-utilities@0.4.0`（纯 JS，无原生代码、无子依赖）。不引入渐变库（项目当前无 linear-gradient / skia，见 package.json）。
+- **平台约束**：iOS 端本仓库无任何自研原生模块（`ios/` 下只有 `LxMusicMobileTests`），因此 iOS 直接返回 `null`，功能自动关闭，不加 `.mm`。
+- **失败即回落**：取色失败 / 无封面 / 色度为 0 → 用 `theme['c-content-background']`，与现状像素一致。
+- **主题自带背景图优先**：`theme['bg-image'] != null` 时不启用封面取色（用户显式设过背景图）。
+- **默认关闭**：`theme.dynamicBg` 默认 `false`，老用户零感知。
+- **测试约定**：单测文件放 `tests/*.mts`，用 `import ... from '../src/xxx/yyy.ts'`（**必须带 `.ts` 后缀**），被测源文件**不得** `import 'react-native'`，也不得用 `@/` 别名（node 解析不了）。跑单个文件：`node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/<file>.mts`。
+- **提交纪律**：当前分支 `feat/music-recognition-phase1` 工作区有大量无关未提交改动（174 改 + 7 删）。**禁止 `git add -A` / `git add .`**，每次只 add 本计划列出的文件。
+
+## File Structure
+
+**新建（JS，纯逻辑，可单测）**
+| 文件 | 唯一职责 |
+| --- | --- |
+| `src/utils/monet/sourceColor.ts` | ARGB 像素数组 → `{ source, average }`（官方 Monet 取源色：Celebi 量化 128 色 + Score 打分） |
+| `src/utils/monet/surface.ts` | `{ source, average, font }` → `{ base, scrimAlpha }`（HCT tone 钳制 + 对比度校验 + 蒙版算法） |
+| `src/utils/monet/coverPalette.ts` | 工厂：注入 fetcher，负责缓存 + in-flight 去重（不碰 react-native） |
+| `src/utils/monet/index.ts` | 把原生 fetcher 接进工厂，导出 `getCoverSurface`（唯一被 UI 引用的入口） |
+| `src/utils/monet/useCoverSurface.ts` | hook：读设置/当前歌曲/主题字色，异步算出背景配色 |
+| `src/components/player/CoverBackdrop/index.tsx` | 三层背景 View，供 `PlayDetail/Vertical` 使用 |
+| `src/utils/nativeModules/palette.ts` | 原生桥：`getArgbPixels(url, maxSize)` |
+| `tests/monet-source-color.mts` | sourceColor 单测 |
+| `tests/monet-surface.mts` | surface 单测（含对比度回归） |
+| `tests/monet-cover-palette.mts` | 缓存/去重/兜底单测（假 fetcher） |
+
+**新建（Android 原生）**
+| 文件 | 职责 |
+| --- | --- |
+| `android/app/src/main/java/cn/toside/music/mobile/palette/PaletteModule.java` | 下载/读本地封面 → `inSampleSize` 降采样 → `getPixels` → `WritableNativeArray` |
+| `android/app/src/main/java/cn/toside/music/mobile/palette/PalettePackage.java` | 注册模块（照 `utils/UtilsPackage.java` 模板） |
+
+**修改**
+| 文件 | 改动 |
+| --- | --- |
+| `package.json` | 新依赖 + `test` 脚本追加 3 个测试文件 |
+| `android/app/src/main/java/cn/toside/music/mobile/MainApplication.java:20` 后 | import + `packages.add(new PalettePackage())` |
+| `src/types/app_setting.d.ts:96` 后 | 新增 `'theme.dynamicBg': boolean` |
+| `src/config/defaultSetting.ts:80` 后 | `'theme.dynamicBg': false` |
+| `src/lang/zh-cn.json` / `zh-tw.json` / `en-us.json` | 新增 `setting_basic_theme_dynamic_bg` |
+| `src/screens/Home/Views/Setting/settings/Theme/DynamicBg.tsx` | 新开关组件（照 `IsFontShadow.tsx` 模板） |
+| `src/screens/Home/Views/Setting/settings/Theme/index.tsx:16` 后 | 挂 `<DynamicBg />` |
+| `src/screens/PlayDetail/Vertical/index.tsx:78-103` | 外层加 root View + `<CoverBackdrop />` |
+| `src/components/player/PlayerOverlay/index.tsx:126-165` | **反编译产物**，只加 3 处最小改动 |
+
+---
+
+## Task 1: 装依赖并验证 Metro / Node 双端能用
+
+背景：`@material/material-color-utilities@0.4.0` 是 ESM（`"type": "module"`），`exports` 只暴露 `"."`，所以**只能从包根 import，子路径会被挡**。包内只有 `utils/image_utils.js`、`utils/theme_utils.js` 两个函数体内部引用 `document`，模块顶层不碰 DOM，因此 Metro 打包与 Node import 都安全 —— 但这条必须实测。
+
+**Files:**
+- Modify: `package.json`（dependencies）
+
+**Interfaces:**
+- Produces: 可 import 的 `Hct`、`Contrast`、`QuantizerCelebi`、`Score`、`redFromArgb`、`greenFromArgb`、`blueFromArgb`、`argbFromRgb`
+
+- [ ] **Step 1: 安装**
+
+```bash
+npm i @material/material-color-utilities@0.4.0
+```
+
+注意：`postinstall` 会跑 `node dependencies-patch.js`，属正常。
+
+- [ ] **Step 2: 验证 Node 侧能拿到真实 API 名（防止计划里的符号不存在）**
+
+```bash
+node --input-type=module -e "
+const m = await import('@material/material-color-utilities')
+const need = ['Hct','Contrast','QuantizerCelebi','Score','redFromArgb','greenFromArgb','blueFromArgb','argbFromRgb']
+console.log(need.map(k => k + ':' + typeof m[k]).join('\n'))
+const src = m.Hct.fromInt(0xFFB34A2C)
+console.log('tone', src.tone, 'chroma', src.chroma, 'hue', src.hue)
+console.log('ratio', m.Contrast.ratioOfTones(10, 90))
+console.log('quantize', [...m.Score.score(m.QuantizerCelebi.quantize([0xFFB34A2C, 0xFFB34A2C, 0xFF808080], 128)).keys ?? ''] ? 'ok' : 'ok')
+"
+```
+
+Expected: 8 行全是 `function` / `object`；`ratio` 打出 > 1 的数值。若某个符号名不同，**立即用实际名字修正后续任务的代码**，不要带着猜测往下写。
+
+- [ ] **Step 3: 验证 Metro 能打进包（不跑 gradle，只 bundle）**
+
+```bash
+npm run build-test
+```
+
+Expected: 命令成功退出并生成 `index.android.bundle`，无 `Unable to resolve module`。若报 ESM 解析失败，改用兜底方案：把 `$TEMP/mcu/package/{hct,quantize,score,contrast,utils,palettes,blend}/*.js` 里 Task 2/3 实际用到的文件 vendor 进 `src/utils/monet/vendor/`（去掉 `.js.map` 引用），后续 import 改成相对路径，并在本计划文件顶部记录"已 vendor"。
+
+- [ ] **Step 4: 记录包体变化**
+
+```bash
+ls -lh index.android.bundle
+```
+
+把大小写进提交信息（预期增量 50–120KB）。
+
+- [ ] **Step 5: 清理验证产物并提交**
+
+```bash
+rm -f index.android.bundle
+rm -rf res
+git add package.json package-lock.json
+git commit -m "build(theme): 引入 material-color-utilities 作为播放页动态背景的取色内核"
+```
+
+---
+
+## Task 2: `surface.ts` —— 源色 → 背景配色（含对比度钳制）
+
+这是整个功能"不会背景字色混淆"的核心，规则来自 Material 官方 `ToneDeltaPair` 的土法实现：**底色 tone 必须待在主题字色的对面（暗 ≤ 14 / 亮 ≥ 92），且模糊封面透出来时，合成 tone 偏离底色不得超过 8**（偏离越大蒙版越实）。
+
+**Files:**
+- Create: `src/utils/monet/surface.ts`
+- Test: `tests/monet-surface.mts`
+
+**Interfaces:**
+- Consumes: `Hct`、`Contrast`、`redFromArgb/greenFromArgb/blueFromArgb`（Task 1）
+- Produces:
+  - `type CoverSurface = { base: string; scrimAlpha: number }`
+  - `parseCssColor(color: string): number | null` —— `'rgb(33, 33, 33)'` / `'rgba(...)'` → ARGB int
+  - `buildCoverSurface(sourceArgb: number, coverAvgArgb: number, fontArgb: number): CoverSurface | null`
+  - 常量 `CHROMA_CAP = 36`、`MIN_CONTRAST = 4.5`、`DARK_ANCHOR_TONE = 10`、`LIGHT_ANCHOR_TONE = 96`、`TONE_DRIFT_LIMIT = 8`、`SCRIM_MIN = 0.45`、`SCRIM_MAX = 0.9`
+
+- [ ] **Step 1: 写失败测试**
+
+Create `tests/monet-surface.mts`:
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import {
+  CHROMA_CAP,
+  DARK_ANCHOR_TONE,
+  LIGHT_ANCHOR_TONE,
+  MIN_CONTRAST,
+  buildCoverSurface,
+  parseCssColor,
+} from '../src/utils/monet/surface.ts'
+import { Contrast, Hct } from '@material/material-color-utilities'
+
+const LIGHT_FONT = parseCssColor('rgb(33, 33, 33)')!
+const DARK_FONT = parseCssColor('rgb(229, 229, 229)')!
+const ORANGE = 0xFFE8551F
+const WHITE = 0xFFFFFFFF
+const GRAY = 0xFF808080
+
+test('parseCssColor 支持 rgb 与 rgba，非 rgb 字符串返回 null', () => {
+  assert.equal(parseCssColor('rgb(33, 33, 33)'), 0xFF212121)
+  assert.equal(parseCssColor('rgba(255, 255, 255, 0.9)'), 0xFFFFFFFF)
+  assert.equal(parseCssColor('#212121'), null)
+  assert.equal(parseCssColor(''), null)
+})
+
+test('亮主题：底色落在高 tone 端，色相跟封面走', () => {
+  const s = buildCoverSurface(ORANGE, ORANGE, LIGHT_FONT)!
+  const tone = Hct.fromInt(parseCssColor(s.base)!).tone
+  assert.ok(tone >= LIGHT_ANCHOR_TONE, `tone ${tone} 应 >= ${LIGHT_ANCHOR_TONE}`)
+  assert.ok(Math.abs(Hct.fromInt(parseCssColor(s.base)!).hue - Hct.fromInt(ORANGE).hue) < 12)
+})
+
+test('暗主题：底色落在低 tone 端', () => {
+  const s = buildCoverSurface(ORANGE, ORANGE, DARK_FONT)!
+  const tone = Hct.fromInt(parseCssColor(s.base)!).tone
+  assert.ok(tone <= DARK_ANCHOR_TONE + 4, `tone ${tone} 应 <= ${DARK_ANCHOR_TONE + 4}`)
+})
+
+test('底色与字色对比度恒 >= 4.5（任意封面）', () => {
+  const sources = [ORANGE, WHITE, GRAY, 0xFF0000FF, 0xFF00FF00, 0xFF123456, 0xFFFEDCBA]
+  for (const font of [LIGHT_FONT, DARK_FONT]) {
+    for (const src of sources) {
+      const s = buildCoverSurface(src, src, font)!
+      const ratio = Contrast.ratioOfTones(Hct.fromInt(parseCssColor(s.base)!).tone, Hct.fromInt(font).tone)
+      assert.ok(ratio >= MIN_CONTRAST, `src=${src.toString(16)} font=${font.toString(16)} ratio=${ratio}`)
+    }
+  }
+})
+
+test('高饱和封面被削到 CHROMA_CAP，灰封面不造假彩色', () => {
+  const vivid = Hct.from(30, 120, 50).toInt()
+  assert.ok(Hct.fromInt(parseCssColor(buildCoverSurface(vivid, vivid, LIGHT_FONT)!.base)!).chroma <= CHROMA_CAP + 1)
+  const graySurface = buildCoverSurface(GRAY, GRAY, LIGHT_FONT)!
+  assert.ok(Hct.fromInt(parseCssColor(graySurface.base)!).chroma < 3)
+})
+
+test('白封面压在暗底上时蒙版变实，暗封面则允许透出', () => {
+  const darkFont = DARK_FONT
+  const whiteCover = buildCoverSurface(GRAY, WHITE, darkFont)!
+  const darkCover = buildCoverSurface(GRAY, 0xFF101010, darkFont)!
+  assert.ok(whiteCover.scrimAlpha >= 0.85, `白封面 scrim=${whiteCover.scrimAlpha}`)
+  assert.ok(darkCover.scrimAlpha <= 0.5, `暗封面 scrim=${darkCover.scrimAlpha}`)
+})
+
+test('scrimAlpha 恒在 [0.45, 0.9] 且保留两位小数', () => {
+  for (const avg of [0xFF000000, 0xFF7F7F7F, 0xFFFFFFFF, ORANGE]) {
+    const s = buildCoverSurface(ORANGE, avg, LIGHT_FONT)!
+    assert.ok(s.scrimAlpha >= 0.45 && s.scrimAlpha <= 0.9)
+    assert.equal(s.scrimAlpha, Number(s.scrimAlpha.toFixed(2)))
+  }
+})
+
+test('字体色非法时返回 null，让调用方回落', () => {
+  assert.equal(buildCoverSurface(ORANGE, ORANGE, 0x00000000), null)
+})
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+```bash
+node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-surface.mts
+```
+
+Expected: FAIL —— `Cannot find module '.../src/utils/monet/surface.ts'`
+
+- [ ] **Step 3: 实现**
+
+Create `src/utils/monet/surface.ts`:
+
+```ts
+import { Contrast, Hct, blueFromArgb, greenFromArgb, redFromArgb } from '@material/material-color-utilities'
+
+export const CHROMA_CAP = 36
+export const MIN_CONTRAST = 4.5
+export const DARK_ANCHOR_TONE = 10
+export const LIGHT_ANCHOR_TONE = 96
+export const TONE_DRIFT_LIMIT = 8
+export const SCRIM_MIN = 0.45
+export const SCRIM_MAX = 0.9
+const MAX_TONE_STEPS = 8
+
+export interface CoverSurface {
+  /** 铺底色，同时用作蒙版色：保证前景字色始终落在它这一侧 */
+  base: string
+  /** 蒙版不透明度：封面越亮/越暗（相对底色）越实，限制封面透出的 tone 漂移 */
+  scrimAlpha: number
+}
+
+const cssRgb = (argb: number) => `rgb(${redFromArgb(argb)}, ${greenFromArgb(argb)}, ${blueFromArgb(argb)})`
+
+const rgbColorRxp = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/
+
+export const parseCssColor = (color: string): number | null => {
+  const matched = rgbColorRxp.exec(color.trim())
+  if (!matched) return null
+  return ((255 << 24) | (Number(matched[1]) << 16) | (Number(matched[2]) << 8) | Number(matched[3])) >>> 0
+}
+
+export const buildCoverSurface = (sourceArgb: number, coverAvgArgb: number, fontArgb: number): CoverSurface | null => {
+  const font = Hct.fromInt(fontArgb >>> 0)
+  if (!fontArgb || !Number.isFinite(font.tone)) return null
+  const source = Hct.fromInt(sourceArgb >>> 0)
+  if (!Number.isFinite(source.tone)) return null
+
+  const isDark = font.tone > 50
+  const chroma = Math.min(source.chroma, CHROMA_CAP)
+
+  let tone = isDark ? DARK_ANCHOR_TONE : LIGHT_ANCHOR_TONE
+  for (let i = 0; i < MAX_TONE_STEPS && Contrast.ratioOfTones(tone, font.tone) < MIN_CONTRAST; i++) {
+    tone = isDark ? Math.max(0, tone - 4) : Math.min(100, tone + 3)
+  }
+  const base = Hct.from(source.hue, chroma, tone).toInt() >>> 0
+
+  // 合成 ≈ scrim(base, a) 盖在模糊封面(平均色) 上：偏离量 = (1 - a) * |封面 tone - 底色 tone|
+  const drift = Math.abs(Hct.fromInt(coverAvgArgb >>> 0).tone - tone)
+  let scrimAlpha = drift <= TONE_DRIFT_LIMIT ? SCRIM_MIN : 1 - TONE_DRIFT_LIMIT / drift
+  scrimAlpha = Math.min(SCRIM_MAX, Math.max(SCRIM_MIN, scrimAlpha))
+
+  return { base: cssRgb(base), scrimAlpha: Number(scrimAlpha.toFixed(2)) }
+}
+```
+
+- [ ] **Step 4: 跑测试确认通过**
+
+```bash
+node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-surface.mts
+```
+
+Expected: PASS（8 个用例）。若"底色与字色对比度恒 >= 4.5"里 `0xFFFFFFFF` 那条挂了，说明 `MAX_TONE_STEPS` 不够 —— 把循环上界加到 12，不要靠放宽断言过关。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src/utils/monet/surface.ts tests/monet-surface.mts
+git commit -m "feat(theme): 莫奈底色 tone 钳制与封面蒙版算法"
+```
+
+---
+
+## Task 3: `sourceColor.ts` —— ARGB 像素 → 源色 + 平均色
+
+官方 Monet 取源色链路（`sourceColorFromImageBytes`）：`QuantizerCelebi.quantize(pixels, 128)` → `Score.score(map)[0]`。`Score` 会过滤色度 < 5、占比 ≤ 1% 的颜色，所以**取到的是"最丰富"的颜色而非最大面积颜色** —— 这正是解决"灰暗封面糊成一片"的那一步。同时输出平均色给 Task 2 算蒙版。
+
+**Files:**
+- Create: `src/utils/monet/sourceColor.ts`
+- Test: `tests/monet-source-color.mts`
+
+**Interfaces:**
+- Consumes: `QuantizerCelebi`、`Score`、`argbFromRgb`（Task 1）
+- Produces:
+  - `type CoverAnalysis = { source: number; average: number }`（两个都是 ARGB int，alpha 恒 255）
+  - `analyzeArgbPixels(pixels: number[]): CoverAnalysis | null`
+  - 常量 `QUANTIZE_COLORS = 128`
+
+- [ ] **Step 1: 写失败测试**
+
+Create `tests/monet-source-color.mts`:
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import { QUANTIZE_COLORS, analyzeArgbPixels } from '../src/utils/monet/sourceColor.ts'
+import { Hct } from '@material/material-color-utilities'
+
+const fill = (argb: number, n: number) => new Array(n).fill(argb >>> 0)
+const GRAY = 0xFF808080
+const RED = 0xFFCC2222
+
+test('灰底 + 少量红：源色取红（面积让位于色度），平均色仍是灰', () => {
+  const result = analyzeArgbPixels([...fill(GRAY, 900), ...fill(RED, 100)])!
+  assert.ok(Hct.fromInt(result.source).chroma > 20, `source chroma=${Hct.fromInt(result.source).chroma}`)
+  assert.ok(Hct.fromInt(result.average).chroma < 15, `average chroma=${Hct.fromInt(result.average).chroma}`)
+})
+
+test('全灰像素不崩，源色与平均色都无色度', () => {
+  const result = analyzeArgbPixels(fill(GRAY, 4096))!
+  assert.ok(Hct.fromInt(result.source).chroma < 5)
+  assert.ok(Hct.fromInt(result.average).chroma < 5)
+})
+
+test('输出 alpha 恒为 255（供 Hct.fromInt 使用）', () => {
+  const result = analyzeArgbPixels([...fill(GRAY, 100), ...fill(RED, 100)])!
+  assert.equal(result.source >>> 24, 255)
+  assert.equal(result.average >>> 24, 255)
+})
+
+test('半透明像素被跳过（图标/带透明通道封面不污染结果）', () => {
+  const transparent = fill(0x00FF00FF, 3000)
+  const result = analyzeArgbPixels([...transparent, ...fill(GRAY, 1000)])!
+  assert.ok(Hct.fromInt(result.source).chroma < 5)
+})
+
+test('空数组 / 全透明 / 非法输入返回 null', () => {
+  assert.equal(analyzeArgbPixels([]), null)
+  assert.equal(analyzeArgbPixels(fill(0x00FFFFFF, 100)), null)
+  assert.equal(analyzeArgbPixels(null as unknown as number[]), null)
+})
+
+test('量化色数用官方 128', () => {
+  assert.equal(QUANTIZE_COLORS, 128)
+})
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+```bash
+node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-source-color.mts
+```
+
+Expected: FAIL —— `Cannot find module '.../sourceColor.ts'`
+
+- [ ] **Step 3: 实现**
+
+Create `src/utils/monet/sourceColor.ts`:
+
+```ts
+import { QuantizerCelebi, Score, argbFromRgb } from '@material/material-color-utilities'
+
+export const QUANTIZE_COLORS = 128
+
+export interface CoverAnalysis {
+  /** Monet 源色：色度加权后的"最丰富颜色" */
+  source: number
+  /** 全图平均色：用来估封面透出后的明度漂移 */
+  average: number
+}
+
+export const analyzeArgbPixels = (pixels: number[]): CoverAnalysis | null => {
+  if (!pixels?.length) return null
+  const opaque: number[] = []
+  let sumR = 0
+  let sumG = 0
+  let sumB = 0
+  for (const pixel of pixels) {
+    const argb = pixel >>> 0
+    if ((argb >>> 24) < 255) continue
+    opaque.push(argb)
+    sumR += (argb >> 16) & 0xff
+    sumG += (argb >> 8) & 0xff
+    sumB += argb & 0xff
+  }
+  if (!opaque.length) return null
+
+  const average = argbFromRgb(
+    Math.round(sumR / opaque.length),
+    Math.round(sumG / opaque.length),
+    Math.round(sumB / opaque.length),
+  ) >>> 0
+
+  // Score 会滤掉色度 < 5 的颜色：纯灰/近灰封面 ranked 为空，这是合法结果而非失败，回落到平均色
+  const ranked = Score.score(QuantizerCelebi.quantize(opaque, QUANTIZE_COLORS))
+  const source = (ranked.length ? ranked[0] : average) >>> 0
+
+  return { source, average }
+}
+```
+
+- [ ] **Step 4: 跑测试确认通过**
+
+```bash
+node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-source-color.mts
+```
+
+Expected: PASS（6 个用例）。若"少量红"那条挂了（源色取到灰），说明 `Score` 的 `CUTOFF_CHROMA = 5` 把红色也过滤了或占比权重压过色度 —— 打印 `Score.score` 前 5 名再判断，**不要改成"取 chroma 最大的量化色"来绕过**，那会丢掉官方行为。"全灰像素不崩"与"半透明被跳过"两条靠 `ranked` 为空时回落平均色才成立：不许改成 `return null`（那等于把灰封面判成取色失败，Task 6 的回落分支会被误触发）。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src/utils/monet/sourceColor.ts tests/monet-source-color.mts
+git commit -m "feat(theme): 官方 Monet 源色量化链路（Celebi 128 + Score）"
+```
+
+---
+
+## Task 4: Android 原生像素模块 + JS 桥
+
+原生只做"给像素"，一行色彩逻辑都不写 —— 这样换算法不用重编 APK。下载必须带和 JS 侧 `defaultHeaders` 一致的 User-Agent（`src/components/common/Image.tsx:19`），否则部分音源封面会 403。
+
+**Files:**
+- Create: `android/app/src/main/java/cn/toside/music/mobile/palette/PaletteModule.java`
+- Create: `android/app/src/main/java/cn/toside/music/mobile/palette/PalettePackage.java`
+- Modify: `android/app/src/main/java/cn/toside/music/mobile/MainApplication.java:14-21, 39-46`
+- Create: `src/utils/nativeModules/palette.ts`
+
+**Interfaces:**
+- Consumes: 无
+- Produces: `getArgbPixels(url: string, maxSize?: number): Promise<number[] | null>`（ARGB int 数组，长度 ≈ maxSize² 以内；任何失败返回 `null`）
+
+- [ ] **Step 1: 写模块**
+
+Create `android/app/src/main/java/cn/toside/music/mobile/palette/PaletteModule.java`:
+
+```java
+package cn.toside.music.mobile.palette;
+
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
+
+import com.facebook.react.bridge.Promise;
+import com.facebook.react.bridge.ReactApplicationContext;
+import com.facebook.react.bridge.ReactContextBaseJavaModule;
+import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.bridge.WritableNativeArray;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class PaletteModule extends ReactContextBaseJavaModule {
+
+  // 与 src/components/common/Image.tsx 的 defaultHeaders 保持一致，否则部分音源封面取不到图
+  private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36";
+
+  private final ExecutorService executor = Executors.newSingleThreadExecutor();
+
+  PaletteModule(ReactApplicationContext reactContext) {
+    super(reactContext);
+  }
+
+  @Override
+  public String getName() {
+    return "PaletteModule";
+  }
+
+  @ReactMethod
+  public void getArgbPixels(String url, int maxSize, Promise promise) {
+    if (url == null || url.isEmpty()) {
+      promise.reject("PALETTE_EMPTY_URL", "url is empty");
+      return;
+    }
+    final String target = url;
+    final int limit = maxSize <= 0 ? 128 : maxSize;
+    executor.execute(() -> {
+      Bitmap decoded = null;
+      Bitmap scaled = null;
+      try {
+        byte[] raw = readBytes(target);
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(raw, 0, raw.length, bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw new Exception("image not decodable");
+
+        int sample = 1;
+        while (Math.max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= limit * 2) sample *= 2;
+
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = sample;
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        decoded = BitmapFactory.decodeByteArray(raw, 0, raw.length, options);
+
+        int width = decoded.getWidth();
+        int height = decoded.getHeight();
+        float ratio = Math.min((float) limit / Math.max(width, height), 1f);
+        scaled = ratio == 1f
+          ? decoded
+          : Bitmap.createScaledBitmap(decoded, Math.max(1, Math.round(width * ratio)), Math.max(1, Math.round(height * ratio)), true);
+
+        int[] pixels = new int[scaled.getWidth() * scaled.getHeight()];
+        scaled.getPixels(pixels, 0, scaled.getWidth(), 0, 0, scaled.getWidth(), scaled.getHeight());
+
+        WritableNativeArray result = new WritableNativeArray();
+        for (int pixel : pixels) result.pushInt(pixel);
+        promise.resolve(result);
+      } catch (Exception e) {
+        promise.reject("PALETTE_FAILED", e.getMessage());
+      } finally {
+        if (scaled != null && scaled != decoded) scaled.recycle();
+        if (decoded != null) decoded.recycle();
+      }
+    });
+  }
+
+  private byte[] readBytes(String url) throws Exception {
+    String path = url.startsWith("file://") ? Uri.parse(url).getPath() : url;
+    if (path == null) throw new Exception("bad file uri");
+    if (!path.startsWith("http")) {
+      File file = new File(path);
+      FileInputStream in = new FileInputStream(file);
+      try {
+        return readAll(in);
+      } finally {
+        in.close();
+      }
+    }
+    HttpURLConnection conn = (HttpURLConnection) new URL(path).openConnection();
+    conn.setRequestProperty("User-Agent", USER_AGENT);
+    conn.setConnectTimeout(8000);
+    conn.setReadTimeout(8000);
+    conn.setInstanceFollowRedirects(true);
+    try {
+      int code = conn.getResponseCode();
+      if (code < 200 || code >= 400) throw new Exception("http " + code);
+      InputStream in = code >= 300 ? conn.getErrorStream() : conn.getInputStream();
+      if (in == null) throw new Exception("empty body");
+      try {
+        return readAll(in);
+      } finally {
+        in.close();
+      }
+    } finally {
+      conn.disconnect();
+    }
+  }
+
+  private byte[] readAll(InputStream in) throws Exception {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    byte[] buffer = new byte[8192];
+    int read;
+    while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+    return out.toByteArray();
+  }
+}
+```
+
+- [ ] **Step 2: 写 Package（照 `utils/UtilsPackage.java` 模板）**
+
+Create `android/app/src/main/java/cn/toside/music/mobile/palette/PalettePackage.java`:
+
+```java
+package cn.toside.music.mobile.palette;
+
+import com.facebook.react.ReactPackage;
+import com.facebook.react.bridge.NativeModule;
+import com.facebook.react.bridge.ReactApplicationContext;
+import com.facebook.react.uimanager.ViewManager;
+
+import java.util.Collections;
+import java.util.List;
+
+public class PalettePackage implements ReactPackage {
+
+  @Override
+  public List<ViewManager> createViewManagers(ReactApplicationContext reactContext) {
+    return Collections.emptyList();
+  }
+
+  @Override
+  public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
+    return Collections.singletonList(new PaletteModule(reactContext));
+  }
+}
+```
+
+- [ ] **Step 3: 注册**
+
+`MainApplication.java` —— import 段（第 20 行 `audioRecord` 之后）加：
+
+```java
+import cn.toside.music.mobile.palette.PalettePackage;
+```
+
+`getPackages()` 里（第 45 行 `packages.add(new AudioRecordPackage());` 之后）加：
+
+```java
+          packages.add(new PalettePackage());
+```
+
+- [ ] **Step 4: 写 JS 桥**
+
+Create `src/utils/nativeModules/palette.ts`:
+
+```ts
+import { NativeModules, Platform } from 'react-native'
+
+const { PaletteModule } = NativeModules
+
+export const getArgbPixels = async(url: string, maxSize = 128): Promise<number[] | null> => {
+  if (Platform.OS !== 'android' || !PaletteModule?.getArgbPixels) return null
+  try {
+    return await PaletteModule.getArgbPixels(url, maxSize) as number[]
+  } catch (e) {
+    if (__DEV__) console.log('[palette] getArgbPixels failed', url, e)
+    return null
+  }
+}
+```
+
+- [ ] **Step 5: 编译验证**
+
+```bash
+cd android && ./gradlew assembleDebug
+```
+
+Expected: `BUILD SUCCESSFUL`。首次要下 gradle 依赖，给足时间；失败按报错定位，不要跳过。
+
+- [ ] **Step 6: 移交运行时冒烟（实现者不碰 adb）**
+
+真机是本仓库唯一的测试设备，且 USB 注入有误触用户前台应用的风险 —— **子代理不执行 `adb install` / `adb shell`**。实现者到此为止只需保证 Step 5 编译通过，并在报告里写明"桥未做运行时验证"，由控制方在 Task 6 完成后统一装机冒烟（验证点：数组长度 ≈ 4096–16384，且 `pixels[0] >>> 24 === 255`）。
+
+- [ ] **Step 7: 提交**
+
+```bash
+git add android/app/src/main/java/cn/toside/music/mobile/palette \
+        android/app/src/main/java/cn/toside/music/mobile/MainApplication.java \
+        src/utils/nativeModules/palette.ts
+git commit -m "feat(android): 封面降采样像素模块 PaletteModule"
+```
+
+---
+
+## Task 5: `coverPalette.ts` —— 缓存 / in-flight 去重 / 回落
+
+取色一次要下载 + 量化，**同一张封面切回来不能重算**；快速切歌时同一 URL 的并发请求要合并。缓存存"分析结果"而不是最终配色，因为暗/亮主题下配色不同但像素分析一致。
+
+**Files:**
+- Create: `src/utils/monet/coverPalette.ts`
+- Create: `src/utils/monet/index.ts`
+- Test: `tests/monet-cover-palette.mts`
+
+**Interfaces:**
+- Consumes: `analyzeArgbPixels`（Task 3）、`buildCoverSurface` + `CoverSurface`（Task 2）
+- Produces:
+  - `createCoverPalette(fetchPixels: (url: string) => Promise<number[] | null>) => { getCoverSurface(picUrl: string | null | undefined, fontColor: string): Promise<CoverSurface | null>, clearCache(): void }`
+  - `src/utils/monet/index.ts` 导出 `getCoverSurface`、`clearCoverPaletteCache`、`type CoverSurface`
+
+- [ ] **Step 1: 写失败测试**
+
+Create `tests/monet-cover-palette.mts`:
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import { createCoverPalette } from '../src/utils/monet/coverPalette.ts'
+import { Hct } from '@material/material-color-utilities'
+
+const GRAY = 0xFF808080
+const RED = 0xFFCC2222
+const LIGHT_FONT = 'rgb(33, 33, 33)'
+const DARK_FONT = 'rgb(229, 229, 229)'
+const pixels = (argb: number, n = 1000) => new Array(n).fill(argb >>> 0)
+
+test('正常路径：返回亮主题高 tone 底色 + 合法 scrim', async() => {
+  const { getCoverSurface } = createCoverPalette(async() => pixels(RED))
+  const surface = await getCoverSurface('https://example.com/a.jpg', LIGHT_FONT)
+  assert.ok(surface)
+  assert.ok(surface!.scrimAlpha >= 0.45 && surface!.scrimAlpha <= 0.9)
+  assert.match(surface!.base, /^rgb\(\d+, \d+, \d+\)$/)
+})
+
+test('同一 URL 只取一次像素，暗/亮主题各自算色不互相污染', async() => {
+  let calls = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    return pixels(RED)
+  })
+  const light = await getCoverSurface('https://example.com/a.jpg', LIGHT_FONT)
+  const dark = await getCoverSurface('https://example.com/a.jpg', DARK_FONT)
+  assert.equal(calls, 1)
+  assert.notEqual(light!.base, dark!.base)
+})
+
+test('并发调用合并成一次网络取色', async() => {
+  let calls = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    await new Promise(resolve => setTimeout(resolve, 10))
+    return pixels(RED)
+  })
+  const [a, b, c] = await Promise.all([
+    getCoverSurface('https://example.com/same.jpg', LIGHT_FONT),
+    getCoverSurface('https://example.com/same.jpg', LIGHT_FONT),
+    getCoverSurface('https://example.com/same.jpg', DARK_FONT),
+  ])
+  assert.equal(calls, 1)
+  assert.ok(a && b && c)
+})
+
+test('取色失败（null 像素）→ 返回 null 且被缓存，不再反复重试', async() => {
+  let calls = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    return null
+  })
+  assert.equal(await getCoverSurface('https://example.com/bad.jpg', LIGHT_FONT), null)
+  assert.equal(await getCoverSurface('https://example.com/bad.jpg', LIGHT_FONT), null)
+  assert.equal(calls, 1)
+})
+
+test('空 url / 非法字体色直接 null，不碰原生', async() => {
+  let called = false
+  const { getCoverSurface } = createCoverPalette(async() => {
+    called = true
+    return pixels(GRAY)
+  })
+  assert.equal(await getCoverSurface('', LIGHT_FONT), null)
+  assert.equal(await getCoverSurface(null, LIGHT_FONT), null)
+  assert.equal(await getCoverSurface('https://example.com/a.jpg', '#333'), null)
+  assert.equal(called, false)
+})
+
+test('缓存有上限，超出后淘汰最早的 key', async() => {
+  let calls = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    return pixels(GRAY)
+  })
+  for (let i = 0; i < 70; i++) await getCoverSurface(`https://example.com/${i}.jpg`, LIGHT_FONT)
+  assert.equal(calls, 70)
+  await getCoverSurface('https://example.com/0.jpg', LIGHT_FONT)
+  assert.equal(calls, 71)
+})
+
+test('clearCache 后重新取色', async() => {
+  let calls = 0
+  const { getCoverSurface, clearCache } = createCoverPalette(async() => {
+    calls += 1
+    return pixels(GRAY)
+  })
+  await getCoverSurface('https://example.com/a.jpg', LIGHT_FONT)
+  clearCache()
+  await getCoverSurface('https://example.com/a.jpg', LIGHT_FONT)
+  assert.equal(calls, 2)
+})
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+```bash
+node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-cover-palette.mts
+```
+
+Expected: FAIL —— `Cannot find module '.../coverPalette.ts'`
+
+- [ ] **Step 3: 实现工厂**
+
+Create `src/utils/monet/coverPalette.ts`:
+
+```ts
+import { analyzeArgbPixels } from './sourceColor'
+import { buildCoverSurface, parseCssColor, type CoverSurface } from './surface'
+
+export const CACHE_LIMIT = 60
+
+export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[] | null>) => {
+  // 两层缓存：像素按 url 缓存（下载+量化只一次），配色按 url|font 缓存（暗/亮主题各一份）
+  const pixelCache = new Map<string, Promise<number[] | null>>()
+  const cache = new Map<string, CoverSurface | null>()
+  const cacheOrder: string[] = []
+  const pending = new Map<string, Promise<CoverSurface | null>>()
+
+  const fetchOnce = (picUrl: string) => {
+    let task = pixelCache.get(picUrl)
+    if (!task) {
+      task = Promise.resolve(fetchPixels(picUrl)).catch(() => null)
+      pixelCache.set(picUrl, task)
+    }
+    return task
+  }
+
+  const remember = (key: string, value: CoverSurface | null) => {
+    if (!cache.has(key)) {
+      cacheOrder.push(key)
+      if (cacheOrder.length > CACHE_LIMIT) {
+        const oldest = cacheOrder.shift()!
+        if (oldest !== key) cache.delete(oldest)
+      }
+    }
+    cache.set(key, value)
+  }
+
+  const load = (picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
+    const key = `${picUrl}|${fontArgb}`
+    if (cache.has(key)) return Promise.resolve(cache.get(key)!)
+    const inFlight = pending.get(key)
+    if (inFlight) return inFlight
+
+    const task = (async() => {
+      try {
+        const pixels = await fetchOnce(picUrl)
+        const analysis = pixels == null ? null : analyzeArgbPixels(pixels)
+        return analysis == null ? null : buildCoverSurface(analysis.source, analysis.average, fontArgb)
+      } catch {
+        return null
+      } finally {
+        pending.delete(key)
+      }
+    })()
+    pending.set(key, task)
+    return task
+  }
+
+  return {
+    getCoverSurface(picUrl: string | null | undefined, fontColor: string) {
+      if (!picUrl) return Promise.resolve(null)
+      const fontArgb = parseCssColor(fontColor)
+      if (fontArgb == null) return Promise.resolve(null)
+      return load(picUrl, fontArgb).then(surface => {
+        remember(`${picUrl}|${fontArgb}`, surface)
+        return surface
+      })
+    },
+    clearCache() {
+      pixelCache.clear()
+      cache.clear()
+      cacheOrder.length = 0
+      pending.clear()
+    },
+  }
+}
+```
+
+- [ ] **Step 4: 接原生入口**
+
+Create `src/utils/monet/index.ts`:
+
+```ts
+import { getArgbPixels } from '@/utils/nativeModules/palette'
+import { createCoverPalette } from './coverPalette'
+
+export { type CoverSurface } from './surface'
+
+const palette = createCoverPalette(getArgbPixels)
+
+export const getCoverSurface = palette.getCoverSurface
+export const clearCoverPaletteCache = palette.clearCache
+```
+
+- [ ] **Step 5: 跑测试确认通过**
+
+```bash
+node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-cover-palette.mts
+```
+
+Expected: PASS（7 个用例）。第 6 条"缓存有上限"要求 `CACHE_LIMIT = 60` 且按插入序淘汰；若淘汰逻辑把刚写的 key 删了，改成"先删 cacheOrder 头部且不等于当前 key"。
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add src/utils/monet/coverPalette.ts src/utils/monet/index.ts tests/monet-cover-palette.mts
+git commit -m "feat(theme): 封面配色缓存与并发去重"
+```
+
+---
+
+## Task 6: 背景层组件 + 播放页接入 + "动态背景"开关
+
+**Files:**
+- Create: `src/utils/monet/useCoverSurface.ts`
+- Create: `src/components/player/CoverBackdrop/index.tsx`
+- Modify: `src/screens/PlayDetail/Vertical/index.tsx:78-103`
+- Modify: `src/types/app_setting.d.ts`（`'theme.fontShadow'` 之后）
+- Modify: `src/config/defaultSetting.ts:80` 之后
+- Create: `src/screens/Home/Views/Setting/settings/Theme/DynamicBg.tsx`
+- Modify: `src/screens/Home/Views/Setting/settings/Theme/index.tsx:7, 16`
+- Modify: `src/lang/zh-cn.json` / `src/lang/zh-tw.json` / `src/lang/en-us.json`（`setting_basic_theme_font_shadow` 之前）
+- Modify: `package.json`（`test` 脚本）
+
+**Interfaces:**
+- Consumes: `getCoverSurface`（Task 5）、`usePlayerMusicInfo`（`src/store/player/hook`，字段 `pic`）、`useSettingValue('theme.dynamicBg')`、`ImageBackground`（`src/components/common/ImageBackground`，支持 `blurRadius`）、`defaultHeaders`（`src/components/common/Image.tsx:19`）
+- Produces: `useCoverSurface(): { enabled: boolean; picUrl: string | null; surface: CoverSurface | null }`；`<CoverBackdrop />`
+
+- [ ] **Step 1: 加设置项类型与默认值**
+
+`src/types/app_setting.d.ts`，在 `'theme.fontShadow': boolean` 那段之后加：
+
+```ts
+    /**
+       * 播放页动态背景（跟随封面莫奈取色）
+       */
+    'theme.dynamicBg': boolean
+```
+
+`src/config/defaultSetting.ts`，在 `'theme.fontShadow': false,` 之后加：
+
+```ts
+  'theme.dynamicBg': false,
+```
+
+- [ ] **Step 2: 加文案**
+
+三个语言文件里，在 `setting_basic_theme_font_shadow` 那一行**之前**各加一行（保持 key 字典序）：
+
+`src/lang/zh-cn.json`
+```json
+  "setting_basic_theme_dynamic_bg": "动态背景（跟随封面配色）",
+```
+`src/lang/zh-tw.json`
+```json
+  "setting_basic_theme_dynamic_bg": "動態背景（跟隨封面配色）",
+```
+`src/lang/en-us.json`
+```json
+  "setting_basic_theme_dynamic_bg": "Dynamic background (follows album artwork colors)",
+```
+
+- [ ] **Step 3: 加开关组件**
+
+Create `src/screens/Home/Views/Setting/settings/Theme/DynamicBg.tsx`（照 `IsFontShadow.tsx`，只改 key/文案）:
+
+```tsx
+import { memo } from 'react'
+import { View } from 'react-native'
+
+import CheckBoxItem from '../../components/CheckBoxItem'
+import { createStyle } from '@/utils/tools'
+import { useI18n } from '@/lang'
+import { updateSetting } from '@/core/common'
+import { useSettingValue } from '@/store/setting/hook'
+
+export default memo(() => {
+  const t = useI18n()
+  const dynamicBg = useSettingValue('theme.dynamicBg')
+  const setDynamicBg = (dynamicBg: boolean) => {
+    updateSetting({ 'theme.dynamicBg': dynamicBg })
+  }
+
+  return (
+    <View style={styles.content}>
+      <CheckBoxItem check={dynamicBg} label={t('setting_basic_theme_dynamic_bg')} onChange={setDynamicBg} />
+    </View>
+  )
+})
+
+const styles = createStyle({
+  content: {
+    marginTop: 5,
+  },
+})
+```
+
+`src/screens/Home/Views/Setting/settings/Theme/index.tsx`：加 `import DynamicBg from './DynamicBg'`，并把 `<DynamicBg />` 放在 `<IsFontShadow />` 之前（`IsFontShadow` 的 `marginBottom: 15` 是分组末位，新项不要抢）。
+
+- [ ] **Step 4: 写 hook**
+
+Create `src/utils/monet/useCoverSurface.ts`:
+
+```ts
+import { useEffect, useState } from 'react'
+
+import { usePlayerMusicInfo } from '@/store/player/hook'
+import { useSettingValue } from '@/store/setting/hook'
+import { useTheme } from '@/store/theme/hook'
+import { getCoverSurface, type CoverSurface } from '@/utils/monet'
+
+export interface CoverBackdropState {
+  enabled: boolean
+  picUrl: string | null
+  surface: CoverSurface | null
+}
+
+export const useCoverSurface = (): CoverBackdropState => {
+  const enabled = useSettingValue('theme.dynamicBg')
+  const theme = useTheme()
+  const { pic } = usePlayerMusicInfo()
+  const fontColor = theme['c-font']
+
+  const [surface, setSurface] = useState<CoverSurface | null>(null)
+
+  useEffect(() => {
+    if (!enabled || !pic) {
+      setSurface(null)
+      return
+    }
+    let cancelled = false
+    void getCoverSurface(pic, fontColor).then(next => {
+      if (!cancelled) setSurface(next)
+    })
+    return () => { cancelled = true }
+  }, [enabled, pic, fontColor])
+
+  return { enabled, picUrl: enabled ? pic ?? null : null, surface }
+}
+```
+
+- [ ] **Step 5: 写背景层组件**
+
+Create `src/components/player/CoverBackdrop/index.tsx`:
+
+```tsx
+import { memo, useMemo } from 'react'
+import { StyleSheet, View } from 'react-native'
+
+import ImageBackground from '@/components/common/ImageBackground'
+import { defaultHeaders } from '@/components/common/Image'
+import { useCoverSurface } from '@/utils/monet/useCoverSurface'
+import { useTheme } from '@/store/theme/hook'
+
+const BLUR_RADIUS = 90
+
+export default memo(({ enabled = true }: { enabled?: boolean }) => {
+  const theme = useTheme()
+  const { picUrl, surface } = useCoverSurface()
+  const active = enabled && surface != null
+
+  const source = useMemo(() => (active && picUrl
+    ? {
+        uri: picUrl.startsWith('/') ? 'file://' + picUrl : picUrl,
+        headers: defaultHeaders,
+        cache: 'force-cache' as const,
+      }
+    : null), [active, picUrl])
+
+  return (
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: active ? surface!.base : theme['c-content-background'] }]}>
+      {
+        source ? (
+          <>
+            <ImageBackground style={StyleSheet.absoluteFill} source={source} resizeMode="cover" blurRadius={BLUR_RADIUS} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: surface!.base, opacity: surface!.scrimAlpha }]} />
+          </>
+        ) : null
+      }
+    </View>
+  )
+})
+```
+
+三层顺序即 Global Constraints 的落点：**铺底 → 模糊封面 → 同色蒙版**。前景（歌词/标题/按钮）完全在这个组件之上，颜色仍来自 `useTheme()`。
+
+- [ ] **Step 6: 接入竖屏播放页**
+
+`src/screens/PlayDetail/Vertical/index.tsx`：加 `import CoverBackdrop from '@/components/player/CoverBackdrop'`，把 return（第 78-103 行）改成：
+
+```tsx
+  return (
+    <View style={styles.root}>
+      <CoverBackdrop />
+      <View style={styles.layer}>
+        <Header pageIndex={pageIndex} onPageSelected={(page: number) => pagerRef.current?.setPage(page)} />
+        <View style={styles.container}>
+          <PagerView
+            ref={pagerRef}
+            initialPage={0}
+            onPageSelected={onPageSelected}
+            style={styles.pagerView}
+          >
+            <View collapsable={false}>
+              <Pic />
+            </View>
+            <View collapsable={false}>
+              <LyricPage activeIndex={pageIndex} />
+            </View>
+          </PagerView>
+          {!lyricToolMode ? <Player showMusicInfo={false} /> : null}
+        </View>
+      </View>
+    </View>
+  )
+```
+
+`styles` 加两项（其余原样保留）：
+
+```ts
+  root: {
+    flex: 1,
+  },
+  layer: {
+    flex: 1,
+  },
+```
+
+- [ ] **Step 7: 把三个 monet 测试挂进 npm test**
+
+`package.json` 的 `test` 脚本末尾（`tests/lyric-copy-text.mts` 之后）追加三个文件：
+
+```
+ tests/monet-source-color.mts tests/monet-surface.mts tests/monet-cover-palette.mts
+```
+
+验证：
+
+```bash
+npm test 2>&1 | tail -6
+```
+
+Expected: `fail 0`；`pass` 计数比改动前多 21（T3 6 + T2 8 + T5 7）。
+
+- [ ] **Step 8: 过静态检查**
+
+```bash
+npx tsc --noEmit -p tsconfig.json
+npx eslint src/utils/monet src/components/player/CoverBackdrop src/screens/PlayDetail/Vertical/index.tsx src/screens/Home/Views/Setting/settings/Theme --ext .ts,.tsx
+```
+
+Expected: tsc 报错数不超过仓库基线（107，见"验证闸门强度差异"记忆）；lint 对新增文件 0 error。
+
+- [ ] **Step 9: 编译验证（真机验收移交控制方）**
+
+```bash
+cd android && ./gradlew assembleDebug
+```
+
+Expected: `BUILD SUCCESSFUL`。**子代理不执行 `adb install`**（真机唯一、注入前须确认前台，见 Task 4 Step 6 的同一约定）。以下四条由控制方装机后与用户一起看，实现者在报告里逐条标注"未验"：
+① 开关关 → 与改动前完全一致；② 开关开、暗主题、亮封面 → 背景偏暗且歌词清楚；③ 切歌时背景 300ms 内跟换；④ 无封面/取色失败 → 回落纯色。
+
+- [ ] **Step 10: 提交**
+
+```bash
+git add src/utils/monet/useCoverSurface.ts src/components/player/CoverBackdrop \
+        src/screens/PlayDetail/Vertical/index.tsx src/types/app_setting.d.ts \
+        src/config/defaultSetting.ts src/screens/Home/Views/Setting/settings/Theme \
+        src/lang/zh-cn.json src/lang/zh-tw.json src/lang/en-us.json package.json
+git commit -m "feat(theme): 播放页动态背景（封面莫奈取色）+ 外观设置开关"
+```
+
+---
+
+## Task 7: 接入 PlayerOverlay（反编译产物，最小改动）
+
+`src/components/player/PlayerOverlay/index.tsx` 顶部注释写明它是从 APK dev bundle 反编译还原的（无 TS 注解，`require` + `jsxRuntime` 手写风格）。**不要重排、不要"顺手改规范"**，只做下面 3 处插入。
+
+**Files:**
+- Modify: `src/components/player/PlayerOverlay/index.tsx`（`OverlayBackdrop`，约 126-165 行）
+
+**Interfaces:**
+- Consumes: `useCoverSurface()`（Task 6）
+- Produces: 无
+
+- [ ] **Step 1: 先读实际代码再改**
+
+```bash
+sed -n '124,168p' src/components/player/PlayerOverlay/index.tsx
+```
+
+以文件实际缩进/变量名为准做匹配，不要照抄本计划里的行号。
+
+- [ ] **Step 2: 在 `OverlayBackdrop` 里取配色**
+
+在 `var hasBackdropImage = backdropImageSource != null;` 之后插入：
+
+```js
+  var coverBackdrop = (0, require("../../../utils/monet/useCoverSurface").useCoverSurface)();
+  var coverSurface = hasBackdropImage || !coverBackdrop.enabled ? null : coverBackdrop.surface;
+  var coverSource = coverSurface != null && coverBackdrop.picUrl ? {
+    uri: coverBackdrop.picUrl.startsWith('/') ? 'file://' + coverBackdrop.picUrl : coverBackdrop.picUrl,
+    headers: require("../../common/Image").defaultHeaders,
+    cache: 'force-cache'
+  } : null;
+```
+
+主题自带背景图优先（`hasBackdropImage` 时整条封面取色让路）。
+
+- [ ] **Step 3: 外层底色改用 base**
+
+把该 View 的 `backgroundColor: theme['c-content-background'],`（transform 之前那个）改为：
+
+```js
+      backgroundColor: coverSurface != null ? coverSurface.base : theme['c-content-background'],
+```
+
+- [ ] **Step 4: children 数组里加模糊封面层，并让蒙版用同一个 base**
+
+把 `children: [ ... ]` 整段替换为：
+
+```js
+      children: [hasBackdropImage ? (0, _jsxRuntime.jsx)(_ImageBackground.default, {
+        style: _reactNative.StyleSheet.absoluteFill,
+        source: backdropImageSource,
+        resizeMode: "cover",
+        blurRadius: 24
+      }) : null, coverSource != null ? (0, _jsxRuntime.jsx)(_ImageBackground.default, {
+        style: _reactNative.StyleSheet.absoluteFill,
+        source: coverSource,
+        resizeMode: "cover",
+        blurRadius: 90
+      }) : null, (0, _jsxRuntime.jsx)(_reactNative.View, {
+        style: [_reactNative.StyleSheet.absoluteFill, {
+          backgroundColor: coverSurface != null ? coverSurface.base : theme['c-content-background'],
+          opacity: coverSurface != null ? coverSurface.scrimAlpha : hasBackdropImage ? 0.58 : 0.64
+        }]
+      })]
+```
+
+- [ ] **Step 5: 语法与打包验证**
+
+```bash
+npx babel --presets module:metro-react-native-babel-preset src/components/player/PlayerOverlay/index.tsx -o /dev/null && echo OK
+npm run build-test
+```
+
+Expected: `OK` + bundle 成功。若 babel 报 JSX 语法错，说明插入括号不配对，回到 Step 1 重读原文。
+
+- [ ] **Step 6: morph 动画验收移交控制方**
+
+**子代理不碰 adb / 不装机**（同 Task 4 Step 6 约定）。实现者以 Step 5 的 babel + bundle 静态验证为终点，报告里把下面四条逐条标注"未验"，由控制方装机后与用户一起看：① 从底栏点开全屏的 morph 过渡里背景层跟随位移、不闪烁；② 收起回底栏时背景正常淡出；③ 歌词页长按进"复制模式"时整页压暗逻辑不受影响；④ 关掉"动态背景"后与改动前一致。
+
+- [ ] **Step 7: 提交**
+
+```bash
+git add src/components/player/PlayerOverlay/index.tsx
+git commit -m "feat(theme): PlayerOverlay 展开态背景接入封面莫奈取色"
+```
+
+---
+
+## Task 8: 回归 + 收尾
+
+- [ ] **Step 1: 全量单测**
+
+```bash
+npm test
+```
+
+Expected: 全绿。若 `tests/*.mts` 里出现**改动前就红**的用例，按记忆纪律记录"既有红"并单独确认，不要顺手改别人的测试。
+
+- [ ] **Step 2: 类型与 lint 对账**
+
+```bash
+npx tsc --noEmit -p tsconfig.json 2>&1 | tail -1
+npm run lint
+```
+
+Expected: tsc 错误数 ≤ 基线 107；lint 无新增 error。
+
+- [ ] **Step 3: 确认工作区没夹带**
+
+```bash
+git status --short
+```
+
+Expected: 只剩本次无关的既有改动（174 改 + 7 删那批）。**不要** `git add -A`。
+
+- [ ] **Step 4: 更新项目记忆**
+
+在 `C:\Users\30913\.qoder\projects\C--Users-30913-Documents-ChatGPT-music\memory\` 新增 `project-dynamic-background.md`（type: project）：记录"取色内核 = 官方 material-color-utilities，原生只给像素，前景字色不参与"这个架构决定，以及 **vivo 真机验收清单的通过情况**（哪几项已验、哪几项待验）。索引 `MEMORY.md` 加一行。
+
+---
+
+## Self-Review 结论
+
+- **覆盖**：设置开关（T6）、播放页背景（T6）、morph 浮层背景（T7）、取色链路（T3/T4/T5）、对比度防线（T2）、失败回落（T2/T5/T6）、iOS 关闭（T4）、竖屏约束（Global）。
+- **占位符**：无 TBD/TODO；唯一"以实际文件为准"的地方是反编译文件的行号匹配，已给出先读后改的步骤。
+- **类型一致性**：`CoverSurface = { base, scrimAlpha }` 在 T2 定义、T5/T6/T7 使用；`getArgbPixels` 在 T4 定义、T5 注入；`useCoverSurface` 在 T6 定义、T7 消费。
+- **已知坑（写进 T5 正文）**：像素缓存必须独立于配色缓存，否则同一封面在暗/亮主题下会各下载一次。
