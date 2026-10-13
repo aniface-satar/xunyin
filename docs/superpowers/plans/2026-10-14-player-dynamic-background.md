@@ -143,10 +143,11 @@ const src = Hct.fromInt(0xFFE8551F)
 console.log('tone', src.tone.toFixed(1), 'chroma', src.chroma.toFixed(1), 'hue', src.hue.toFixed(1))
 console.log('ratio(10,90)', Contrast.ratioOfTones(10, 90).toFixed(2))
 console.log('score returns array:', Array.isArray(Score.score(QuantizerCelebi.quantize([0xFFE8551F, 0xFFE8551F, 0xFF808080], 128))))
+console.log('element type:', typeof Score.score(QuantizerCelebi.quantize([0xFFE8551F, 0xFFE8551F, 0xFF808080], 128))[0])
 "
 ```
 
-Expected: `function,function,function,function,function,function,function`（`Hct`/`Contrast`/`QuantizerCelebi`/`Score` 是 class，`typeof` 为 `function`）；`ratio(10,90)` ≈ 13.27；最后一行 `true` —— **注意 `Score.score` 返回的是 ARGB 数字数组，不是 Map**。若某个符号名不同，**立即用实际名字修正后续任务的代码**，不要带着猜测往下写。
+Expected: 8 个符号的 `typeof` 全是 `function`（`Hct`/`Contrast`/`QuantizerCelebi`/`Score` 是 class，`typeof` 也是 `function`）；`ratio(10,90)` ≈ 13.27；`score returns array: true`；**`element type: number`** —— `Score.score` 返回的是纯 ARGB 数字数组（`score.js` 里 push 的是 `chosenHct.toInt()` 与 `fallbackColorARGB`），Task 3 的 `ranked[0] >>> 0` 依赖这一点。若某个符号名不同，**立即用实际名字修正后续任务的代码**，不要带着猜测往下写。
 
 - [ ] **Step 5: 验证 Metro 能按子路径打进包（不跑 gradle，只 bundle）**
 
