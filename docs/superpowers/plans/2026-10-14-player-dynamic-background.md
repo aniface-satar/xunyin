@@ -1253,7 +1253,8 @@ export const useCoverSurface = (): CoverBackdropState => {
     return () => { cancelled = true }
   }, [enabled, pic, fontColor])
 
-  return { enabled, picUrl: enabled ? pic ?? null : null, surface }
+  // enabled 一翻 false 就当场交回空值：state 里上一张 surface 要等 effect 才清，那一帧会把封面色糊在主题背景图/关掉的开关上
+  return { enabled, picUrl: enabled ? pic ?? null : null, surface: enabled ? surface : null }
 }
 ```
 
