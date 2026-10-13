@@ -1126,13 +1126,12 @@ git commit -m "feat(theme): 封面配色缓存与并发去重"
 **Files:**
 - Create: `src/utils/monet/useCoverSurface.ts`
 - Create: `src/components/player/CoverBackdrop/index.tsx`
-- Modify: `src/screens/PlayDetail/Vertical/index.tsx:78-103`
+- Modify: `src/screens/PlayDetail/Vertical/index.tsx`（**该文件带着别人未提交的歌词工具 WIP（5+/1-），只能按 Step 6 的定点替换提交，禁止整文件 `git add`**）
 - Modify: `src/types/app_setting.d.ts`（`'theme.fontShadow'` 之后）
 - Modify: `src/config/defaultSetting.ts:80` 之后
 - Create: `src/screens/Home/Views/Setting/settings/Theme/DynamicBg.tsx`
 - Modify: `src/screens/Home/Views/Setting/settings/Theme/index.tsx:7, 16`
 - Modify: `src/lang/zh-cn.json` / `src/lang/zh-tw.json` / `src/lang/en-us.json`（`setting_basic_theme_font_shadow` 之前）
-- Modify: `package.json`（`test` 脚本）
 
 **Interfaces:**
 - Consumes: `getCoverSurface`（Task 5）、`usePlayerMusicInfo`（`src/store/player/hook`，字段 `pic`）、`useSettingValue('theme.dynamicBg')`、`ImageBackground`（`src/components/common/ImageBackground`，支持 `blurRadius`）、`defaultHeaders`（`src/components/common/Image.tsx:19`）
@@ -1285,11 +1284,13 @@ export default memo(({ enabled = true }: { enabled?: boolean }) => {
     : null), [active, picUrl])
 
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: active ? surface!.base : theme['c-content-background'] }]}>
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: active ? surface.base : theme['c-content-background'] }]}>
       {
         source ? (
           <>
             <ImageBackground style={StyleSheet.absoluteFill} source={source} resizeMode="cover" blurRadius={BLUR_RADIUS} />
+            {/* 这一处必须留 `!`：`source` 不是 `active` 的别名，TS 的 aliased narrowing 只认得出上面那行的三元。
+                删掉它 tsc 报 TS18047，加上它 lint 报 no-unnecessary-type-assertion —— 两处写法不同是被这两条闸门夹出来的。 */}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: surface!.base, opacity: surface!.scrimAlpha }]} />
           </>
         ) : null
@@ -1303,45 +1304,26 @@ export default memo(({ enabled = true }: { enabled?: boolean }) => {
 
 - [ ] **Step 6: 接入竖屏播放页**
 
-`src/screens/PlayDetail/Vertical/index.tsx`：加 `import CoverBackdrop from '@/components/player/CoverBackdrop'`，把 return（第 78-103 行）改成：
+`src/screens/PlayDetail/Vertical/index.tsx`：**只做两处插入，不要重写 return 结构。** 这个文件当前带着别人未提交的歌词工具 WIP（`useLyricToolMode` / `setLyricToolMode` / `{!lyricToolMode ? <Player .../> : null}`，`git diff --numstat` 实测 5+/1-），而且 return 块里还有别人的注释代码（`// onPageScrollStateChanged=...` 与被注释掉的 `styles.pageIndicator` 整段）。早先计划版本写的"把 return 整段换成 `<View style={styles.root}>` 包一层"会同时踩这两条雷：既删掉别人的注释块，又给共享元素转场（`NAV_SHEAR_NATIVE_IDS`）多塞一层 View。现在改成最小接入：
+
+第一处，`import Pic from './Pic'` 之前那一组 import 里加一行（紧跟 `import Lyric from './Lyric'` 之后即可）：
+
+```tsx
+import CoverBackdrop from '@/components/player/CoverBackdrop'
+```
+
+第二处，把 return 的 Fragment 开头改成（只加一行，其余一个字符都不动）：
 
 ```tsx
   return (
-    <View style={styles.root}>
+    <>
       <CoverBackdrop />
-      <View style={styles.layer}>
-        <Header pageIndex={pageIndex} onPageSelected={(page: number) => pagerRef.current?.setPage(page)} />
-        <View style={styles.container}>
-          <PagerView
-            ref={pagerRef}
-            initialPage={0}
-            onPageSelected={onPageSelected}
-            style={styles.pagerView}
-          >
-            <View collapsable={false}>
-              <Pic />
-            </View>
-            <View collapsable={false}>
-              <LyricPage activeIndex={pageIndex} />
-            </View>
-          </PagerView>
-          {!lyricToolMode ? <Player showMusicInfo={false} /> : null}
-        </View>
-      </View>
-    </View>
-  )
+      <Header pageIndex={pageIndex} onPageSelected={(page: number) => pagerRef.current?.setPage(page)} />
 ```
 
-`styles` 加两项（其余原样保留）：
+`CoverBackdrop` 自己用 `StyleSheet.absoluteFill` 铺满，Fragment 的第一个子节点在最底层，Header/PagerView/Player 天然压在它上面，所以不需要新的 `styles.root` / `styles.layer`，也不要动 `styles`。
 
-```ts
-  root: {
-    flex: 1,
-  },
-  layer: {
-    flex: 1,
-  },
-```
+**提交只能走定点暂存**（Step 10 给命令）。原因：`git add src/screens/PlayDetail/Vertical/index.tsx` 会把那 5+/1- 的歌词工具 WIP 一起提交进本功能，而本项目的硬约束是"只提交计划列出的改动"。
 
 - [ ] **Step 7: 跑全量 monet 测试（不要改 `package.json`）**
 
@@ -1354,7 +1336,7 @@ node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-
   tests/monet-source-color.mts tests/monet-surface.mts tests/monet-cover-palette.mts 2>&1 | tail -6
 ```
 
-Expected: `fail 0`；`pass` 计数 = 26（T3 6 + T2 13 + T5 7）。
+Expected: `fail 0`；`pass` 计数 = **27**（T3 6 + T2 13 + T5 8）。T5 是 8 不是 7 —— P15 给它加了第 7 条像素层 LRU 用例（本条计划的旧版本还写着 26，已按 `ebbcecf`+`bcc807b` 的实测数订正）。
 
 - [ ] **Step 8: 过静态检查**
 
@@ -1376,13 +1358,56 @@ Expected: `BUILD SUCCESSFUL`。**子代理不执行 `adb install`**（真机唯�
 
 - [ ] **Step 10: 提交**
 
+新建/干净的文件正常暂存：
+
 ```bash
 git add src/utils/monet/useCoverSurface.ts src/components/player/CoverBackdrop \
-        src/screens/PlayDetail/Vertical/index.tsx src/types/app_setting.d.ts \
-        src/config/defaultSetting.ts src/screens/Home/Views/Setting/settings/Theme \
-        src/lang/zh-cn.json src/lang/zh-tw.json src/lang/en-us.json package.json
-git commit -m "feat(theme): 播放页动态背景（封面莫奈取色）+ 外观设置开关"
+        src/types/app_setting.d.ts src/config/defaultSetting.ts \
+        src/screens/Home/Views/Setting/settings/Theme \
+        src/lang/zh-cn.json src/lang/zh-tw.json src/lang/en-us.json
+git diff --cached --stat
 ```
+
+Expected（`git diff --cached --stat`）：**7 个文件**（`CoverBackdrop/index.tsx`、`useCoverSurface.ts`、`DynamicBg.tsx`、`Theme/index.tsx`、`app_setting.d.ts`、`defaultSetting.ts`、3 个 lang 文件里挑有改动的），**不含 `Vertical/index.tsx`、不含 `package.json`**。
+
+`Vertical/index.tsx` 单独走定点暂存（控制方已用一次性 scratch 仓库复现过这套命令的机制：`git hash-object -w` + `git update-index --cacheinfo` 能让暂存内容与工作树内容不同，`git status --porcelain` 显示 `MM`，工作树里的别人 WIP 原样保留）：
+
+```bash
+mkdir -p .scratch/t6
+git show HEAD:src/screens/PlayDetail/Vertical/index.tsx > .scratch/t6/base.tsx
+cp .scratch/t6/base.tsx .scratch/t6/staged.tsx
+node - <<'EOF'
+const fs = require('fs')
+const p = '.scratch/t6/staged.tsx'
+let s = fs.readFileSync(p, 'utf8')
+const reps = [
+  ["import Lyric from './Lyric'\n", "import Lyric from './Lyric'\nimport CoverBackdrop from '@/components/player/CoverBackdrop'\n"],
+  ['  return (\n    <>\n      <Header pageIndex={pageIndex}', '  return (\n    <>\n      <CoverBackdrop />\n      <Header pageIndex={pageIndex}'],
+]
+for (const [from, to] of reps) {
+  const n = s.split(from).length - 1
+  if (n !== 1) throw new Error(`锚点命中 ${n} 次，应为 1：${JSON.stringify(from)}`)
+  s = s.replace(from, to)
+}
+fs.writeFileSync(p, s)
+console.log('staged.tsx ok')
+EOF
+BLOB=$(git hash-object -w .scratch/t6/staged.tsx)
+git update-index --cacheinfo 100644,$BLOB,src/screens/PlayDetail/Vertical/index.tsx
+git diff --cached -- src/screens/PlayDetail/Vertical/index.tsx
+```
+
+Expected：脚本打印 `staged.tsx ok`（两个锚点若命中 0 次或 >1 次会直接抛错，别改锚点凑过）；最后一条命令**只有 2 行 `+`，没有 `-`**，且不出现 `useLyricToolMode` / `setLyricToolMode` / `lyricToolMode` 任何一行。若看到删除行，说明暂存内容被写错了，重来：`git reset -- src/screens/PlayDetail/Vertical/index.tsx`（只重置这一个路径，**禁止**裸 `git reset`）。
+
+然后提交并核对：
+
+```bash
+git commit -m "feat(theme): 播放页动态背景（封面莫奈取色）+ 外观设置开关"
+git show --stat --oneline HEAD
+git status --porcelain -- src/screens/PlayDetail/Vertical/index.tsx
+```
+
+Expected：`git show --stat` 里**没有** `package.json`；`git status --porcelain` 对该文件显示 `MM`（提交后工作树仍带着别人的歌词工具 WIP 未提交）。`.scratch/t6/` 用完删掉。
 
 ---
 
