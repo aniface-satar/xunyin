@@ -365,6 +365,7 @@
   "setting_basic_theme": "Theme",
   "setting_basic_theme_non_solid_tip": "The non-solid-color themes below may render incorrectly and are not recommended for now.",
   "setting_basic_theme_auto_theme": "Follow system light & dark modes to switch themes",
+  "setting_basic_theme_dynamic_bg": "Dynamic background (follows album artwork colors)",
   "setting_basic_theme_font_shadow": "Enable font shadow",
   "setting_basic_theme_hide_bg_dark": "Hide the background of the black theme",
   "setting_basic_theme_more_btn_show": "More themes",

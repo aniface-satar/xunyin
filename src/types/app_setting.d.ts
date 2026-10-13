@@ -96,6 +96,11 @@ declare global {
     'theme.fontShadow': boolean
 
     /**
+       * 播放页动态背景（跟随封面莫奈取色）
+       */
+    'theme.dynamicBg': boolean
+
+    /**
        * 启动时自动播放歌曲
        */
     'player.startupAutoPlay': boolean

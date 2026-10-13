@@ -78,6 +78,7 @@ const defaultSetting: LX.AppSetting = {
   'theme.darkId': 'black',
   'theme.hideBgDark': false,
   'theme.fontShadow': false,
+  'theme.dynamicBg': false,
 }
 
 

@@ -365,6 +365,7 @@
   "setting_basic_theme": "主题颜色",
   "setting_basic_theme_non_solid_tip": "后面的非纯色主题有显示错误，不建议当前使用",
   "setting_basic_theme_auto_theme": "跟随系统亮、暗模式切换主题",
+  "setting_basic_theme_dynamic_bg": "动态背景（跟随封面配色）",
   "setting_basic_theme_font_shadow": "启用字体阴影",
   "setting_basic_theme_hide_bg_dark": "隐藏黑色主题背景",
   "setting_basic_theme_more_btn_show": "更多主题",
