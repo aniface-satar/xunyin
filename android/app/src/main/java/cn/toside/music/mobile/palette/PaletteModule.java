@@ -26,6 +26,10 @@ public class PaletteModule extends ReactContextBaseJavaModule {
 
   private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
+  // 封面实际几十到几百 KB，4MB 已经宽得离谱。不设上限时 readAll 靠 ByteArrayOutputStream 成倍扩容，
+  // 一个"自称是图片"的巨大响应就能把堆撑爆 —— 那是 OOM 最直接的入口。
+  private static final int MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024;
+
   PaletteModule(ReactApplicationContext reactContext) {
     super(reactContext);
   }
@@ -42,7 +46,9 @@ public class PaletteModule extends ReactContextBaseJavaModule {
       return;
     }
     final String target = url;
-    final int limit = maxSize <= 0 ? 128 : maxSize;
+    // 下界 1、上界 512：上界不是装饰 —— 巨大的 maxSize 会让下面 limit * 2 溢出成负数，
+    // while 条件恒 false，于是原图不缩放直接按宽高分配 int[]，最坏 OOM（和下面 catch Throwable 是同一个坑）。
+    final int limit = Math.max(1, Math.min(maxSize <= 0 ? 128 : maxSize, 512));
     executor.execute(() -> {
       Bitmap decoded = null;
       Bitmap scaled = null;
@@ -60,6 +66,9 @@ public class PaletteModule extends ReactContextBaseJavaModule {
         options.inSampleSize = sample;
         options.inPreferredConfig = Bitmap.Config.ARGB_8888;
         decoded = BitmapFactory.decodeByteArray(raw, 0, raw.length, options);
+        // 截断的响应体能骗过上面 inJustDecodeBounds 的探边，但完整解码返回 null。
+        // 不显式判就会靠 decoded.getWidth() 的 NPE 兜住，reject 文案变成 ART 的长句，看不出是"图不完整"。
+        if (decoded == null) throw new Exception("decode returned null");
 
         int width = decoded.getWidth();
         int height = decoded.getHeight();
@@ -74,11 +83,19 @@ public class PaletteModule extends ReactContextBaseJavaModule {
         WritableNativeArray result = new WritableNativeArray();
         for (int pixel : pixels) result.pushInt(pixel);
         promise.resolve(result);
-      } catch (Exception e) {
-        promise.reject("PALETTE_FAILED", e.getMessage());
+      } catch (Throwable t) {
+        // 必须是 Throwable 不是 Exception：大封面解码可能抛 OutOfMemoryError，那是 Error 不是 Exception。
+        // ART 上工作线程里逃逸的 Throwable 会直接把整个 App 杀掉（用户看到的是"进播放页偶发闪退"）；
+        // 而且 promise 会永不 settle —— Task 5 的 pixelCache 按 url 缓存 Promise，
+        // 一条永不 settle 的 promise 等于这张封面到杀进程为止都不会再尝试上色，违反"失败即回落"。
+        promise.reject("PALETTE_FAILED", String.valueOf(t), t);
       } finally {
-        if (scaled != null && scaled != decoded) scaled.recycle();
-        if (decoded != null) decoded.recycle();
+        try {
+          if (scaled != null && scaled != decoded) scaled.recycle();
+          if (decoded != null) decoded.recycle();
+        } catch (Throwable ignored) {
+          // recycle 只在 finally 里跑，此刻 promise 已经 settle，抛出去只会杀进程，换不到任何信息
+        }
       }
     });
   }
@@ -97,8 +114,10 @@ public class PaletteModule extends ReactContextBaseJavaModule {
     }
     HttpURLConnection conn = (HttpURLConnection) new URL(path).openConnection();
     conn.setRequestProperty("User-Agent", USER_AGENT);
-    conn.setConnectTimeout(8000);
-    conn.setReadTimeout(8000);
+    // 单线程 executor 意味着排队：一个"慢慢滴"的服务器能占住这条唯一的工作线程，
+    // 把用户正在听的这首歌的上色挤到几十秒后。背景是装饰功能，过期就回落，不值得等 8+8 秒。
+    conn.setConnectTimeout(4000);
+    conn.setReadTimeout(4000);
     conn.setInstanceFollowRedirects(true);
     try {
       int code = conn.getResponseCode();
@@ -121,7 +140,10 @@ public class PaletteModule extends ReactContextBaseJavaModule {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     byte[] buffer = new byte[8192];
     int read;
-    while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+    while ((read = in.read(buffer)) != -1) {
+      if (out.size() + read > MAX_DOWNLOAD_BYTES) throw new Exception("image too large");
+      out.write(buffer, 0, read);
+    }
     return out.toByteArray();
   }
 }
