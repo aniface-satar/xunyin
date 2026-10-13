@@ -451,10 +451,15 @@ test('灰底 + 少量红：源色取红（面积让位于色度），平均色�
   assert.ok(Hct.fromInt(result.average).chroma < 15, `average chroma=${Hct.fromInt(result.average).chroma}`)
 })
 
-test('全灰像素不崩，源色与平均色都无色度', () => {
-  const result = analyzeArgbPixels(fill(GRAY, 4096))!
-  assert.ok(Hct.fromInt(result.source).chroma < 5)
-  assert.ok(Hct.fromInt(result.average).chroma < 5)
+test('全灰像素不崩，源色取的是这张图自己的灰而不是内置常量灰', () => {
+  // 只断言色度挡不住"把 fallbackColorARGB 写成常量 0xff808080"这种改法：
+  // 中灰封面照样全绿，深灰/浅灰封面就会被涂成中灰。三档灰都要求 source === 本图平均色 === 输入色。
+  for (const gray of [0xFF808080, 0xFF2A2A2A, 0xFFEFEFEF]) {
+    const result = analyzeArgbPixels(fill(gray, 4096))!
+    assert.equal(result.average, gray)
+    assert.equal(result.source, result.average, `gray=${gray.toString(16)}`)
+    assert.ok(Hct.fromInt(result.source).chroma < 5)
+  }
 })
 
 test('输出 alpha 恒为 255（供 Hct.fromInt 使用）', () => {
@@ -466,6 +471,10 @@ test('输出 alpha 恒为 255（供 Hct.fromInt 使用）', () => {
 test('半透明像素被跳过（图标/带透明通道封面不污染结果）', () => {
   const transparent = fill(0x00FF00FF, 3000)
   const result = analyzeArgbPixels([...transparent, ...fill(GRAY, 1000)])!
+  // 断言要钉死数值：除以 pixels.length 而不是 opaque.length 时平均色会变成 0xff202020，
+  // 色度仍是 1.9，只比色度的话这条就漏过了 —— 而 Task 2 的蒙版正好吃这个平均色。
+  assert.equal(result.average, GRAY, `average=${result.average.toString(16)}`)
+  assert.equal(result.source, GRAY, `source=${result.source.toString(16)}`)
   assert.ok(Hct.fromInt(result.source).chroma < 5)
 })
 
@@ -473,6 +482,9 @@ test('空数组 / 全透明 / 非法输入返回 null', () => {
   assert.equal(analyzeArgbPixels([]), null)
   assert.equal(analyzeArgbPixels(fill(0x00FFFFFF, 100)), null)
   assert.equal(analyzeArgbPixels(null as unknown as number[]), null)
+  assert.equal(analyzeArgbPixels(undefined as unknown as number[]), null)
+  // array-like 是 Array.isArray 这道守卫存在的理由，不测它就是没守卫
+  assert.equal(analyzeArgbPixels({ length: 3 } as unknown as number[]), null)
 })
 
 test('量化色数用官方 128', () => {
@@ -507,7 +519,9 @@ export interface CoverAnalysis {
 }
 
 export const analyzeArgbPixels = (pixels: number[]): CoverAnalysis | null => {
-  if (!pixels?.length) return null
+  // 入参来自 RN 原生桥，是个真实边界：`!pixels?.length` 会放过 { length: 3 } 这类 array-like，
+  // 然后 `for (const pixel of pixels)` 直接抛 TypeError —— 文档承诺的是"非法输入返回 null"，就得真做到。
+  if (!Array.isArray(pixels) || pixels.length === 0) return null
   const opaque: number[] = []
   let sumR = 0
   let sumG = 0
@@ -544,8 +558,8 @@ export const analyzeArgbPixels = (pixels: number[]): CoverAnalysis | null => {
 node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-source-color.mts
 ```
 
-Expected: PASS（6 个用例）。控制方已用真实实现跑过这 6 条并记录实测值，挂了先对照：灰底+100 红 → `source` 色度 87.3（`0xffcc2222`）、`average` 色度 7.4；全灰 → `source === average === 0xff808080`，色度 1.9；100 灰 + 100 红 → alpha 均 255；3000 透明 + 1000 灰 → `source` 色度 1.9；空/全透明/`null` → `null`。
-"全灰像素不崩"与"半透明被跳过"两条**靠 `{ fallbackColorARGB: average }` 才成立**：不传这个 options 时 `Score.score` 对灰封面返回 Google Blue `0xff4285f4`（色度 36+），这两条测试会红 —— 那是测试在正确地抓 bug，不许改成 `return null`（那等于把灰封面判成取色失败，Task 6 的回落分支会被误触发），也不许放宽断言。若"少量红"那条挂了（源色取到灰），打印 `Score.score` 前 5 名再判断，**不要改成"取 chroma 最大的量化色"来绕过**，那会丢掉官方行为。
+Expected: PASS（6 个用例）。控制方已用真实实现跑过并记录实测值，挂了先对照：灰底+100 红 → `source` `0xffcc2222` 色度 87.3、`average` 色度 7.4；**三档灰**（`0xFF808080` / `0xFF2A2A2A` / `0xFFEFEFEF`）各自 → `average === 输入灰`、`source === average`，色度 1.90 / 1.01 / 2.76；100 灰 + 100 红 → alpha 均 255；3000 透明 + 1000 灰 → `average === source === 0xff808080`；空/全透明/`null` → `null`。
+"三档灰"与"半透明被跳过"两条**靠 `{ fallbackColorARGB: average }` 才成立**：不传这个 options 时 `Score.score` 对灰封面返回 Google Blue `0xff4285f4`（色度 36+），这两条测试会红 —— 那是测试在正确地抓 bug，不许改成 `return null`（那等于把灰封面判成取色失败，Task 6 的回落分支会被误触发），也不许把 `assert.equal` 换回只比色度、或放宽任何断言。若"少量红"那条挂了（源色取到灰），打印 `Score.score` 前 5 名再判断，**不要改成"取 chroma 最大的量化色"来绕过**，那会丢掉官方行为。
 
 - [ ] **Step 5: 提交**
 
