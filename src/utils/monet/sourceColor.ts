@@ -12,7 +12,9 @@ export interface CoverAnalysis {
 }
 
 export const analyzeArgbPixels = (pixels: number[]): CoverAnalysis | null => {
-  if (!pixels?.length) return null
+  // 入参来自 RN 原生桥，是个真实边界：`!pixels?.length` 会放过 { length: 3 } 这类 array-like，
+  // 然后 `for (const pixel of pixels)` 直接抛 TypeError —— 文档承诺的是"非法输入返回 null"，就得真做到。
+  if (!Array.isArray(pixels) || pixels.length === 0) return null
   const opaque: number[] = []
   let sumR = 0
   let sumG = 0
