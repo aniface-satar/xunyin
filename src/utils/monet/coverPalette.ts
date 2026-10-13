@@ -17,7 +17,10 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
   const cacheOrder: string[] = []
   const pending = new Map<string, Promise<CoverSurface | null>>()
 
-  const fetchOnce = (picUrl: string) => {
+  // async 是仓库规则要求的（@typescript-eslint/promise-function-async：非 async 函数返回 Promise 会报），
+  // 不是功能需要。去重靠 pixelCache 里那条原始 promise：async 包装只是再套一层壳，
+  // 命中缓存时不会第二次调用 fetchPixels，第 2、5 条用例仍然量得到。
+  const fetchOnce = async(picUrl: string): Promise<number[] | null> => {
     const cached = pixelCache.get(picUrl)
     if (cached) return cached
     // 取色失败（null）也进缓存，这是 Task 5 第 4 条用例钉住的行为：原生侧是单线程队列，
@@ -44,9 +47,10 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
     cache.set(key, value)
   }
 
-  const load = (picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
+  // 同上：async 只为过 lint。pending 里的原始 promise 仍是去重的那一条。
+  const load = async(picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
     const key = `${picUrl}|${fontArgb}`
-    if (cache.has(key)) return Promise.resolve(cache.get(key)!)
+    if (cache.has(key)) return cache.get(key)!
     const inFlight = pending.get(key)
     if (inFlight) return inFlight
 
@@ -66,10 +70,10 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
   }
 
   return {
-    getCoverSurface(picUrl: string | null | undefined, fontColor: string) {
-      if (!picUrl) return Promise.resolve(null)
+    getCoverSurface: async(picUrl: string | null | undefined, fontColor: string): Promise<CoverSurface | null> => {
+      if (!picUrl) return null
       const fontArgb = parseCssColor(fontColor)
-      if (fontArgb == null) return Promise.resolve(null)
+      if (fontArgb == null) return null
       return load(picUrl, fontArgb).then(surface => {
         remember(`${picUrl}|${fontArgb}`, surface)
         return surface
