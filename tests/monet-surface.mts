@@ -88,10 +88,12 @@ test('底色 tone 钳制循环真的会触发：中灰字色逼底色压到暗�
   assert.ok(Contrast.ratioOfTones(base.tone, Hct.fromInt(font).tone) >= MIN_CONTRAST)
 })
 
-test('两端都够不到 4.5 时返回 null，不交一个不达标的底色', () => {
-  // 旧实现这里交 rgb(255,255,255)，与字色对比度实测 4.4962 < 4.5
+test('字色落在分支切分线附近时不跨侧硬凑，宁可按 null 回落', () => {
+  // 实测：字色 tone 49.92 被判为"亮主题"→ 走高 tone 端，纯白 rgb(255,255,255) 也只有 4.4962 < 4.5。
+  // 低 tone 端其实够得到（tone 0 → 4.6706），但底色跨侧意味着整页从亮翻成黑，是看得见的乱来，
+  // 所以设计上是"够不到就 null"，不是"换一侧再试"。
   const font = Hct.from(0, 20, 49.95).toInt() >>> 0
-  assert.ok(Hct.fromInt(font).tone < 50, '夹具要落在判亮/判暗的边界带上')
+  assert.ok(Hct.fromInt(font).tone < 50, '夹具要落在切分线的亮侧')
   assert.equal(buildCoverSurface(ORANGE, ORANGE, font), null)
 })
 

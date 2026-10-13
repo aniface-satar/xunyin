@@ -293,8 +293,8 @@ test('底色 tone 钳制循环真的会触发：中灰字色逼底色压到暗�
 
 test('字色落在分支切分线附近时不跨侧硬凑，宁可按 null 回落', () => {
   // 实测：字色 tone 49.92 被判为"亮主题"→ 走高 tone 端，纯白 rgb(255,255,255) 也只有 4.4962 < 4.5。
-  // 低 tone 端其实够得到（tone 0 → 4.6706），但底色跨侧意味着整个页面从亮翻成黑，
-  // 对中途 tone 字色是看得见的乱来，所以设计上是"够不到就 null"，不是"换一侧再试"（见 ledger Ruling P9）。
+  // 低 tone 端其实够得到（tone 0 → 4.6706），但底色跨侧意味着整页从亮翻成黑，是看得见的乱来，
+  // 所以设计上是"够不到就 null"，不是"换一侧再试"。
   const font = Hct.from(0, 20, 49.95).toInt() >>> 0
   assert.ok(Hct.fromInt(font).tone < 50, '夹具要落在切分线的亮侧')
   assert.equal(buildCoverSurface(ORANGE, ORANGE, font), null)
@@ -383,8 +383,9 @@ export const buildCoverSurface = (sourceArgb: number, coverAvgArgb: number, font
   }
   const base = Hct.from(source.hue, chroma, tone).toInt() >>> 0
   // HCT→sRGB 夹色域后真正铺出来的底色 tone 才是给用户看的那个值，判断以它为准。
-  // 字色 tone 落在 49.9~50.0 且带彩度时（例：Hct.from(0, 20, 49.95)）两端都够不到 4.5，
-  // 此时必须 null 回落到主题纯色，而不是交一个不达标的底色。
+  // 字色 tone 落在 49.9~50.0 且带彩度时（例：Hct.from(0, 20, 49.95)）亮分支最好也只有
+  // 纯白的 4.4962。另一侧够得到（tone 0 → 4.6706），但底色跨侧等于把整页从亮翻成黑，
+  // 那是看得见的乱来 —— 所以够不到就 null 回落到主题纯色，不跨侧硬凑。
   const baseTone = Hct.fromInt(base).tone
   if (Contrast.ratioOfTones(baseTone, font.tone) < MIN_CONTRAST) return null
 

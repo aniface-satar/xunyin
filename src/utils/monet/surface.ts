@@ -49,8 +49,9 @@ export const buildCoverSurface = (sourceArgb: number, coverAvgArgb: number, font
   }
   const base = Hct.from(source.hue, chroma, tone).toInt() >>> 0
   // HCT→sRGB 夹色域后真正铺出来的底色 tone 才是给用户看的那个值，判断以它为准。
-  // 字色 tone 落在 49.9~50.0 且带彩度时（例：Hct.from(0, 20, 49.95)）两端都够不到 4.5，
-  // 此时必须 null 回落到主题纯色，而不是交一个不达标的底色。
+  // 字色 tone 落在 49.9~50.0 且带彩度时（例：Hct.from(0, 20, 49.95)）亮分支最好也只有
+  // 纯白的 4.4962。另一侧够得到（tone 0 → 4.6706），但底色跨侧等于把整页从亮翻成黑，
+  // 那是看得见的乱来 —— 所以够不到就 null 回落到主题纯色，不跨侧硬凑。
   const baseTone = Hct.fromInt(base).tone
   if (Contrast.ratioOfTones(baseTone, font.tone) < MIN_CONTRAST) return null
 
