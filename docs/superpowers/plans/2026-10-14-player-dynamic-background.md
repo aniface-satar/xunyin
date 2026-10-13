@@ -551,7 +551,7 @@ Expected: PASS（6 个用例）。控制方已用真实实现跑过这 6 条并�
 
 ```bash
 git add src/utils/monet/sourceColor.ts tests/monet-source-color.mts
-git commit -m "feat(theme): 官方 Monet 源色量化链路（Celebi 128 + Score）"
+git commit -m "feat(theme): ARGB 像素走官方 Monet 取源色，灰封面回落到平均色"
 ```
 
 ---
@@ -764,6 +764,8 @@ export const getArgbPixels = async(url: string, maxSize = 128): Promise<number[]
   }
 }
 ```
+
+`maxSize = 128` 保持官方口径（官方 `sourceColorFromImage` 也把图缩到 128 边长），**不要**凭感觉往下调。本机实测 `QuantizerCelebi.quantize + Score.score` 的开销**跟着"不同颜色数"走而不是像素数**：4096 与 16384 个**全随机**像素在 128 簇下都是 140~148ms，而"照片样"像素（60 个基色 + 噪声）同样 4096/16384 只要 **21~28ms**；把簇数砍到 16 对随机样本能降到 35~69ms，但对真实封面几乎没差别。分析跑在 `await fetchOnce()` 之后的 promise 续体里（Task 5），不在渲染路径上。**真机验收项**：vivo 上计时"进入播放页 → 背景上色"，若这段 JS 把开屏动画卡出可见掉帧，就把默认值降到 `maxSize = 64`（一处改动，`fetchOnce` 的入参），而不是去砍 `QUANTIZE_COLORS`（那会偏离官方取色行为，Task 3 的用例语义也会变）。
 
 - [ ] **Step 5: 编译验证**
 
@@ -1240,7 +1242,7 @@ export default memo(({ enabled = true }: { enabled?: boolean }) => {
   },
 ```
 
-- [ ] **Step 7: 跑全量 monet 测试（**不要改 `package.json`**）**
+- [ ] **Step 7: 跑全量 monet 测试（不要改 `package.json`）**
 
 `package.json` 的 `test` 脚本行**当前带着别人未提交的 WIP**（行尾多了 `tests/lyric-copy-text.mts`，属于歌词工具那笔活儿）。在这个工作区里 `git add package.json` 会把那半行一起提交进本功能，所以本步不改 `package.json`：挂进 `npm test` 由控制方在 Task 8 收尾时处理。
 
