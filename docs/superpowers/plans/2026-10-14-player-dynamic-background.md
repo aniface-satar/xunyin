@@ -19,7 +19,7 @@
 - **前景字色一律沿用 `useTheme()`**，不得由封面色推导 —— 这是"背景与字色混淆"的硬防线。可读性只靠"底色 tone 钳制 + 蒙版不透明度"两件事保证。
 - **依赖约束**：只新增 `@material/material-color-utilities@0.4.0`（纯 JS，无原生代码、无子依赖）。不引入渐变库（项目当前无 linear-gradient / skia，见 package.json）。
 - **取色包只能按子路径 import**（实测 Ruling P4）：任何 `src/**` 与 `tests/**` 都写 `'@material/material-color-utilities/<dir>/<file>.js'`，**禁止包根 import**。包根 `index.js` 有 33 条 `export *` 且 Metro 不做 tree-shaking，包根 import 实测让 bundle **+479,461 B**，子路径 import 只带实际用到的 5 个入口，实测 **+134,020 B**。为此 `dependencies-patch.js` 必须给该包 `package.json` 的 `exports` 追加 `"./*": "./*"`（发布产物只暴露 `"."`，Node 跑单测时子路径会被 `ERR_PACKAGE_PATH_NOT_EXPORTED` 挡掉）。
-- **不得删 `res/`**：仓库在根目录 `res/` 下跟踪了 13 个 Metro 生成的 png（`git ls-files res` 可见），`react-native bundle --assets-dest res` 会重写它们。清理验证产物时只 `rm -f index.android.bundle`；`res/` 若变脏用 `git restore -- res` 还原，**绝不 `rm -rf res`**。
+- **不得删/不得写 `res/`**：仓库在根目录 `res/` 下跟踪了 13 个文件（实测 `git ls-files res`：8 个 png + 4 个 jpg + 1 个 mp3），`react-native bundle --assets-dest res` 会重写它们。**本计划一律把验证产物写到 `.scratch/`，不要往 `res/` 或仓库根跑 bundle**。万一 `res/` 变脏：**报告给控制方**，不要用 `git restore` / `git checkout --` 自行还原（工作树里全是别人未提交的改动，这类命令一刀下去会连别人的东西一起回滚），**绝不 `rm -rf res`**。
 - **平台约束**：iOS 端本仓库无任何自研原生模块（`ios/` 下只有 `LxMusicMobileTests`），因此 iOS 直接返回 `null`，功能自动关闭，不加 `.mm`。
 - **失败即回落 = 整层不渲染**：取色失败 / 无封面 / 色度为 0 → `CoverBackdrop` 直接 `return null`，播放页背景与改动前逐像素一致。**不要**铺一层 `theme['c-content-background']` 当回落底色：PageContent 在 black / mid_autumn / naruto / china_ink / happy_new_year 这 5 个内置主题里靠主题背景图 + 半透明 `c-main-background` 透出画面，常驻不透明底色会把它们压平（控制方实测 `src/theme/themes/themes.ts`，Ruling P22）。
 - **主题自带背景图优先**：`theme['bg-image']` 为真值时整条封面取色让路（用户显式设过背景图）。判据是 ActiveTheme 的 `!theme['bg-image']`，不是 `extInfo['bg-image']`：`buildActiveThemeColors()`（`src/theme/themes/index.ts:49-96`）最后把 `'bg-image': bgImg` 覆盖进返回值，只有这张图**真的会被画出来**时才是图片对象 —— 纯色主题是 `undefined`，暗主题开了 `theme.hideBgDark` 时也是 `undefined`；这正是 PageContent 拿去渲染的同一个值，跟它保持一致就不会出现"背景层开着却没有背景图"的空窗。而 `extInfo['bg-image']` 在纯色主题里是 `""` 且不看 `hideBgDark`，用它判会误关。闸门落在 `useCoverSurface` 的 `enabled` 上（Ruling P24），播放页与 Task 7 的 PlayerOverlay 都从这一个 hook 继承，不要各写一份。
@@ -1500,7 +1500,7 @@ Expected: bundle **exit=0**（这一步同时证明插入的 JSX 能被 Metro �
 - `npx eslint src/components/player/PlayerOverlay/index.tsx`：**这条闸门不可能是"计数不涨"**。控制方实测：改前 `1677 errors + 29 warnings = 1706 problems`，改后 `1690 errors + 29 warnings = 1719 problems`（**+13**）。原因不是写坏了，而是这个文件是 APK dev bundle 反编译还原的，全文本来就靠 `var` + 双引号 `require()` + 分号 + 无尾逗号活着（1677 条存量报错），本任务按 Step 2/3/4 原文插入 15 行就必然再摊上 13 条。**真正的闸门是"不新增 rule 类别"**：改动行触发的 ruleId 必须都已经在该文件别处出现过 —— 实测落在 `no-var` / `@typescript-eslint/no-var-requires` / `@typescript-eslint/quotes` / `@typescript-eslint/semi` / `comma-dangle` 这 5 条，全是本文件既有项，新增类别 0 条。核对脚本：`npx eslint <该文件> --format json -o .scratch/t7/eslint_after.json`，再按行号把"本功能行"与"其余行"的 ruleId 集合做差集。
   - **不得**为了让这 15 行变干净而改成 `const`/单引号/去分号：那会让它们成为全文唯一不合反编译风格的行，且与本任务"不要顺手改规范"的要求冲突；也**不得**加 `eslint-disable`（这个文件根本不在仓库的 lint 干净集里，加了等于给后续留坑）；更**禁止 `--fix`**（一次改 1445 行）。
 - **不要**用 `npx babel ...`：本机 `node_modules/.bin` 里没有 babel CLI，npx 会去联网拉包。
-- **不要**用 `npm run build-test`：它把 `index.android.bundle` 写在仓库根、并把 13 个被 git 跟踪的 png 重写到 `res/`（见 Global Constraints 的"不得删 `res/`"）。验证产物一律进 `.scratch/`。
+- **不要**用 `npm run build-test`：它把 `index.android.bundle` 写在仓库根、并重写 `res/` 下 13 个被 git 跟踪的文件（8 png + 4 jpg + 1 mp3）（见 Global Constraints 的"不得删 `res/`"）。验证产物一律进 `.scratch/`。
 
 - [ ] **Step 6: morph 动画验收移交控制方**
 
@@ -1624,7 +1624,7 @@ rm -rf .scratch
 git status --short | grep -c '^??'    # 比清理前少 1（.scratch 这一条）
 ```
 
-**绝不** `rm -rf res`（根目录 `res/` 有 13 个被跟踪的 Metro 生成 png），**不要**动 `.superpowers/`（本计划的 SDD 工作区，由控制方在最终评审后按流程处理），也不要动 `node_modules`。
+**绝不** `rm -rf res`（根目录 `res/` 下有 13 个被跟踪的文件），**不要**动 `.superpowers/`（本计划的 SDD 工作区，由控制方在最终评审后按流程处理），也不要动 `node_modules`。
 
 删之前先扫一眼 `.scratch` 里有没有**唯一副本**性质的东西，而不只是可再生产物：`mcu-pkg-backup.json` 是 `@material/material-color-utilities` 被 `dependencies-patch.js` 改写 `exports` **之前**的原文件备份，删了就得重装才能拿回来。这类文件先 `mv` 进本计划的 SDD 工作区（`.superpowers/sdd/2026-10-14-player-dynamic-background/`，gitignored）再删目录；`t*.log`、`*.bundle`、`pkgcheck/`、探针脚本、`*.tgz` 这些一律是可再生的，直接删。
 
