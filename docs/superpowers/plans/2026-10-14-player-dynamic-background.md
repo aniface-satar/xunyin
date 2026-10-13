@@ -1487,21 +1487,56 @@ sed -n '124,168p' src/components/player/PlayerOverlay/index.tsx
 - [ ] **Step 5: 语法与打包验证**
 
 ```bash
-npx babel --presets module:metro-react-native-babel-preset src/components/player/PlayerOverlay/index.tsx -o /dev/null && echo OK
-npm run build-test
+mkdir -p .scratch/t7bundle
+npx react-native bundle --platform android --dev false --entry-file index.js \
+  --bundle-output .scratch/t7bundle/index.android.bundle --assets-dest .scratch/t7bundle/assets
+echo "bundle exit=$?"
+npx tsc --noEmit -p tsconfig.json 2>&1 | grep -c 'PlayerOverlay/index.tsx'
+npx tsc --noEmit -p tsconfig.json 2>&1 | grep -c 'error TS'
 ```
 
-Expected: `OK` + bundle 成功。若 babel 报 JSX 语法错，说明插入括号不配对，回到 Step 1 重读原文。
+Expected: bundle **exit=0**（这一步同时证明插入的 JSX 能被 Metro 解析转换、`utils/monet/useCoverSurface` 进了模块图）。控制方实测本机基线：`PlayerOverlay/index.tsx` 自己 **88** 条、全仓总数 **137** 条 —— 改完必须**两个数字都不变**（总数变大就是这次插入自己引入了类型错误，按报错行回改，不要去修别人的 88 条）。
+
+- `npx eslint src/components/player/PlayerOverlay/index.tsx`：**动手前先跑一次**记下报错条数（这个反编译文件本来就带一大批固有误报；控制方按当前工作树——含别人的 WIP——实测是 `1677 errors + 29 warnings = 1706 problems`）。改完必须**一条不多**：只要求"不新增"，不要去修别人的历史报错，更**禁止 `--fix`**（它一次能改 1445 行）。
+- **不要**用 `npx babel ...`：本机 `node_modules/.bin` 里没有 babel CLI，npx 会去联网拉包。
+- **不要**用 `npm run build-test`：它把 `index.android.bundle` 写在仓库根、并把 13 个被 git 跟踪的 png 重写到 `res/`（见 Global Constraints 的"不得删 `res/`"）。验证产物一律进 `.scratch/`。
 
 - [ ] **Step 6: morph 动画验收移交控制方**
 
-**子代理不碰 adb / 不装机**（同 Task 4 Step 6 约定）。实现者以 Step 5 的 babel + bundle 静态验证为终点，报告里把下面四条逐条标注"未验"，由控制方装机后与用户一起看：① 从底栏点开全屏的 morph 过渡里背景层跟随位移、不闪烁；② 收起回底栏时背景正常淡出；③ 歌词页长按进"复制模式"时整页压暗逻辑不受影响；④ 关掉"动态背景"后与改动前一致。
+**子代理不碰 adb / 不装机**（同 Task 4 Step 6 约定）。实现者以 Step 5 的 bundle + tsc 静态验证为终点，报告里把下面四条逐条标注"未验"，由控制方装机后与用户一起看：① 从底栏点开全屏的 morph 过渡里背景层跟随位移、不闪烁；② 收起回底栏时背景正常淡出；③ 歌词页长按进"复制模式"时整页压暗逻辑不受影响；④ 关掉"动态背景"后与改动前一致。
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 7: 提交 —— 定点暂存，禁止 `git add` 本文件**
+
+`src/components/player/PlayerOverlay/index.tsx` 的工作区里挂着别人**未提交**的 WIP：控制方实测 `git diff --stat` = **176 插入 / 64 删除**（同目录 `transition.ts` 也在改）。所以 `git add src/components/player/PlayerOverlay/index.tsx` 会把那 240 行别人的改动一起塞进本功能 —— 这正是 Task 6 差点踩中的同一个雷（Ruling P21）。照同一套办法，只提交"**HEAD 的文本 + 本任务那三处改动**"：
 
 ```bash
-git add src/components/player/PlayerOverlay/index.tsx
+mkdir -p .scratch/t7
+git show HEAD:src/components/player/PlayerOverlay/index.tsx > .scratch/t7/head.tsx
+# 用 Node 脚本对 .scratch/t7/head.tsx 做 Step 2/3/4 的同一组"定点字符串替换"，产出 .scratch/t7/feature.tsx。
+# 每条替换都必须先断言"命中次数恰好为 1"，命中 0 次或 >1 次立刻停下报错，不要改成正则容错、不要按行号切片。
+# 锚点安全性由控制方实测保证：HEAD 里 OverlayBackdrop 这一段（HEAD 的 116-149 行）与别人 WIP 的改动区不重叠，
+# 同一段文本在 HEAD 与工作树里逐字节相同（只是行号整体下移 16 行）。
+node .scratch/t7/apply-feature.cjs
+git diff --no-index --stat .scratch/t7/head.tsx .scratch/t7/feature.tsx   # 只允许这一对文件
+git diff --no-index --numstat .scratch/t7/head.tsx .scratch/t7/feature.tsx  # 期望 ≈ 24 插入 / 12 删除
+```
+
+然后造 blob 入索引并**逐行**核对（数字只是合理性检查，判定以 diff 为准）：
+
+```bash
+BLOB=$(git hash-object -w .scratch/t7/feature.tsx)
+git update-index --cacheinfo 100644,$BLOB,src/components/player/PlayerOverlay/index.tsx
+git diff --cached --stat     # 只该有 index.tsx 这 1 个文件
+git diff --cached            # 逐行看：只允许 Step 2/3/4 三处的行；别人的 WIP 一行都不许出现
 git commit -m "feat(theme): PlayerOverlay 展开态背景接入封面莫奈取色"
+git status --short src/components/player/PlayerOverlay/
+```
+
+Expected: 提交后 `index.tsx` 与 `transition.ts` 都还是 ` M`（别人的 WIP 原样留在工作树，一行没丢）。**禁止** `git add`、`git stash`、`git restore`、`git checkout --`、`git clean`、裸 `git reset`、`git commit --amend`。若 `git diff --cached` 里出现了任何不属于本任务的行，**不要**提交后再想办法，用同一条 `update-index` 把索引里的这一路指回 HEAD 的 blob 再重来：
+
+```bash
+git update-index --cacheinfo 100644,$(git rev-parse HEAD:src/components/player/PlayerOverlay/index.tsx),src/components/player/PlayerOverlay/index.tsx
+git diff --cached --stat   # 该路径应重新消失
 ```
 
 ---
