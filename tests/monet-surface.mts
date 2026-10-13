@@ -75,3 +75,40 @@ test('scrimAlpha 恒在 [0.45, 0.9] 且保留两位小数', () => {
 test('字体色非法时返回 null，让调用方回落', () => {
   assert.equal(buildCoverSurface(ORANGE, ORANGE, 0x00000000), null)
 })
+
+// —— 以下 5 条是任务评审补的用例。前 3 条对旧实现（未钳制通道、未挡 NaN/透明、未做 gamut 后校验）
+//    实测为红；后 2 条实测旧实现也为绿 —— 它们守的是"循环/削彩真的在起作用"，删掉对应防护才红。
+//    每条期望值都本机复现过，见行内注释。
+
+test('底色 tone 钳制循环真的会触发：中灰字色逼底色压到暗锚以下', () => {
+  const font = 0xFF787878 // tone 50.43，走暗分支
+  assert.ok(Hct.fromInt(font).tone > 50)
+  const base = Hct.fromInt(parseCssColor(buildCoverSurface(ORANGE, ORANGE, font)!.base)!)
+  assert.ok(base.tone < DARK_ANCHOR_TONE, `baseTone ${base.tone} 应低于暗锚 ${DARK_ANCHOR_TONE}，实测 1.93`)
+  assert.ok(Contrast.ratioOfTones(base.tone, Hct.fromInt(font).tone) >= MIN_CONTRAST)
+})
+
+test('两端都够不到 4.5 时返回 null，不交一个不达标的底色', () => {
+  // 旧实现这里交 rgb(255,255,255)，与字色对比度实测 4.4962 < 4.5
+  const font = Hct.from(0, 20, 49.95).toInt() >>> 0
+  assert.ok(Hct.fromInt(font).tone < 50, '夹具要落在判亮/判暗的边界带上')
+  assert.equal(buildCoverSurface(ORANGE, ORANGE, font), null)
+})
+
+test('削彩上限真的在削：hue 115 在高 tone 端有色度空间，必须压到 CHROMA_CAP 以下', () => {
+  const src = Hct.from(115, 120, 50).toInt() >>> 0
+  assert.ok(Hct.fromInt(src).chroma > CHROMA_CAP + 10, '夹具要能被上限咬到')
+  const base = Hct.fromInt(parseCssColor(buildCoverSurface(src, src, LIGHT_FONT)!.base)!)
+  assert.ok(base.chroma <= CHROMA_CAP + 1, `base chroma ${base.chroma} 实测 36.07；不削彩则为 50.21`)
+})
+
+test('CSS 通道越界按 255 钳制，不做位运算溢出', () => {
+  assert.equal(parseCssColor('rgb(300, 0, 0)'), 0xFFFF0000)
+})
+
+test('入参非整数或 alpha 不足 255 一律 null，不被 >>> 0 吞成黑色', () => {
+  assert.equal(buildCoverSurface(NaN, ORANGE, LIGHT_FONT), null)
+  assert.equal(buildCoverSurface(ORANGE, NaN, LIGHT_FONT), null)
+  assert.equal(buildCoverSurface(ORANGE, ORANGE, NaN), null)
+  assert.equal(buildCoverSurface(0x80E8551F, ORANGE, LIGHT_FONT), null)
+})
