@@ -1266,14 +1266,12 @@ import { StyleSheet, View } from 'react-native'
 import ImageBackground from '@/components/common/ImageBackground'
 import { defaultHeaders } from '@/components/common/Image'
 import { useCoverSurface } from '@/utils/monet/useCoverSurface'
-import { useTheme } from '@/store/theme/hook'
 
 const BLUR_RADIUS = 90
 
-export default memo(({ enabled = true }: { enabled?: boolean }) => {
-  const theme = useTheme()
+export default memo(() => {
   const { picUrl, surface } = useCoverSurface()
-  const active = enabled && surface != null
+  const active = surface != null
 
   const source = useMemo(() => (active && picUrl
     ? {
@@ -1283,15 +1281,20 @@ export default memo(({ enabled = true }: { enabled?: boolean }) => {
       }
     : null), [active, picUrl])
 
+  // 没上色就整层不存在。早先计划版本在这里铺一层不透明的 theme['c-content-background'] 当底色，
+  // 控制方实测那会盖掉 5 个内置主题（black / mid_autumn / naruto / china_ink / happy_new_year）的主题背景图 ——
+  // 它们的 `c-main-background` 是 0.95/0.9/0.8 半透明，PageContent 特意让背景图从下面透出来；
+  // 结果是"功能没打开就改了观感"，直接违反验收第 ① 条。另外 12 个主题 c-main-background 是全不透明白，本来就没有透出，不受影响。
+  // 顺带：`surface` 非空必然意味着 picUrl 非空（取色是拿 url 换来的），所以 active 为真时下面那个三元一定拿到 source。
+  if (!active) return null
+
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: active ? surface.base : theme['c-content-background'] }]}>
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: surface.base }]} pointerEvents="none">
       {
         source ? (
           <>
             <ImageBackground style={StyleSheet.absoluteFill} source={source} resizeMode="cover" blurRadius={BLUR_RADIUS} />
-            {/* 这一处必须留 `!`：`source` 不是 `active` 的别名，TS 的 aliased narrowing 只认得出上面那行的三元。
-                删掉它 tsc 报 TS18047，加上它 lint 报 no-unnecessary-type-assertion —— 两处写法不同是被这两条闸门夹出来的。 */}
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: surface!.base, opacity: surface!.scrimAlpha }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: surface.base, opacity: surface.scrimAlpha }]} />
           </>
         ) : null
       }
@@ -1300,7 +1303,7 @@ export default memo(({ enabled = true }: { enabled?: boolean }) => {
 })
 ```
 
-三层顺序即 Global Constraints 的落点：**铺底 → 模糊封面 → 同色蒙版**。前景（歌词/标题/按钮）完全在这个组件之上，颜色仍来自 `useTheme()`。
+三层顺序即 Global Constraints 的落点：**铺底 → 模糊封面 → 同色蒙版**，而且这三层只在拿到配色时存在。前景（歌词/标题/按钮）完全在这个组件之上，颜色仍来自 `useTheme()`。两处 `surface.base` 都**不能**加 `!`：`if (!active) return null` 之后 TS 的 aliased conditional narrowing 已经把 `surface` 收窄成非空，加了 `!` 会被 `@typescript-eslint/no-unnecessary-type-assertion` 打回（控制方在临时探针上实测：这版 eslint 空输出、`npx tsc --noEmit` 总数仍 137）。`pointerEvents="none"` 是显式声明"这层纯装饰"，不靠兄弟顺序兜。
 
 - [ ] **Step 6: 接入竖屏播放页**
 
@@ -1354,7 +1357,7 @@ cd android && ./gradlew assembleDebug
 ```
 
 Expected: `BUILD SUCCESSFUL`。**子代理不执行 `adb install`**（真机唯一、注入前须确认前台，见 Task 4 Step 6 的同一约定）。以下四条由控制方装机后与用户一起看，实现者在报告里逐条标注"未验"：
-① 开关关 → 与改动前完全一致；② 开关开、暗主题、亮封面 → 背景偏暗且歌词清楚；③ 切歌时背景 300ms 内跟换；④ 无封面/取色失败 → 回落纯色。
+① 开关关 → 与改动前完全一致，**并且要在 black / mid_autumn / naruto / china_ink / happy_new_year 这 5 个带主题背景图的主题里各看一次**（关掉时背景图必须还透得出来；这正是控制方否掉"常驻不透明底色层"的原因）；② 开关开、暗主题、亮封面 → 背景偏暗且歌词清楚；③ 切歌时背景 300ms 内跟换；④ 无封面/取色失败 → 回落纯色。
 
 - [ ] **Step 10: 提交**
 
