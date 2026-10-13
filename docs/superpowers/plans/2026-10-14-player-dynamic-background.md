@@ -291,10 +291,12 @@ test('底色 tone 钳制循环真的会触发：中灰字色逼底色压到暗�
   assert.ok(Contrast.ratioOfTones(base.tone, Hct.fromInt(font).tone) >= MIN_CONTRAST)
 })
 
-test('两端都够不到 4.5 时返回 null，不交一个不达标的底色', () => {
-  // 旧实现这里交 rgb(255,255,255)，与字色对比度实测 4.4962 < 4.5
+test('字色落在分支切分线附近时不跨侧硬凑，宁可按 null 回落', () => {
+  // 实测：字色 tone 49.92 被判为"亮主题"→ 走高 tone 端，纯白 rgb(255,255,255) 也只有 4.4962 < 4.5。
+  // 低 tone 端其实够得到（tone 0 → 4.6706），但底色跨侧意味着整个页面从亮翻成黑，
+  // 对中途 tone 字色是看得见的乱来，所以设计上是"够不到就 null"，不是"换一侧再试"（见 ledger Ruling P9）。
   const font = Hct.from(0, 20, 49.95).toInt() >>> 0
-  assert.ok(Hct.fromInt(font).tone < 50, '夹具要落在判亮/判暗的边界带上')
+  assert.ok(Hct.fromInt(font).tone < 50, '夹具要落在切分线的亮侧')
   assert.equal(buildCoverSurface(ORANGE, ORANGE, font), null)
 })
 
@@ -1257,7 +1259,7 @@ npx tsc --noEmit -p tsconfig.json
 npx eslint src/utils/monet src/components/player/CoverBackdrop src/screens/PlayDetail/Vertical/index.tsx src/screens/Home/Views/Setting/settings/Theme --ext .ts,.tsx
 ```
 
-Expected: tsc 报错数不超过仓库基线（107，见"验证闸门强度差异"记忆）；lint 对新增文件 0 error。
+Expected: **本机 tsc 基线实测 137**（不是记忆里那个 107 —— 其中 88 条在 `src/components/player/PlayerOverlay/index.tsx`，16/6/3/3 条在既有 `tests/*.mts` 的 `as` 断言噪音，都与本功能无关）。闸门按"**自己新增/改动的文件 0 报错**"判定：`npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "monet|CoverBackdrop|DynamicBg"` 应为空。总数只允许持平或下降，**不要**去修别人的 88 条。lint 对新增文件 0 error。
 
 - [ ] **Step 9: 编译验证（真机验收移交控制方）**
 
@@ -1409,7 +1411,7 @@ npx tsc --noEmit -p tsconfig.json 2>&1 | tail -1
 npm run lint
 ```
 
-Expected: tsc 错误数 ≤ 基线 107；lint 无新增 error。
+Expected: tsc 错误数 ≤ 本机基线 **137**（构成见 Task 6 Step 8：88 条在 `PlayerOverlay/index.tsx` 的别人 WIP、其余是 `tests/*.mts` 的 `as` 断言噪音）；判定按"本功能文件 0 报错"，不是总数归零；lint 无新增 error。
 
 - [ ] **Step 3: 确认工作区没夹带**
 
