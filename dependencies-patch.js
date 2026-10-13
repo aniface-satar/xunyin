@@ -442,6 +442,21 @@ const moduleIconXml = `<?xml version="1.0" encoding="utf-8"?>
       console.error(`Patch ${shortPath} failed: ${err.message}`)
     }
   }
+  // 这条 material-color-utilities 补丁匹配的是 npm 发布产物的字面 JSON：上游一旦改
+  // exports 的缩进或写成单行，正则就 0 命中，而上面的循环对"没匹配上"和"已打过"
+  // 打印的是同一句话，脚本也从不置非零退出码。这里单独验一次结果，让它在 postinstall
+  // 就炸，而不是拖到 node --test 抛 ERR_PACKAGE_PATH_NOT_EXPORTED 才发现。
+  const mcuPkgPath = path.join(rootPath, 'node_modules/@material/material-color-utilities/package.json')
+  try {
+    const mcuExports = JSON.parse((await fs.promises.readFile(mcuPkgPath)).toString()).exports
+    if (mcuExports?.['./*'] !== './*') {
+      console.error('Patch failed: @material/material-color-utilities exports 未放开子路径（正则与上游 package.json 字面格式不匹配）')
+      process.exitCode = 1
+    }
+  } catch (err) {
+    console.error(`Patch verify ${mcuPkgPath} failed: ${err.message}`)
+    process.exitCode = 1
+  }
   await fs.promises.mkdir(path.dirname(path.join(rootPath, trackPlayerDrawable)), { recursive: true })
   await fs.promises.writeFile(path.join(rootPath, trackPlayerDrawable), moduleIconXml)
   console.log('\nDependencies patch finished.\n')
