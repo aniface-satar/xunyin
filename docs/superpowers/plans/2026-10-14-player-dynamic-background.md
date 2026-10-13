@@ -1574,28 +1574,64 @@ Expected: `git diff --cached` 里**只有 `test` 那一行**，且新增的三�
 npm test 2>&1 | tail -8
 ```
 
-Expected: `fail 0`。若 `tests/*.mts` 里出现**改动前就红**的用例，先 `git stash` 之外的方式确认（按文件跑那个用例），记录"既有红"并单独确认，不要顺手改别人的测试。
+Expected: `fail 0`。控制方实测基线（加这三档**之前**，就在当前工作树上）：`npm test` = **384 tests / 384 pass / 0 fail**，exit 0。加完应是 **411 / 411 / 0**（monet 三档 6 + 13 + 8 = 27）。若出现改动前就红的用例，用 `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/<那一个>.mts` 单跑复现，认定"既有红"写进报告，**不要**顺手改别人的测试，也不要用 `git stash` 造干净基线（会动别人的工作树）。
+
+提交：索引里已经是"HEAD 的那行 + 只加三档"，所以直接 commit，**禁止 `git add package.json`**（工作区那一行还带着别人的 ` tests/lyric-copy-text.mts`）：
+
+```bash
+git diff --cached --stat                 # 只该有 package.json 这 1 个文件
+git commit -m "test(monet): 三档取色单测挂进 npm test 全量入口"
+git diff --numstat -- package.json       # 提交后工作树该只剩别人那半行：1 插入 / 1 删除
+```
 
 - [ ] **Step 2: 类型与 lint 对账**
 
 ```bash
-npx tsc --noEmit -p tsconfig.json 2>&1 | tail -1
-npm run lint
+npx tsc --noEmit -p tsconfig.json > .scratch/t8/tsc.txt 2>&1; grep -c 'error TS' .scratch/t8/tsc.txt
+grep -E 'src/utils/monet|CoverBackdrop|DynamicBg' .scratch/t8/tsc.txt
+npx eslint src/utils/monet src/components/player/CoverBackdrop src/screens/Home/Views/Setting/settings/Theme --ext .ts,.tsx; echo "exit=$?"
+npm run lint 2>&1 | tail -3
 ```
 
-Expected: tsc 错误数 ≤ 本机基线 **137**（构成见 Task 6 Step 8：88 条在 `PlayerOverlay/index.tsx` 的别人 WIP、其余是 `tests/*.mts` 的 `as` 断言噪音）；判定按"本功能文件 0 报错"，不是总数归零；lint 无新增 error。
+Expected（控制方本机实测）：
+- tsc 总数 **137** = 基线（88 条在 `src/components/player/PlayerOverlay/index.tsx` 的既有反编译/别人 WIP，其余是 `tests/*.mts` 的 `as` 断言噪音），且本功能文件 grep **为空**。判定按"本功能文件 0 报错"，**不是**总数归零，也不要试图修那 88 条。tsc 一次约 2 分钟，落盘一次再 grep，别跑第二遍。
+- 本功能三个目录 eslint **exit=0、零输出**。
+- 全仓 `npm run lint` 基线：**`1749 problems (1716 errors, 33 warnings)`、exit 1**。这个仓库整体不 lint 干净是**既有事实**，Task 8 只要求"总数不超过这个基线、不新增类别"，**不要**试图让 `npm run lint` 变绿，更禁止 `--fix`。
 
 - [ ] **Step 3: 确认工作区没夹带**
 
 ```bash
-git status --short
+git status --short | awk '{print $1}' | sort | uniq -c
+git status --short src/utils/monet src/components/player/CoverBackdrop src/screens/Home/Views/Setting/settings/Theme
+git diff --numstat -- src/screens/PlayDetail/Vertical/index.tsx src/components/player/PlayerOverlay/index.tsx src/components/player/PlayerOverlay/transition.ts package.json src/lang
 ```
 
-Expected: 只剩本次无关的既有改动（174 改 + 7 删那批）。**不要** `git add -A`。
+Expected（控制方 Task 8 开工前实测）：
+- 全仓 `git status --short` = **175 个 ` M` + 8 个 ` D` + 34 个 `??`**，全是与本功能无关的既有改动。**不要** `git add -A` / `git add .`，也不要为了让数字好看去动它们。
+- 本功能目录里**不该有任何未提交的新内容**：只允许出现一条 ` M src/utils/monet/sourceColor.ts`，那是 `core.autocrlf=true` 的**假脏**（控制方核过：工作树文件的 `git hash-object` 与 `git rev-parse HEAD:…` 同为 `6bd925cc…`，`git diff` 为空）。出现别的行就是夹带，停下报告。
+- 别人的 WIP 必须一条不丢地还活着，行数对得上：`Vertical/index.tsx` **5/1**、`PlayerOverlay/index.tsx` **176/64**、`transition.ts` **79/14**、`package.json` **1/1**（提交后只剩 lyric 那半行）、三个 `src/lang/*.json` 各 **91/15** 上下。数字对不上就报告，不要自行"修正"。
 
-- [ ] **Step 4: 更新项目记忆**
+- [ ] **Step 4: 更新项目记忆 —— 由控制方在真机验收后做，实现者跳过**
 
-在 `C:\Users\30913\.qoder\projects\C--Users-30913-Documents-ChatGPT-music\memory\` 新增 `project-dynamic-background.md`（type: project）：记录"取色内核 = 官方 material-color-utilities，原生只给像素，前景字色不参与"这个架构决定，以及 **vivo 真机验收清单的通过情况**（哪几项已验、哪几项待验）。索引 `MEMORY.md` 加一行。
+落点：`C:\Users\30913\.qoder\projects\C--Users-30913-Documents-ChatGPT-music\memory\project-dynamic-background.md`（type: project）+ 索引 `MEMORY.md` 一行。要记的是"取色内核 = 官方 material-color-utilities（只子路径 import）、原生只交像素、前景字色一律不参与推导"这个架构决定，以及**真机验收清单逐项通过情况**（哪几项已验、哪几项待验）。验收结果没落地之前不要写"已完成"。
+
+- [ ] **Step 5: 清理验证产物**
+
+`.scratch/` **不在 `.gitignore` 里**（控制方实测 `git check-ignore` 无匹配），8 个任务攒了 **74 MB**，大头是 `t6pre/ t6post/ t7bundle/ t7rev/` 里的 Metro bundle（单个 8 MB 级）。留着它，`git status` 会一直多出一个未跟踪目录，后来人也分不清哪些是别人的东西。收尾只删这个目录：
+
+```bash
+rm -rf .scratch
+git status --short | grep -c '^??'    # 比清理前少 1（.scratch 这一条）
+```
+
+**绝不** `rm -rf res`（根目录 `res/` 有 13 个被跟踪的 Metro 生成 png），**不要**动 `.superpowers/`（本计划的 SDD 工作区，由控制方在最终评审后按流程处理），也不要动 `node_modules`。
+
+删之前先扫一眼 `.scratch` 里有没有**唯一副本**性质的东西，而不只是可再生产物：`mcu-pkg-backup.json` 是 `@material/material-color-utilities` 被 `dependencies-patch.js` 改写 `exports` **之前**的原文件备份，删了就得重装才能拿回来。这类文件先 `mv` 进本计划的 SDD 工作区（`.superpowers/sdd/2026-10-14-player-dynamic-background/`，gitignored）再删目录；`t*.log`、`*.bundle`、`pkgcheck/`、探针脚本、`*.tgz` 这些一律是可再生的，直接删。
+
+- [ ] **Step 6: 两条已知限制只记录，不改仓库配置**
+
+① `tests/*.mts` 不在 `npm run lint` 的 `--ext .js,.jsx,.ts,.tsx` 覆盖范围内，而且 `.mts` 在当前 parser 下连 `as` 断言都会直接报解析错 —— 这是仓库既有条件，本计划**不改 `.eslintrc.cjs`**（那会牵动别人的 lint 基线），monet 三档的可执行验证以 `node --test` 为准。
+② `src/components/common/ImageBackground.tsx:63` 有一条**先前已提交**的 `__DEV__` `new Error().stack` 日志，现在正好落在播放页背景与 morph 过渡的渲染路径上，dev 包日志会被它刷屏。不属本功能，**由控制方单独报给用户**，不要混进本功能的修单里顺手删。
 
 ---
 
