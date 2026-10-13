@@ -1358,19 +1358,20 @@ Expected: `BUILD SUCCESSFUL`。**子代理不执行 `adb install`**（真机唯�
 
 - [ ] **Step 10: 提交**
 
-新建/干净的文件正常暂存：
+新建的组件/hook/开关文件正常暂存：
 
 ```bash
 git add src/utils/monet/useCoverSurface.ts src/components/player/CoverBackdrop \
         src/types/app_setting.d.ts src/config/defaultSetting.ts \
-        src/screens/Home/Views/Setting/settings/Theme \
-        src/lang/zh-cn.json src/lang/zh-tw.json src/lang/en-us.json
+        src/screens/Home/Views/Setting/settings/Theme
 git diff --cached --stat
 ```
 
-Expected（`git diff --cached --stat`）：**7 个文件**（`CoverBackdrop/index.tsx`、`useCoverSurface.ts`、`DynamicBg.tsx`、`Theme/index.tsx`、`app_setting.d.ts`、`defaultSetting.ts`、3 个 lang 文件里挑有改动的），**不含 `Vertical/index.tsx`、不含 `package.json`**。
+Expected（`git diff --cached --stat`）：**6 个文件**（`CoverBackdrop/index.tsx`、`useCoverSurface.ts`、`DynamicBg.tsx`、`Theme/index.tsx`、`app_setting.d.ts`、`defaultSetting.ts`），**不含 `Vertical/index.tsx`、不含 `src/lang/*.json`、不含 `package.json`**。提交后总数会是 **10 个文件**（这 6 个 + Vertical + 3 个 lang）。
 
-`Vertical/index.tsx` 单独走定点暂存（控制方已用一次性 scratch 仓库复现过这套命令的机制：`git hash-object -w` + `git update-index --cacheinfo` 能让暂存内容与工作树内容不同，`git status --porcelain` 显示 `MM`，工作树里的别人 WIP 原样保留）：
+**`src/lang/zh-cn.json` / `zh-tw.json` / `en-us.json` 也走定点暂存**，和 `Vertical/index.tsx` 同一套：控制方实测这三个文件各自带着别人 **91+/15−** 的未提交 WIP（推荐引导 / 听歌识曲 / 歌词工具三笔活儿的文案），整文件 `git add` 会把约 273 行别人的东西提交进本功能 —— Task 6 的实现者自己发现并按本条 recipe 处理了，现在把它写死在计划里，别让后面的执行者再踩一次。三个文件的锚点都是 `"setting_basic_theme_font_shadow"` 那一行（实测每个文件命中 **1 次**），在它**之前**插入 brief Step 2 给的那一行。
+
+`Vertical/index.tsx` 单独走定点暂存（控制方已用一次性 scratch 仓库复现过这套命令的机制：`git hash-object -w` + `git update-index --cacheinfo` 能让暂存内容与工作树内容不同；工作树里别人的 WIP 原样保留）：
 
 ```bash
 mkdir -p .scratch/t6
@@ -1407,7 +1408,7 @@ git show --stat --oneline HEAD
 git status --porcelain -- src/screens/PlayDetail/Vertical/index.tsx
 ```
 
-Expected：`git show --stat` 里**没有** `package.json`；`git status --porcelain` 对该文件显示 `MM`（提交后工作树仍带着别人的歌词工具 WIP 未提交）。`.scratch/t6/` 用完删掉。
+Expected：`git show --stat` 里**没有** `package.json`，共 **10 个文件、0 行删除**；`git status --porcelain` 对 `Vertical/index.tsx` 与三个 lang 文件显示 **` M`**（提交后剩下的未暂存差异就是别人的 WIP：Vertical 5+/1−、每个 lang 91+/15−）。`MM` 是**提交前**的状态，别看错。`.scratch/t6/` 用完删掉。
 
 ---
 
