@@ -26,9 +26,11 @@ public class PaletteModule extends ReactContextBaseJavaModule {
 
   private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-  // 封面实际几十到几百 KB，4MB 已经宽得离谱。不设上限时 readAll 靠 ByteArrayOutputStream 成倍扩容，
-  // 一个"自称是图片"的巨大响应就能把堆撑爆 —— 那是 OOM 最直接的入口。
+  // 网络响应 4MB：封面实际几十到几百 KB，超了就是"自称是图片"的东西在撑堆。
   private static final int MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024;
+  // 本地文件单独放宽到 32MB：本机歌曲的封面是内嵌图抽出来的文件（src/core/music/local.ts:112 会拼成 file://），
+  // FLAC/高码率的内嵌封面超 4MB 很常见，用网络那个上限会把它们静默判成取色失败。
+  private static final int MAX_LOCAL_BYTES = 32 * 1024 * 1024;
 
   PaletteModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -107,7 +109,7 @@ public class PaletteModule extends ReactContextBaseJavaModule {
       File file = new File(path);
       FileInputStream in = new FileInputStream(file);
       try {
-        return readAll(in);
+        return readAll(in, MAX_LOCAL_BYTES);
       } finally {
         in.close();
       }
@@ -127,7 +129,7 @@ public class PaletteModule extends ReactContextBaseJavaModule {
       InputStream in = conn.getInputStream();
       if (in == null) throw new Exception("empty body");
       try {
-        return readAll(in);
+        return readAll(in, MAX_DOWNLOAD_BYTES);
       } finally {
         in.close();
       }
@@ -136,12 +138,12 @@ public class PaletteModule extends ReactContextBaseJavaModule {
     }
   }
 
-  private byte[] readAll(InputStream in) throws Exception {
+  private byte[] readAll(InputStream in, int maxBytes) throws Exception {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     byte[] buffer = new byte[8192];
     int read;
     while ((read = in.read(buffer)) != -1) {
-      if (out.size() + read > MAX_DOWNLOAD_BYTES) throw new Exception("image too large");
+      if (out.size() + read > maxBytes) throw new Exception("image too large");
       out.write(buffer, 0, read);
     }
     return out.toByteArray();
