@@ -25,7 +25,7 @@
 - **主题自带背景图优先**：`theme['bg-image'] != null` 时不启用封面取色（用户显式设过背景图）。
 - **默认关闭**：`theme.dynamicBg` 默认 `false`，老用户零感知。
 - **测试约定**：单测文件放 `tests/*.mts`，用 `import ... from '../src/xxx/yyy.ts'`（**必须带 `.ts` 后缀**），被测源文件**不得** `import 'react-native'`，也不得用 `@/` 别名（node 解析不了）。跑单个文件：`node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/<file>.mts`。
-- **被 node 加载的 src 模块，自己内部的相对 import 也必须带 `.ts`**：`src/utils/monet/coverPalette.ts` 会 import `sourceColor` / `surface`，无扩展名时 `node --test` 直接 `ERR_MODULE_NOT_FOUND`（实测）；Metro 0.80.12 两种写法都能解析（已用探针 bundle 验过 `.ts` 那侧），所以 monet 目录内部统一写显式 `.ts`。**只限被单测加载的纯逻辑模块** —— UI 侧文件（`useCoverSurface.ts`、`CoverBackdrop`、`DynamicBg.tsx`）沿用仓库无扩展名写法，不要顺手全改。
+- **被 node 加载的 src 模块，自己内部的相对 import 必须带 `.ts`**：`src/utils/monet/coverPalette.ts` 会 import `sourceColor` / `surface`，无扩展名时 `node --test` 直接 `ERR_MODULE_NOT_FOUND`（实测）；Metro 0.80.12 带扩展名照样解析（探针 bundle 验过），tsc 也不会报 TS5097（`@react-native/typescript-config` 里 `allowImportingTsExtensions: true` 且 `noEmit: true`，实测）。**这条只管会被单测加载的纯逻辑模块** —— 只跑在 RN 里的入口（`src/utils/monet/index.ts`、`useCoverSurface.ts`、`CoverBackdrop`、`DynamicBg.tsx`）沿用仓库惯例：无扩展名 + `@/` 别名，不要顺手全改。
 - **提交纪律**：当前分支 `feat/music-recognition-phase1` 工作区有大量无关未提交改动（174 改 + 7 删）。**禁止 `git add -A` / `git add .`**，每次只 add 本计划列出的文件。
 
 ## File Structure
