@@ -18,6 +18,8 @@
 - **不改全局主题**：禁止调用 `themeActions.setTheme` / `applyTheme`，禁止改 `src/theme/themes/utils.js` 的 `createThemeColors`。本功能只影响播放页背景层。
 - **前景字色一律沿用 `useTheme()`**，不得由封面色推导 —— 这是"背景与字色混淆"的硬防线。可读性只靠"底色 tone 钳制 + 蒙版不透明度"两件事保证。
 - **依赖约束**：只新增 `@material/material-color-utilities@0.4.0`（纯 JS，无原生代码、无子依赖）。不引入渐变库（项目当前无 linear-gradient / skia，见 package.json）。
+- **取色包只能按子路径 import**（实测 Ruling P4）：任何 `src/**` 与 `tests/**` 都写 `'@material/material-color-utilities/<dir>/<file>.js'`，**禁止包根 import**。包根 `index.js` 有 33 条 `export *` 且 Metro 不做 tree-shaking，包根 import 实测让 bundle **+479,461 B**，子路径 import 只带实际用到的 5 个入口，实测 **+134,020 B**。为此 `dependencies-patch.js` 必须给该包 `package.json` 的 `exports` 追加 `"./*": "./*"`（发布产物只暴露 `"."`，Node 跑单测时子路径会被 `ERR_PACKAGE_PATH_NOT_EXPORTED` 挡掉）。
+- **不得删 `res/`**：仓库在根目录 `res/` 下跟踪了 13 个 Metro 生成的 png（`git ls-files res` 可见），`react-native bundle --assets-dest res` 会重写它们。清理验证产物时只 `rm -f index.android.bundle`；`res/` 若变脏用 `git restore -- res` 还原，**绝不 `rm -rf res`**。
 - **平台约束**：iOS 端本仓库无任何自研原生模块（`ios/` 下只有 `LxMusicMobileTests`），因此 iOS 直接返回 `null`，功能自动关闭，不加 `.mm`。
 - **失败即回落**：取色失败 / 无封面 / 色度为 0 → 用 `theme['c-content-background']`，与现状像素一致。
 - **主题自带背景图优先**：`theme['bg-image'] != null` 时不启用封面取色（用户显式设过背景图）。
@@ -64,13 +66,16 @@
 
 ## Task 1: 装依赖并验证 Metro / Node 双端能用
 
-背景：`@material/material-color-utilities@0.4.0` 是 ESM（`"type": "module"`），`exports` 只暴露 `"."`，所以**只能从包根 import，子路径会被挡**。包内只有 `utils/image_utils.js`、`utils/theme_utils.js` 两个函数体内部引用 `document`，模块顶层不碰 DOM，因此 Metro 打包与 Node import 都安全 —— 但这条必须实测。
+背景（全部实测，见 ledger Ruling P4）：`@material/material-color-utilities@0.4.0` 是 ESM（`"type": "module"`），发布产物的 `exports` 只暴露 `"."`；而包根 `index.js` 里有 10 处**无扩展名**相对 import（`scheme/` 9 处、`dynamiccolor/color_spec_2025.js` 1 处），Node 直接 `import('@material/material-color-utilities')` 会抛 `ERR_MODULE_NOT_FOUND` —— Metro 会补扩展名所以打包正常，但单测跑不动。解决方向不是换版本（0.2.4/0.3.0 的 `exports` 同样只暴露 `"."`），而是**给 `exports` 放开子路径 + 全项目按子路径 import**：这样 Node 能跑单测，Metro 也只打进真正用到的文件（包根 import 实测 +479KB，子路径实测 +134KB）。我们需要的子树（`hct/`、`contrast/`、`quantize/`、`score/`、`utils/color_utils.js` 及其闭包）**不含**无扩展名 import，已实测在 Node 直连成功。
+
+另外 `utils/image_utils.js`、`utils/theme_utils.js` 两个文件的函数体内部引用 `document`；按子路径 import 的约定碰不到它们，模块顶层本来也不碰 DOM。
 
 **Files:**
 - Modify: `package.json`（dependencies）
+- Modify: `dependencies-patch.js`（新增一条 exports 补丁）
 
 **Interfaces:**
-- Produces: 可 import 的 `Hct`、`Contrast`、`QuantizerCelebi`、`Score`、`redFromArgb`、`greenFromArgb`、`blueFromArgb`、`argbFromRgb`
+- Produces: 可按子路径 import 的 `Hct`（`hct/hct.js`）、`Contrast`（`contrast/contrast.js`）、`QuantizerCelebi`（`quantize/quantizer_celebi.js`）、`Score`（`score/score.js`）、`redFromArgb` / `greenFromArgb` / `blueFromArgb` / `argbFromRgb`（`utils/color_utils.js`）
 
 - [ ] **Step 1: 安装**
 
@@ -80,46 +85,97 @@ npm i @material/material-color-utilities@0.4.0
 
 注意：`postinstall` 会跑 `node dependencies-patch.js`，属正常。
 
-- [ ] **Step 2: 验证 Node 侧能拿到真实 API 名（防止计划里的符号不存在）**
+- [ ] **Step 2: 给 exports 放开子路径（写进 dependencies-patch.js，不要手改 node_modules）**
+
+在 `dependencies-patch.js` 的 `const patchs = [` **紧跟其后**插入下面这条（插在数组开头是因为该文件当前有一批**未提交**的音量均衡补丁都在尾部 388 行之后，本任务的改动必须落在完全没被动过的区域，见 Step 3 的暂存方式）：
+
+```js
+  // @material/material-color-utilities 的发布产物只暴露包根 exports，而包根 index.js
+  // 有 10 处无扩展名相对 import，Node（跑单测）import 包根会 ERR_MODULE_NOT_FOUND。
+  // 放开子路径后 src 与 tests 都按子路径 import：Node 能跑单测，Metro 只打进真正
+  // 用到的文件（包根 import 会让 bundle +468KB）。负向前瞻保证幂等。
+  [
+    path.join(rootPath, 'node_modules/@material/material-color-utilities/package.json'),
+    /("exports": \{\r?\n    "\.": \{[\s\S]{0,200}?\r?\n    \})(?![\s\S]{0,60}"\.\/\*")/,
+    '$1,\n    "./*": "./*"',
+  ],
+```
+
+跑两遍确认幂等（第二遍不应再插一次）：
+
+```bash
+node dependencies-patch.js && node dependencies-patch.js
+node -e "console.log(JSON.stringify(require('./node_modules/@material/material-color-utilities/package.json').exports))"
+```
+
+Expected: 输出里 `"./*": "./*"` **只出现一次**，形如
+`{'.':{types:...,import:...,default:...},'.//*':'.//*'}`。
+
+- [ ] **Step 3: 只提交本任务那一处改动（工作区该文件有无关 WIP，禁止整文件 add）**
+
+`dependencies-patch.js` 当前尾部带着音量均衡的未提交改动，`git add dependencies-patch.js` 会把它一起提交进来。用"只改索引、不动工作树"的方式暂存：
+
+```bash
+git show HEAD:dependencies-patch.js > .scratch/dp-head.js
+cp .scratch/dp-head.js .scratch/dp-staged.js
+# 手工把 Step 2 那 8 行插进 .scratch/dp-staged.js 的 `const patchs = [` 之后（其余内容与 HEAD 完全一致）
+diff -u .scratch/dp-head.js .scratch/dp-staged.js \
+  | sed -e '1s|.*|--- a/dependencies-patch.js|' -e '2s|.*|+++ b/dependencies-patch.js|' \
+  > .scratch/dp.patch
+git apply --cached .scratch/dp.patch
+git diff --cached --stat          # 必须只有 dependencies-patch.js，且 +8 行左右
+git diff --stat dependencies-patch.js   # 工作树相对索引的差 = 音量均衡 WIP，原样保留
+```
+
+Expected: `--cached` 里只有本任务那一条补丁；`git diff`（不带 `--cached`）还能看到音量均衡的 37 行未被提交。**若 `git apply --cached` 报 context mismatch**，说明 Step 2 插到了 WIP 邻区，改插到数组开头重试。
+
+- [ ] **Step 4: 验证 Node 侧按子路径拿到真实 API 名（防止后续计划里的符号不存在）**
 
 ```bash
 node --input-type=module -e "
-const m = await import('@material/material-color-utilities')
-const need = ['Hct','Contrast','QuantizerCelebi','Score','redFromArgb','greenFromArgb','blueFromArgb','argbFromRgb']
-console.log(need.map(k => k + ':' + typeof m[k]).join('\n'))
-const src = m.Hct.fromInt(0xFFB34A2C)
-console.log('tone', src.tone, 'chroma', src.chroma, 'hue', src.hue)
-console.log('ratio', m.Contrast.ratioOfTones(10, 90))
-console.log('quantize', [...m.Score.score(m.QuantizerCelebi.quantize([0xFFB34A2C, 0xFFB34A2C, 0xFF808080], 128)).keys ?? ''] ? 'ok' : 'ok')
+const { Hct } = await import('@material/material-color-utilities/hct/hct.js')
+const { Contrast } = await import('@material/material-color-utilities/contrast/contrast.js')
+const { QuantizerCelebi } = await import('@material/material-color-utilities/quantize/quantizer_celebi.js')
+const { Score } = await import('@material/material-color-utilities/score/score.js')
+const cu = await import('@material/material-color-utilities/utils/color_utils.js')
+console.log([Hct, Contrast, QuantizerCelebi, Score, cu.redFromArgb, cu.greenFromArgb, cu.blueFromArgb, cu.argbFromRgb].map(t => typeof t).join(','))
+const src = Hct.fromInt(0xFFE8551F)
+console.log('tone', src.tone.toFixed(1), 'chroma', src.chroma.toFixed(1), 'hue', src.hue.toFixed(1))
+console.log('ratio(10,90)', Contrast.ratioOfTones(10, 90).toFixed(2))
+console.log('score returns array:', Array.isArray(Score.score(QuantizerCelebi.quantize([0xFFE8551F, 0xFFE8551F, 0xFF808080], 128))))
 "
 ```
 
-Expected: 8 行全是 `function` / `object`；`ratio` 打出 > 1 的数值。若某个符号名不同，**立即用实际名字修正后续任务的代码**，不要带着猜测往下写。
+Expected: `function,function,function,function,function,function,function`（`Hct`/`Contrast`/`QuantizerCelebi`/`Score` 是 class，`typeof` 为 `function`）；`ratio(10,90)` ≈ 13.27；最后一行 `true` —— **注意 `Score.score` 返回的是 ARGB 数字数组，不是 Map**。若某个符号名不同，**立即用实际名字修正后续任务的代码**，不要带着猜测往下写。
 
-- [ ] **Step 3: 验证 Metro 能打进包（不跑 gradle，只 bundle）**
+- [ ] **Step 5: 验证 Metro 能按子路径打进包（不跑 gradle，只 bundle）**
 
 ```bash
-npm run build-test
+cat > mcu-probe-entry.js <<'EOF'
+import { Hct } from '@material/material-color-utilities/hct/hct.js'
+import { Contrast } from '@material/material-color-utilities/contrast/contrast.js'
+import { QuantizerCelebi } from '@material/material-color-utilities/quantize/quantizer_celebi.js'
+import { Score } from '@material/material-color-utilities/score/score.js'
+import { argbFromRgb, redFromArgb, greenFromArgb, blueFromArgb } from '@material/material-color-utilities/utils/color_utils.js'
+console.log(Hct, Contrast, QuantizerCelebi, Score, argbFromRgb, redFromArgb, greenFromArgb, blueFromArgb)
+EOF
+npx react-native bundle --platform android --dev true --entry-file mcu-probe-entry.js \
+  --bundle-output .scratch/mcu-sub.bundle --assets-dest .scratch/mcu-res
+ls -l .scratch/mcu-sub.bundle
+rm -f mcu-probe-entry.js
 ```
 
-Expected: 命令成功退出并生成 `index.android.bundle`，无 `Unable to resolve module`。若报 ESM 解析失败，改用兜底方案：把 `$TEMP/mcu/package/{hct,quantize,score,contrast,utils,palettes,blend}/*.js` 里 Task 2/3 实际用到的文件 vendor 进 `src/utils/monet/vendor/`（去掉 `.js.map` 引用），后续 import 改成相对路径，并在本计划文件顶部记录"已 vendor"。
+Expected: 成功退出、无 `Unable to resolve module`。实测基线（`--dev true`，同一台机器）：空入口 45,019 B；子路径入口 179,039 B ⇒ **增量 134,020 B（约 131 KB）**；对照包根 import 的 524,480 B（增量 479,461 B）。如果你的数字与 134,020 B 相差超过 ~10KB，说明 import 写成了包根或带进了 `scheme/`，改回子路径。
+不要往 `res/` 输出（那是仓库跟踪目录），`--assets-dest` 一律指到 `.scratch/`。
 
-- [ ] **Step 4: 记录包体变化**
-
-```bash
-ls -lh index.android.bundle
-```
-
-把大小写进提交信息（预期增量 50–120KB）。
-
-- [ ] **Step 5: 清理验证产物并提交**
+- [ ] **Step 6: 提交**
 
 ```bash
-rm -f index.android.bundle
-rm -rf res
 git add package.json package-lock.json
-git commit -m "build(theme): 引入 material-color-utilities 作为播放页动态背景的取色内核"
+git commit -m "build(theme): 引入 material-color-utilities 并按子路径开放 exports"
 ```
+
+Expected: 提交内含 `package.json`、`package-lock.json` 与 Step 3 暂存的 `dependencies-patch.js`（约 +8 行）。**不要** `rm -rf res`；若 `git status` 显示 `res/` 变脏，`git restore -- res`。
 
 ---
 
@@ -155,7 +211,8 @@ import {
   buildCoverSurface,
   parseCssColor,
 } from '../src/utils/monet/surface.ts'
-import { Contrast, Hct } from '@material/material-color-utilities'
+import { Contrast } from '@material/material-color-utilities/contrast/contrast.js'
+import { Hct } from '@material/material-color-utilities/hct/hct.js'
 
 const LIGHT_FONT = parseCssColor('rgb(33, 33, 33)')!
 const DARK_FONT = parseCssColor('rgb(229, 229, 229)')!
@@ -235,7 +292,9 @@ Expected: FAIL —— `Cannot find module '.../src/utils/monet/surface.ts'`
 Create `src/utils/monet/surface.ts`:
 
 ```ts
-import { Contrast, Hct, blueFromArgb, greenFromArgb, redFromArgb } from '@material/material-color-utilities'
+import { Contrast } from '@material/material-color-utilities/contrast/contrast.js'
+import { Hct } from '@material/material-color-utilities/hct/hct.js'
+import { blueFromArgb, greenFromArgb, redFromArgb } from '@material/material-color-utilities/utils/color_utils.js'
 
 export const CHROMA_CAP = 36
 export const MIN_CONTRAST = 4.5
@@ -328,7 +387,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { QUANTIZE_COLORS, analyzeArgbPixels } from '../src/utils/monet/sourceColor.ts'
-import { Hct } from '@material/material-color-utilities'
+import { Hct } from '@material/material-color-utilities/hct/hct.js'
 
 const fill = (argb: number, n: number) => new Array(n).fill(argb >>> 0)
 const GRAY = 0xFF808080
@@ -382,7 +441,9 @@ Expected: FAIL —— `Cannot find module '.../sourceColor.ts'`
 Create `src/utils/monet/sourceColor.ts`:
 
 ```ts
-import { QuantizerCelebi, Score, argbFromRgb } from '@material/material-color-utilities'
+import { QuantizerCelebi } from '@material/material-color-utilities/quantize/quantizer_celebi.js'
+import { Score } from '@material/material-color-utilities/score/score.js'
+import { argbFromRgb } from '@material/material-color-utilities/utils/color_utils.js'
 
 export const QUANTIZE_COLORS = 128
 
@@ -415,9 +476,11 @@ export const analyzeArgbPixels = (pixels: number[]): CoverAnalysis | null => {
     Math.round(sumB / opaque.length),
   ) >>> 0
 
-  // Score 会滤掉色度 < 5 的颜色：纯灰/近灰封面 ranked 为空，这是合法结果而非失败，回落到平均色
-  const ranked = Score.score(QuantizerCelebi.quantize(opaque, QUANTIZE_COLORS))
-  const source = (ranked.length ? ranked[0] : average) >>> 0
+  // 实测：Score.score 返回 number[]（不是 Map），且**永远至少给一个**：色度 < 5 的被
+  // CUTOFF_CHROMA 全滤掉时（纯灰/近灰封面）它返回内置兜底色 Google Blue 0xFF4285F4，
+  // 而不是空数组。灰封面被涂成蓝色是错的，所以用官方 options 把兜底色换成封面平均色。
+  const ranked = Score.score(QuantizerCelebi.quantize(opaque, QUANTIZE_COLORS), { fallbackColorARGB: average })
+  const source = ranked[0] >>> 0
 
   return { source, average }
 }
@@ -429,7 +492,8 @@ export const analyzeArgbPixels = (pixels: number[]): CoverAnalysis | null => {
 node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-source-color.mts
 ```
 
-Expected: PASS（6 个用例）。若"少量红"那条挂了（源色取到灰），说明 `Score` 的 `CUTOFF_CHROMA = 5` 把红色也过滤了或占比权重压过色度 —— 打印 `Score.score` 前 5 名再判断，**不要改成"取 chroma 最大的量化色"来绕过**，那会丢掉官方行为。"全灰像素不崩"与"半透明被跳过"两条靠 `ranked` 为空时回落平均色才成立：不许改成 `return null`（那等于把灰封面判成取色失败，Task 6 的回落分支会被误触发）。
+Expected: PASS（6 个用例）。控制方已用真实实现跑过这 6 条并记录实测值，挂了先对照：灰底+100 红 → `source` 色度 87.3（`0xffcc2222`）、`average` 色度 7.4；全灰 → `source === average === 0xff808080`，色度 1.9；100 灰 + 100 红 → alpha 均 255；3000 透明 + 1000 灰 → `source` 色度 1.9；空/全透明/`null` → `null`。
+"全灰像素不崩"与"半透明被跳过"两条**靠 `{ fallbackColorARGB: average }` 才成立**：不传这个 options 时 `Score.score` 对灰封面返回 Google Blue `0xff4285f4`（色度 36+），这两条测试会红 —— 那是测试在正确地抓 bug，不许改成 `return null`（那等于把灰封面判成取色失败，Task 6 的回落分支会被误触发），也不许放宽断言。若"少量红"那条挂了（源色取到灰），打印 `Score.score` 前 5 名再判断，**不要改成"取 chroma 最大的量化色"来绕过**，那会丢掉官方行为。
 
 - [ ] **Step 5: 提交**
 
@@ -696,7 +760,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { createCoverPalette } from '../src/utils/monet/coverPalette.ts'
-import { Hct } from '@material/material-color-utilities'
+import { Hct } from '@material/material-color-utilities/hct/hct.js'
 
 const GRAY = 0xFF808080
 const RED = 0xFFCC2222
@@ -1124,21 +1188,18 @@ export default memo(({ enabled = true }: { enabled?: boolean }) => {
   },
 ```
 
-- [ ] **Step 7: 把三个 monet 测试挂进 npm test**
+- [ ] **Step 7: 跑全量 monet 测试（**不要改 `package.json`**）**
 
-`package.json` 的 `test` 脚本末尾（`tests/lyric-copy-text.mts` 之后）追加三个文件：
+`package.json` 的 `test` 脚本行**当前带着别人未提交的 WIP**（行尾多了 `tests/lyric-copy-text.mts`，属于歌词工具那笔活儿）。在这个工作区里 `git add package.json` 会把那半行一起提交进本功能，所以本步不改 `package.json`：挂进 `npm test` 由控制方在 Task 8 收尾时处理。
 
-```
- tests/monet-source-color.mts tests/monet-surface.mts tests/monet-cover-palette.mts
-```
-
-验证：
+验证（直接按文件跑）：
 
 ```bash
-npm test 2>&1 | tail -6
+node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types \
+  tests/monet-source-color.mts tests/monet-surface.mts tests/monet-cover-palette.mts 2>&1 | tail -6
 ```
 
-Expected: `fail 0`；`pass` 计数比改动前多 21（T3 6 + T2 8 + T5 7）。
+Expected: `fail 0`；`pass` 计数 = 21（T3 6 + T2 8 + T5 7）。
 
 - [ ] **Step 8: 过静态检查**
 
