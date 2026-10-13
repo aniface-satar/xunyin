@@ -1497,7 +1497,8 @@ npx tsc --noEmit -p tsconfig.json 2>&1 | grep -c 'error TS'
 
 Expected: bundle **exit=0**（这一步同时证明插入的 JSX 能被 Metro 解析转换、`utils/monet/useCoverSurface` 进了模块图）。控制方实测本机基线：`PlayerOverlay/index.tsx` 自己 **88** 条、全仓总数 **137** 条 —— 改完必须**两个数字都不变**（总数变大就是这次插入自己引入了类型错误，按报错行回改，不要去修别人的 88 条）。
 
-- `npx eslint src/components/player/PlayerOverlay/index.tsx`：**动手前先跑一次**记下报错条数（这个反编译文件本来就带一大批固有误报；控制方按当前工作树——含别人的 WIP——实测是 `1677 errors + 29 warnings = 1706 problems`）。改完必须**一条不多**：只要求"不新增"，不要去修别人的历史报错，更**禁止 `--fix`**（它一次能改 1445 行）。
+- `npx eslint src/components/player/PlayerOverlay/index.tsx`：**这条闸门不可能是"计数不涨"**。控制方实测：改前 `1677 errors + 29 warnings = 1706 problems`，改后 `1690 errors + 29 warnings = 1719 problems`（**+13**）。原因不是写坏了，而是这个文件是 APK dev bundle 反编译还原的，全文本来就靠 `var` + 双引号 `require()` + 分号 + 无尾逗号活着（1677 条存量报错），本任务按 Step 2/3/4 原文插入 15 行就必然再摊上 13 条。**真正的闸门是"不新增 rule 类别"**：改动行触发的 ruleId 必须都已经在该文件别处出现过 —— 实测落在 `no-var` / `@typescript-eslint/no-var-requires` / `@typescript-eslint/quotes` / `@typescript-eslint/semi` / `comma-dangle` 这 5 条，全是本文件既有项，新增类别 0 条。核对脚本：`npx eslint <该文件> --format json -o .scratch/t7/eslint_after.json`，再按行号把"本功能行"与"其余行"的 ruleId 集合做差集。
+  - **不得**为了让这 15 行变干净而改成 `const`/单引号/去分号：那会让它们成为全文唯一不合反编译风格的行，且与本任务"不要顺手改规范"的要求冲突；也**不得**加 `eslint-disable`（这个文件根本不在仓库的 lint 干净集里，加了等于给后续留坑）；更**禁止 `--fix`**（一次改 1445 行）。
 - **不要**用 `npx babel ...`：本机 `node_modules/.bin` 里没有 babel CLI，npx 会去联网拉包。
 - **不要**用 `npm run build-test`：它把 `index.android.bundle` 写在仓库根、并把 13 个被 git 跟踪的 png 重写到 `res/`（见 Global Constraints 的"不得删 `res/`"）。验证产物一律进 `.scratch/`。
 
@@ -1518,7 +1519,7 @@ git show HEAD:src/components/player/PlayerOverlay/index.tsx > .scratch/t7/head.t
 # 同一段文本在 HEAD 与工作树里逐字节相同（只是行号整体下移 16 行）。
 node .scratch/t7/apply-feature.cjs
 git diff --no-index --stat .scratch/t7/head.tsx .scratch/t7/feature.tsx   # 只允许这一对文件
-git diff --no-index --numstat .scratch/t7/head.tsx .scratch/t7/feature.tsx  # 期望 ≈ 24 插入 / 12 删除
+git diff --no-index --numstat .scratch/t7/head.tsx .scratch/t7/feature.tsx  # 控制方实测 **15 插入 / 3 删除**（不是"三处文本的行数相加"：Step 4 那段里有两行与原文相同，git 的最小化把它们当上下文复用了）
 ```
 
 然后造 blob 入索引并**逐行**核对（数字只是合理性检查，判定以 diff 为准）：
