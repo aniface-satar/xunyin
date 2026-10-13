@@ -1626,7 +1626,7 @@ git status --short | grep -c '^??'    # 比清理前少 1（.scratch 这一条�
 
 **绝不** `rm -rf res`（根目录 `res/` 下有 13 个被跟踪的文件），**不要**动 `.superpowers/`（本计划的 SDD 工作区，由控制方在最终评审后按流程处理），也不要动 `node_modules`。
 
-删之前先扫一眼 `.scratch` 里有没有**唯一副本**性质的东西，而不只是可再生产物：`mcu-pkg-backup.json` 是 `@material/material-color-utilities` 被 `dependencies-patch.js` 改写 `exports` **之前**的原文件备份，删了就得重装才能拿回来。这类文件先 `mv` 进本计划的 SDD 工作区（`.superpowers/sdd/2026-10-14-player-dynamic-background/`，gitignored）再删目录；`t*.log`、`*.bundle`、`pkgcheck/`、探针脚本、`*.tgz` 这些一律是可再生的，直接删。
+删之前先扫一眼 `.scratch` 里有没有**唯一副本**性质的东西，判据是"删掉就没法再生成的"，而不是"看起来像备份"：`mcu-pkg-backup.json` 实测**不是**打补丁前的原文件 —— 它第 44 行已经带着 `"./*": "./*"`，与 `node_modules/@material/material-color-utilities/package.json` 只差 wireit 那段数组的排版和结尾换行（最终评审复核过），所以它其实是**打过补丁之后**的一份副本，真需要原始文件得靠重装。这条按"先挪进本计划的 SDD 工作区（`.superpowers/sdd/2026-10-14-player-dynamic-background/`，gitignored）再删目录"处理，留着不花钱；`t*.log`、`*.bundle`、`pkgcheck/`、探针脚本、`*.tgz` 这些一律可再生，直接删。
 
 - [ ] **Step 6: 两条已知限制只记录，不改仓库配置**
 
