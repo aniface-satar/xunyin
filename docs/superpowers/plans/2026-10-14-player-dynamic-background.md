@@ -21,8 +21,8 @@
 - **取色包只能按子路径 import**（实测 Ruling P4）：任何 `src/**` 与 `tests/**` 都写 `'@material/material-color-utilities/<dir>/<file>.js'`，**禁止包根 import**。包根 `index.js` 有 33 条 `export *` 且 Metro 不做 tree-shaking，包根 import 实测让 bundle **+479,461 B**，子路径 import 只带实际用到的 5 个入口，实测 **+134,020 B**。为此 `dependencies-patch.js` 必须给该包 `package.json` 的 `exports` 追加 `"./*": "./*"`（发布产物只暴露 `"."`，Node 跑单测时子路径会被 `ERR_PACKAGE_PATH_NOT_EXPORTED` 挡掉）。
 - **不得删 `res/`**：仓库在根目录 `res/` 下跟踪了 13 个 Metro 生成的 png（`git ls-files res` 可见），`react-native bundle --assets-dest res` 会重写它们。清理验证产物时只 `rm -f index.android.bundle`；`res/` 若变脏用 `git restore -- res` 还原，**绝不 `rm -rf res`**。
 - **平台约束**：iOS 端本仓库无任何自研原生模块（`ios/` 下只有 `LxMusicMobileTests`），因此 iOS 直接返回 `null`，功能自动关闭，不加 `.mm`。
-- **失败即回落**：取色失败 / 无封面 / 色度为 0 → 用 `theme['c-content-background']`，与现状像素一致。
-- **主题自带背景图优先**：`theme['bg-image'] != null` 时不启用封面取色（用户显式设过背景图）。
+- **失败即回落 = 整层不渲染**：取色失败 / 无封面 / 色度为 0 → `CoverBackdrop` 直接 `return null`，播放页背景与改动前逐像素一致。**不要**铺一层 `theme['c-content-background']` 当回落底色：PageContent 在 black / mid_autumn / naruto / china_ink / happy_new_year 这 5 个内置主题里靠主题背景图 + 半透明 `c-main-background` 透出画面，常驻不透明底色会把它们压平（控制方实测 `src/theme/themes/themes.ts`，Ruling P22）。
+- **主题自带背景图优先**：`theme['bg-image']` 为真值时整条封面取色让路（用户显式设过背景图）。判据是 ActiveTheme 的 `!theme['bg-image']`，不是 `extInfo['bg-image']`：`buildActiveThemeColors()`（`src/theme/themes/index.ts:49-96`）最后把 `'bg-image': bgImg` 覆盖进返回值，只有这张图**真的会被画出来**时才是图片对象 —— 纯色主题是 `undefined`，暗主题开了 `theme.hideBgDark` 时也是 `undefined`；这正是 PageContent 拿去渲染的同一个值，跟它保持一致就不会出现"背景层开着却没有背景图"的空窗。而 `extInfo['bg-image']` 在纯色主题里是 `""` 且不看 `hideBgDark`，用它判会误关。闸门落在 `useCoverSurface` 的 `enabled` 上（Ruling P24），播放页与 Task 7 的 PlayerOverlay 都从这一个 hook 继承，不要各写一份。
 - **默认关闭**：`theme.dynamicBg` 默认 `false`，老用户零感知。
 - **测试约定**：单测文件放 `tests/*.mts`，用 `import ... from '../src/xxx/yyy.ts'`（**必须带 `.ts` 后缀**），被测源文件**不得** `import 'react-native'`，也不得用 `@/` 别名（node 解析不了）。跑单个文件：`node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/<file>.mts`。
 - **被 node 加载的 src 模块，自己内部的相对 import 必须带 `.ts`**：`src/utils/monet/coverPalette.ts` 会 import `sourceColor` / `surface`，无扩展名时 `node --test` 直接 `ERR_MODULE_NOT_FOUND`（实测）；Metro 0.80.12 带扩展名照样解析（探针 bundle 验过），tsc 也不会报 TS5097（`@react-native/typescript-config` 里 `allowImportingTsExtensions: true` 且 `noEmit: true`，实测）。**这条只管会被单测加载的纯逻辑模块** —— 只跑在 RN 里的入口（`src/utils/monet/index.ts`、`useCoverSurface.ts`、`CoverBackdrop`、`DynamicBg.tsx`）沿用仓库惯例：无扩展名 + `@/` 别名，不要顺手全改。
@@ -1232,10 +1232,12 @@ export interface CoverBackdropState {
 }
 
 export const useCoverSurface = (): CoverBackdropState => {
-  const enabled = useSettingValue('theme.dynamicBg')
   const theme = useTheme()
+  const dynamicBg = useSettingValue('theme.dynamicBg')
   const { pic } = usePlayerMusicInfo()
   const fontColor = theme['c-font']
+  // 真值判断而不是 != null：这就是 PageContent 拿去画背景图的同一个值，主题自带背景图时封面取色整条让路
+  const enabled = dynamicBg && !theme['bg-image']
 
   const [surface, setSurface] = useState<CoverSurface | null>(null)
 
@@ -1285,7 +1287,7 @@ export default memo(() => {
   // 控制方实测那会盖掉 5 个内置主题（black / mid_autumn / naruto / china_ink / happy_new_year）的主题背景图 ——
   // 它们的 `c-main-background` 是 0.95/0.9/0.8 半透明，PageContent 特意让背景图从下面透出来；
   // 结果是"功能没打开就改了观感"，直接违反验收第 ① 条。另外 12 个主题 c-main-background 是全不透明白，本来就没有透出，不受影响。
-  // 顺带：`surface` 非空必然意味着 picUrl 非空（取色是拿 url 换来的），所以 active 为真时下面那个三元一定拿到 source。
+  // 顺带：surface 是用 picUrl 换来的，所以 active 为真时下面那个三元一般都有 source；切歌那一帧 picUrl 可能先变空，三元退化成纯色，由 `source ? … : null` 兜住。
   if (!active) return null
 
   return (
@@ -1357,7 +1359,7 @@ cd android && ./gradlew assembleDebug
 ```
 
 Expected: `BUILD SUCCESSFUL`。**子代理不执行 `adb install`**（真机唯一、注入前须确认前台，见 Task 4 Step 6 的同一约定）。以下四条由控制方装机后与用户一起看，实现者在报告里逐条标注"未验"：
-① 开关关 → 与改动前完全一致，**并且要在 black / mid_autumn / naruto / china_ink / happy_new_year 这 5 个带主题背景图的主题里各看一次**（关掉时背景图必须还透得出来；这正是控制方否掉"常驻不透明底色层"的原因）；② 开关开、暗主题、亮封面 → 背景偏暗且歌词清楚；③ 切歌时背景 300ms 内跟换；④ 无封面/取色失败 → 回落纯色。
+① 开关关 → 与改动前完全一致，**并且要在 black / mid_autumn / naruto / china_ink / happy_new_year 这 5 个带主题背景图的主题里各看一次**（关掉时背景图必须还透得出来；这正是控制方否掉"常驻不透明底色层"的原因）；② 开关开、暗主题、亮封面 → 背景偏暗且歌词清楚；③ 切歌时背景 300ms 内跟换；④ 无封面/取色失败 → 背景层整层不渲染，与改动前逐像素一致（不是铺一层纯色）；⑤ 开关开 + 上述 5 个带背景图主题任一 → 背景图照常显示，封面色一点都盖不上去（`useCoverSurface` 的 `bg-image` 闸门，Ruling P24）。
 
 - [ ] **Step 10: 提交**
 
@@ -1448,7 +1450,7 @@ sed -n '124,168p' src/components/player/PlayerOverlay/index.tsx
   } : null;
 ```
 
-主题自带背景图优先（`hasBackdropImage` 时整条封面取色让路）。
+主题自带背景图优先（`useCoverSurface` 已把同一条判据折进 `enabled`，见 Global Constraints / Ruling P24；这里保留 `hasBackdropImage` 是因为 PlayerOverlay 是反编译文件、就地少改，两个条件指向同一判据，不会打架）。
 
 - [ ] **Step 3: 外层底色改用 base**
 
