@@ -2,11 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { PIXEL_LIMIT, createCoverPalette } from '../src/utils/monet/coverPalette.ts'
+import type { CoverPixels } from '../src/utils/monet/sourceColor.ts'
 const GRAY = 0xFF808080
 const RED = 0xFFCC2222
 const LIGHT_FONT = 'rgb(33, 33, 33)'
 const DARK_FONT = 'rgb(229, 229, 229)'
-const pixels = (argb: number, n = 1000) => new Array(n).fill(argb >>> 0)
+const pixels = (argb: number, n = 1000) => ({ pixels: new Array(n).fill(argb >>> 0), width: 40, height: Math.max(1, Math.round(n / 40)) })
 
 test('正常路径：返回亮主题高 tone 底色 + 合法 scrim', async() => {
   const { getCoverSurface } = createCoverPalette(async() => pixels(RED))
@@ -129,13 +130,13 @@ test('并发两次调用合并成同一个结果对象（钉住 pending 去重�
 })
 
 test('clearCache 打在途请求上：旧判定不写回，下一次调用重新问原生', async() => {
-  let release: (v: number[] | null) => void = () => {}
+  let release: (v: CoverPixels | null) => void = () => {}
   let autoFail = false
   let calls = 0
   const { getCoverSurface, clearCache } = createCoverPalette(() => {
     calls += 1
     if (autoFail) return Promise.resolve(null)
-    return new Promise<number[] | null>(resolve => { release = resolve })
+    return new Promise<CoverPixels | null>(resolve => { release = resolve })
   })
   const first = getCoverSurface('https://example.com/r.jpg', LIGHT_FONT)
   clearCache()
@@ -145,4 +146,26 @@ test('clearCache 打在途请求上：旧判定不写回，下一次调用重新
   autoFail = true
   assert.equal(await getCoverSurface('https://example.com/r.jpg', LIGHT_FONT), null)
   assert.equal(calls, 2)
+})
+
+test('像素几何不自洽（长度 != 宽×高）当取色失败，并且失败照样进缓存', async() => {
+  let calls = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    return { pixels: new Array(999).fill(0xFF808080), width: 40, height: 25 }
+  })
+  assert.equal(await getCoverSurface('https://example.com/skew.jpg', LIGHT_FONT), null)
+  assert.equal(await getCoverSurface('https://example.com/skew.jpg', LIGHT_FONT), null)
+  assert.equal(calls, 1)
+})
+
+test('宽或高小于 1 的像素当取色失败', async() => {
+  let calls = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    return { pixels: [0xFF808080], width: 0, height: 0 }
+  })
+  assert.equal(await getCoverSurface('https://example.com/zero.jpg', LIGHT_FONT), null)
+  assert.equal(await getCoverSurface('https://example.com/zero.jpg', LIGHT_FONT), null)
+  assert.equal(calls, 1)
 })

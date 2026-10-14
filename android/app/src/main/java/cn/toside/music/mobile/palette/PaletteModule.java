@@ -9,6 +9,7 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.WritableNativeArray;
+import com.facebook.react.bridge.WritableNativeMap;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -82,8 +83,13 @@ public class PaletteModule extends ReactContextBaseJavaModule {
         int[] pixels = new int[scaled.getWidth() * scaled.getHeight()];
         scaled.getPixels(pixels, 0, scaled.getWidth(), 0, 0, scaled.getWidth(), scaled.getHeight());
 
-        WritableNativeArray result = new WritableNativeArray();
-        for (int pixel : pixels) result.pushInt(pixel);
+        WritableNativeArray pixelArray = new WritableNativeArray();
+        for (int pixel : pixels) pixelArray.pushInt(pixel);
+        // 行宽只能在这里拿到：JS 侧只有 length，128×86 的封面被当成 128 行宽采样会斜成条纹。
+        WritableNativeMap result = new WritableNativeMap();
+        result.putArray("pixels", pixelArray);
+        result.putInt("width", scaled.getWidth());
+        result.putInt("height", scaled.getHeight());
         promise.resolve(result);
       } catch (Throwable t) {
         // 必须是 Throwable 不是 Exception：大封面解码可能抛 OutOfMemoryError，那是 Error 不是 Exception。

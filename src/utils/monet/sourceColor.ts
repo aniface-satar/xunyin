@@ -4,6 +4,13 @@ import { argbFromRgb } from '@material/material-color-utilities/utils/color_util
 
 export const QUANTIZE_COLORS = 128
 
+/** 原生像素桥的返回值：一维行主序 + 真实行列数（纹理采样必须知道行宽） */
+export interface CoverPixels {
+  pixels: number[]
+  width: number
+  height: number
+}
+
 export interface CoverAnalysis {
   /** Monet 源色：色度加权后的"最丰富颜色" */
   source: number
