@@ -1260,7 +1260,7 @@ const styles = createStyle({
 
 `src/screens/Home/Views/Setting/settings/Theme/index.tsx`：加 `import DynamicBg from './DynamicBg'`，并把 `<DynamicBg />` 放在 `<IsFontShadow />` 之前（`IsFontShadow` 的 `marginBottom: 15` 是分组末位，新项不要抢）。
 
-- [ ] **Step 4a: 闸门决策表抽成纯函数（本单 Imp-3 / A-7、Imp-2 / A-2、Imp-4 / A-6）**
+- [ ] **Step 4a: 闸门决策表抽成纯函数（本单 Imp-3 / A-7、Imp-4 / A-6；Imp-2 / A-2 落在 Task 5 被整块替换的那两处）**
 
 **Files:**
 - Create: `src/utils/monet/backdropGate.ts`
@@ -1497,7 +1497,7 @@ cd android && ./gradlew assembleDebug
 ```
 
 Expected: `BUILD SUCCESSFUL`。**子代理不执行 `adb install`**（真机唯一、注入前须确认前台，见 Task 4 Step 6 的同一约定）。以下七条由控制方装机后与用户一起看，实现者在报告里逐条标注"未验"（①~⑤ 原计划已列，⑥⑦ 由最终修单补）：
-① 开关关 → 与改动前完全一致，**并且要在 black / mid_autumn / naruto / china_ink / happy_new_year 这 5 个带主题背景图的主题里各看一次**（关掉时背景图必须还透得出来；这正是控制方否掉"常驻不透明底色层"的原因）；② 开关开、暗主题、亮封面 → 背景偏暗且歌词清楚；③ 切歌时背景 300ms 内跟换；④ 无封面/取色失败 → 背景层整层不渲染，与改动前逐像素一致（不是铺一层纯色）；⑤ 开关开 + 上述 5 个带背景图主题任一 → 背景图照常显示，封面色一点都盖不上去（`useCoverSurface` 的 `bg-image` 闸门，Ruling P24）；⑥ 从"进播放页"到"背景上色"计时一次（慢 CDN 是这条的主要风险；若超标，把 `fetchOnce` 那侧的 `maxSize` 从 128 降到 64，一处改动，与 Task 4 Step 5 的同一口径）；⑦ 装一次 **minified release** 包确认背景仍然上色 —— R8 靠 `react-native/ReactAndroid/proguard-rules.pro:44` 保住 `PaletteModule`，这条是读规则推出来的，**没有实跑过**，所以必须装机验一次。
+① 开关关 → 与改动前完全一致，**并且要在 black / mid_autumn / naruto / china_ink / happy_new_year 这 5 个带主题背景图的主题里各看一次**（关掉时背景图必须还透得出来；这正是控制方否掉"常驻不透明底色层"的原因）；② 开关开、暗主题、亮封面 → 背景偏暗且歌词清楚；③ 切歌时背景 300ms 内跟换；④ 无封面/取色失败 → 背景层整层不渲染，与改动前逐像素一致（不是铺一层纯色）；⑤ 开关开 + 上述 5 个带背景图主题任一 → 背景图照常显示，封面色一点都盖不上去（`useCoverSurface` 的 `bg-image` 闸门，Ruling P24）；⑥ 从"进播放页"到"背景上色"计时一次（慢 CDN 是这条的主要风险；若超标，把 `getArgbPixels` 的默认 `maxSize` 从 128 降到 64（默认值在 `src/utils/nativeModules/palette.ts:5`，`fetchOnce` 从不传这个参数），一处改动，与 Task 4 Step 4（写 JS 桥）的同一口径）；⑦ 装一次 **minified release** 包确认背景仍然上色 —— R8 靠 `react-native/ReactAndroid/proguard-rules.pro:44` 保住 `PaletteModule`，这条是读规则推出来的，**没有实跑过**，所以必须装机验一次。
 
 - [ ] **Step 10: 提交**
 
@@ -1703,7 +1703,7 @@ git apply --cached .scratch/pkg.patch
 git diff --cached -- package.json
 ```
 
-Expected: `git diff --cached` 里**只有 `test` 那一行**，且新增的四个文件名都是 `monet-`，**不出现 `lyric-copy-text.mts`**（上面这段已在本机 `.scratch/pkgcheck/` 空跑过：`grep -c lyric-copy-text .scratch/pkg.patch` = 0，工作区改动是干净的 `14c14` 单行，行数 114 不变，JSON 仍可 parse）。工作区的 `package.json` 此时同时带着别人的 WIP 和这三个文件（`git diff -- package.json` 仍显示 lyric 那半行未暂存）。
+Expected: `git diff --cached` 里**只有 `test` 那一行**，且新增的四个文件名都是 `monet-`，**不出现 `lyric-copy-text.mts`**（上面这段已在本机 `.scratch/pkgcheck/` 空跑过：`grep -c lyric-copy-text .scratch/pkg.patch` = 0，工作区改动是干净的 `14c14` 单行，行数 114 不变，JSON 仍可 parse）。工作区的 `package.json` 此时同时带着别人的 WIP 和这四个文件（`git diff -- package.json` 仍显示 lyric 那半行未暂存）。
 
 跑全量：
 
@@ -1713,7 +1713,7 @@ npm test 2>&1 | tail -8
 
 Expected: `fail 0`。控制方实测基线（加这四档**之前**，就在当前工作树上）：`npm test` = **384 tests / 384 pass / 0 fail**，exit 0。加完应是 **420 / 420 / 0**（monet 四档：source-color 6 + surface 13 + cover-palette 11 + gate 6 = 36；`cover-palette` 从 8 条长成 11 条、`monet-gate` 是本单新加的一档，最终修单的 Step 7 实测 **420 / 420 / 0**）。若出现改动前就红的用例，用 `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/<那一个>.mts` 单跑复现，认定"既有红"写进报告，**不要**顺手改别人的测试，也不要用 `git stash` 造干净基线（会动别人的工作树）。
 
-提交：索引里已经是"HEAD 的那行 + 只加三档"，所以直接 commit，**禁止 `git add package.json`**（工作区那一行还带着别人的 ` tests/lyric-copy-text.mts`）：
+提交：索引里已经是"HEAD 的那行 + 只加四档"（前三档由本步落，第四档 `tests/monet-gate.mts` 由最终修单补），所以直接 commit，**禁止 `git add package.json`**（工作区那一行还带着别人的 ` tests/lyric-copy-text.mts`）：
 
 ```bash
 git diff --cached --stat                 # 只该有 package.json 这 1 个文件
