@@ -2,8 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { PIXEL_LIMIT, createCoverPalette } from '../src/utils/monet/coverPalette.ts'
-import { Hct } from '@material/material-color-utilities/hct/hct.js'
-
 const GRAY = 0xFF808080
 const RED = 0xFFCC2222
 const LIGHT_FONT = 'rgb(33, 33, 33)'
@@ -109,5 +107,42 @@ test('clearCache 后重新取色', async() => {
   await getCoverSurface('https://example.com/a.jpg', LIGHT_FONT)
   clearCache()
   await getCoverSurface('https://example.com/a.jpg', LIGHT_FONT)
+  assert.equal(calls, 2)
+})
+
+test('配色层命中缓存时返回同一个对象（钉住读写 key 同源与缓存写入）', async() => {
+  const { getCoverSurface } = createCoverPalette(async() => pixels(RED))
+  const a1 = await getCoverSurface('https://example.com/k.jpg', LIGHT_FONT)
+  const a2 = await getCoverSurface('https://example.com/k.jpg', LIGHT_FONT)
+  assert.ok(a1)
+  assert.equal(a2, a1)
+})
+
+test('并发两次调用合并成同一个结果对象（钉住 pending 去重）', async() => {
+  const { getCoverSurface } = createCoverPalette(async() => pixels(RED))
+  const [a, b] = await Promise.all([
+    getCoverSurface('https://example.com/p.jpg', LIGHT_FONT),
+    getCoverSurface('https://example.com/p.jpg', LIGHT_FONT),
+  ])
+  assert.ok(a)
+  assert.equal(b, a)
+})
+
+test('clearCache 打在途请求上：旧判定不写回，下一次调用重新问原生', async() => {
+  let release: (v: number[] | null) => void = () => {}
+  let autoFail = false
+  let calls = 0
+  const { getCoverSurface, clearCache } = createCoverPalette(() => {
+    calls += 1
+    if (autoFail) return Promise.resolve(null)
+    return new Promise<number[] | null>(resolve => { release = resolve })
+  })
+  const first = getCoverSurface('https://example.com/r.jpg', LIGHT_FONT)
+  clearCache()
+  release(null)
+  assert.equal(await first, null)
+  assert.equal(calls, 1)
+  autoFail = true
+  assert.equal(await getCoverSurface('https://example.com/r.jpg', LIGHT_FONT), null)
   assert.equal(calls, 2)
 })

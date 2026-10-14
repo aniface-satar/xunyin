@@ -15,11 +15,13 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
   const pixelOrder: string[] = []
   const cache = new Map<string, CoverSurface | null>()
   const cacheOrder: string[] = []
+  // clearCache() 之后，之前那一次在途请求算出来的结果不再写回（判据在文件末尾的代数比较）
+  let generation = 0
   const pending = new Map<string, Promise<CoverSurface | null>>()
 
   // async 是仓库规则要求的（@typescript-eslint/promise-function-async：非 async 函数返回 Promise 会报），
   // 不是功能需要。去重靠 pixelCache 里那条原始 promise：async 包装只是再套一层壳，
-  // 命中缓存时不会第二次调用 fetchPixels，第 2、5 条用例仍然量得到。
+  // 命中缓存时不会第二次调用 fetchPixels，第 2、7 条用例仍然量得到。
   const fetchOnce = async(picUrl: string): Promise<number[] | null> => {
     const cached = pixelCache.get(picUrl)
     if (cached) return cached
@@ -36,6 +38,10 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
     return task
   }
 
+  // 读写两处的 key 只由这一条式子生成。配色层命中与否全看这两处串不串得上，
+  // 而只数 fetchPixels 调用次数的断言观察不到它：把写入那处的分隔符改掉，8 条用例照样全绿（控制方实测）。
+  const paletteKey = (picUrl: string, fontArgb: number) => `${picUrl}|${fontArgb}`
+
   const remember = (key: string, value: CoverSurface | null) => {
     if (!cache.has(key)) {
       cacheOrder.push(key)
@@ -48,8 +54,7 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
   }
 
   // 同上：async 只为过 lint。pending 里的原始 promise 仍是去重的那一条。
-  const load = async(picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
-    const key = `${picUrl}|${fontArgb}`
+  const load = async(key: string, picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
     if (cache.has(key)) return cache.get(key)!
     const inFlight = pending.get(key)
     if (inFlight) return inFlight
@@ -74,12 +79,17 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
       if (!picUrl) return null
       const fontArgb = parseCssColor(fontColor)
       if (fontArgb == null) return null
-      return load(picUrl, fontArgb).then(surface => {
-        remember(`${picUrl}|${fontArgb}`, surface)
+      const key = paletteKey(picUrl, fontArgb)
+      const gen = generation
+      return load(key, picUrl, fontArgb).then(surface => {
+        // 还在同一代里才写回：翻开关 clearCache() 之后才到达的旧判定（多半是 null）必须丢掉，
+        // 否则那次失败会重新占住这个 key，把「翻开关重试」这条唯一的出口一起废掉。
+        if (gen === generation) remember(key, surface)
         return surface
       })
     },
     clearCache() {
+      generation++
       pixelCache.clear()
       pixelOrder.length = 0
       cache.clear()

@@ -19,7 +19,7 @@ const patchs = [
   // @material/material-color-utilities 的发布产物只暴露包根 exports，而包根 index.js
   // 有 10 处无扩展名相对 import，Node（跑单测）import 包根会 ERR_MODULE_NOT_FOUND。
   // 放开子路径后 src 与 tests 都按子路径 import：Node 能跑单测，Metro 只打进真正
-  // 用到的文件（包根 import 会让 bundle +468KB）。负向前瞻保证幂等。
+  // 用到的文件（包根 import 会让 bundle +479,461 B）。负向前瞻保证幂等。
   [
     path.join(rootPath, 'node_modules/@material/material-color-utilities/package.json'),
     /("exports": \{\r?\n    "\.": \{[\s\S]{0,200}?\r?\n    \})(?![\s\S]{0,60}"\.\/\*")/,
