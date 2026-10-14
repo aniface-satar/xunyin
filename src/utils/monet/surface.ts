@@ -26,7 +26,7 @@ export interface CoverSurface {
   base: string
   /** 蒙版不透明度：封面越亮/越暗（相对底色）越实，限制封面透出的 tone 漂移 */
   scrimAlpha: number
-  /** 纹理层可用的明度带：两端对字色都 >= MIN_CONTRAST + BAND_HEADROOM，且包住 base 本身 */
+  /** 纹理层可用的整数明度带：带内每一档对字色都 >= MIN_CONTRAST + BAND_HEADROOM；通常包住 base，底色自己贴着 4.5 时让位给可读性 */
   band: ToneBand
 }
 
@@ -50,10 +50,12 @@ const isUsableArgb = (argb: number) => Number.isInteger(argb) && (argb >>> 24) =
 // 从底色往两边各走整数 tone 一步，走到"再走一步就破线"、"走出 swing"或"走出 tone 域"为止。
 // 底色 tone 是 HCT→sRGB 夹完色域再读回来的小数（实测 96.1149 / 10.0143），带必须落在整数格上：
 // 从小数起走，lo 会掉到 -0.99 这种 tone 域外的值，两端也永远差一小截小数，纹理层拿到没法直接用。
-// 下界锚在 floor（含底色本身），上界从 ceil 起步，保证带包住底色。
+// 下界锚在 floor（含底色本身），上界从 ceil 起步，通常就包住了底色。
 // 上界永远被 tone<=100（纯白）顶死：亮主题的纵深只能从靠字色的那端挖，所以带宽是数学上限，不是手艺差。
-export const buildToneBand = (baseArgb: number, fontArgb: number): ToneBand => {
-  if (!isUsableArgb(baseArgb) || !isUsableArgb(fontArgb)) return { lo: 0, hi: 0 }
+// 取整会把靠字色那端往字色推一格，底色本身也只保证 4.5（不含余量）：字色 tone 落在 47~55 一带时
+// 端点会掉到 4.43。所以走完再从两端往里收到合法为止，可读性优先于"包住小数底色"；收空就 null。
+export const buildToneBand = (baseArgb: number, fontArgb: number): ToneBand | null => {
+  if (!isUsableArgb(baseArgb) || !isUsableArgb(fontArgb)) return null
   const fontTone = Hct.fromInt(fontArgb).tone
   const baseTone = Hct.fromInt(baseArgb).tone
   const anchor = Math.floor(baseTone)
@@ -62,7 +64,9 @@ export const buildToneBand = (baseArgb: number, fontArgb: number): ToneBand => {
   while (lo > 0 && anchor - lo < TEXTURE_TONE_SWING && keeps(lo - 1)) lo -= 1
   let hi = Math.min(100, Math.ceil(baseTone))
   while (hi + 1 <= 100 && hi - anchor < TEXTURE_TONE_SWING && keeps(hi + 1)) hi += 1
-  return { lo, hi }
+  while (lo <= hi && !keeps(lo)) lo += 1
+  while (hi >= lo && !keeps(hi)) hi -= 1
+  return lo <= hi ? { lo, hi } : null
 }
 
 export const buildCoverSurface = (sourceArgb: number, coverAvgArgb: number, fontArgb: number): CoverSurface | null => {
@@ -90,5 +94,8 @@ export const buildCoverSurface = (sourceArgb: number, coverAvgArgb: number, font
   let scrimAlpha = drift <= TONE_DRIFT_LIMIT ? SCRIM_MIN : 1 - TONE_DRIFT_LIMIT / drift
   scrimAlpha = Math.min(SCRIM_MAX, Math.max(SCRIM_MIN, scrimAlpha))
 
-  return { base: cssRgb(base), scrimAlpha: Number(scrimAlpha.toFixed(2)), band: buildToneBand(base, fontArgb) }
+  const band = buildToneBand(base, fontArgb)
+  if (band == null) return null
+
+  return { base: cssRgb(base), scrimAlpha: Number(scrimAlpha.toFixed(2)), band }
 }
