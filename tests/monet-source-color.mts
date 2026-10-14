@@ -79,8 +79,28 @@ const mixedPixels = () => {
   return out
 }
 
+// mixedPixels() 的杂度闸门，见下面确定性用例里的用法。
+const MIXED_MIN_DISTINCT_COLORS = 100
+
 test('同一份像素重复取色必须给同一个源色（上游 quantizer_wsmeans 用裸 Math.random）', () => {
   const pixels = mixedPixels()
+  // 自检（承重的）：下面这个循环今天之所以抓得住"源色漂移"，靠的是这份 4096 像素混着
+  // 345 种颜色 —— 簇够杂时上游那句随机分配初始簇才抖得出不同源色。像素一干净它就废：
+  // 实测把 ±12 抖动去掉（只剩 6 种纯色块、4096 像素），未钉住的量化 50 次取色出的是
+  // **同一种**源色（`.scratch/t2-fix-probe.txt` 表里 amp=0 那行：distinct sources 1），
+  // 于是就算 withSeededRandom 被削成空转，下面的循环照样全绿，而 canary 只数 ambient
+  // 调用次数、量不到"用例是否还有效"，也照样绿 —— 整条用例静默变成摆设。
+  // 100 这个数是这么定的：现值 345（留 3.4× 余量给合理的瘦身），实测仍能抖出源色的最小
+  // 样本是 45，抖不出的是 6；取 100 既能盖住"去掉抖动/大幅缩网格"这类真实退化，又不会
+  // 误伤实测过的那些还在抖的变体（amp=6→199、32×32→168 都过）。
+  // 这条红了不一定是 bug：先跑 `.scratch/t2-fix-probe.mts` 看瘦身后的 fixture 还抖不抖，
+  // 抖就把阈值调下去，不抖就说明数据得改回来。
+  const distinctColors = new Set(pixels).size
+  assert.ok(
+    distinctColors > MIXED_MIN_DISTINCT_COLORS,
+    `fixture 不够杂（${distinctColors} 种颜色，闸门 ${MIXED_MIN_DISTINCT_COLORS}，现值 345）：` +
+      '像素太干净时上游的簇抖动抖不出不同源色，上面的确定性用例会对着空转的 seeding 包裹也变绿',
+  )
   const first = analyzeArgbPixels(pixels)!.source
   for (let i = 0; i < 50; i++) {
     assert.equal(analyzeArgbPixels(pixels)!.source, first, `第 ${i + 1} 次取色漂了源色`)
