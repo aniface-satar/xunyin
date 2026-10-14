@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import { resolveCoverBackdrop } from '../src/utils/monet/backdropGate.ts'
 
-const SURFACE = { base: 'rgb(240, 244, 249)', scrimAlpha: 0.45 }
+const SURFACE = { base: 'rgb(240, 244, 249)', scrimAlpha: 0.45, band: { lo: 72, hi: 100 } }
 const PIC = 'https://example.com/a.jpg'
 
 test('开关开 + 主题无背景图 + 封面和配色都有：三个字段原样交出', () => {

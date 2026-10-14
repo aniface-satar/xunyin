@@ -114,3 +114,11 @@ test('入参非整数或 alpha 不足 255 一律 null，不被 >>> 0 吞成黑�
   assert.equal(buildCoverSurface(ORANGE, ORANGE, NaN), null)
   assert.equal(buildCoverSurface(0x80E8551F, ORANGE, LIGHT_FONT), null)
 })
+
+test('buildCoverSurface 交出合法色阶带（纹理层的明度只能在这个区间里摆）', () => {
+  const s = buildCoverSurface(ORANGE, ORANGE, LIGHT_FONT)!
+  assert.ok(s.band.hi - s.band.lo >= 20, `带宽只有 ${s.band.hi - s.band.lo}，纹理没得摆`)
+  for (const t of [s.band.lo, s.band.hi]) {
+    assert.ok(Contrast.ratioOfTones(t, Hct.fromInt(LIGHT_FONT).tone) >= MIN_CONTRAST)
+  }
+})
