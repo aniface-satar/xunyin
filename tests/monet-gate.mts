@@ -45,3 +45,24 @@ test('配色还没算出来（含取色失败）：surface 交 null，整层不�
   assert.equal(s.enabled, true)
   assert.equal(s.surface, null)
 })
+
+test('纹理跟着 surface 同一个闸门：active 为真才交出去，否则恒 null', () => {
+  const on = resolveCoverBackdrop(true, false, PIC, SURFACE, 'data:image/png;base64,AAAA')
+  assert.equal(on.texture, 'data:image/png;base64,AAAA')
+
+  // 开关关 / 主题自带背景图 / 没封面 / 没配色：四种 inactive 都不许把纹理漏出去
+  const cases: [boolean, boolean, string | null, typeof SURFACE | null][] = [
+    [false, false, PIC, SURFACE],
+    [true, true, PIC, SURFACE],
+    [true, false, null, SURFACE],
+    [true, false, PIC, null],
+  ]
+  for (const [dynamicBg, bgImage, pic, surface] of cases) {
+    const s = resolveCoverBackdrop(dynamicBg, bgImage, pic, surface, 'data:image/png;base64,AAAA')
+    assert.equal(s.texture, null, `dynamicBg=${dynamicBg} bgImage=${bgImage} pic=${pic} 漏了纹理`)
+  }
+})
+
+test('不传第五个参数时 texture 为 null（旧调用点行为不变，横屏与旧用例都不受影响）', () => {
+  assert.equal(resolveCoverBackdrop(true, false, PIC, SURFACE).texture, null)
+})

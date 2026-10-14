@@ -8,10 +8,12 @@ export interface CoverBackdropState {
   enabled: boolean
   picUrl: string | null
   surface: CoverSurface | null
+  /** 已生成的纹理 data URI；闸门不过关时恒 null */
+  texture: string | null
 }
 
 export const resolveCoverBackdrop = (dynamicBg: boolean, hasThemeBgImage: boolean,
-  pic: string | null | undefined, surface: CoverSurface | null): CoverBackdropState => {
+  pic: string | null | undefined, surface: CoverSurface | null, texture: string | null = null): CoverBackdropState => {
   // 主题自带背景图优先：hasThemeBgImage 的实参必须是 ActiveTheme 的 theme['bg-image'] 取真值，
   // 那是 PageContent 真正拿去画图的同一个值，不能用 extInfo 里的原始字符串（纯色主题是 ''）。
   const enabled = dynamicBg && !hasThemeBgImage
@@ -23,5 +25,6 @@ export const resolveCoverBackdrop = (dynamicBg: boolean, hasThemeBgImage: boolea
     enabled,
     picUrl: active ? pic ?? null : null,
     surface: active ? surface : null,
+    texture: active ? texture : null,
   }
 }

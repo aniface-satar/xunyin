@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { Image, StyleSheet, View } from 'react-native'
 
 import ImageBackground from '@/components/common/ImageBackground'
 import { defaultHeaders } from '@/components/common/Image'
@@ -8,7 +8,7 @@ import { useCoverSurface } from '@/utils/monet/useCoverSurface'
 const BLUR_RADIUS = 90
 
 export default memo(() => {
-  const { picUrl, surface } = useCoverSurface()
+  const { picUrl, surface, texture } = useCoverSurface()
   const active = surface != null
 
   const source = useMemo(() => (active && picUrl
@@ -25,12 +25,16 @@ export default memo(() => {
   // 结果是"功能没打开就改了观感"，直接违反验收第 ① 条。另外 12 个主题 c-main-background 是全不透明白，本来就没有透出，不受影响。
   // 顺带：surface 与 picUrl 出自 resolveCoverBackdrop 同一张决策表，active 为真就一定有 picUrl，
   // 下面那个三元只是把类型收窄；表里那两条判据（开关/主题背景图、以及有没有封面）都在纯函数里，能用 node --test 跑。
+  // 纹理到位之后换成一层生成的位图，并且**不再叠 scrimAlpha 蒙版**：
+  // 实测这张专辑 scrimAlpha = 0.83，蒙版压上去等于把刚做出来的纹路抹平（spec §7.7）。
   if (!active) return null
 
   return (
     <View style={[StyleSheet.absoluteFill, { backgroundColor: surface.base }]} pointerEvents="none">
       {
-        source ? (
+        texture != null ? (
+          <Image style={StyleSheet.absoluteFill} source={{ uri: texture }} resizeMode="stretch" />
+        ) : source ? (
           <>
             <ImageBackground style={StyleSheet.absoluteFill} source={source} resizeMode="cover" blurRadius={BLUR_RADIUS} />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: surface.base, opacity: surface.scrimAlpha }]} />
