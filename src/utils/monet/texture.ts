@@ -1,5 +1,5 @@
 import { Hct } from '@material/material-color-utilities/hct/hct.js'
-import { argbFromLstar, blueFromArgb, greenFromArgb, redFromArgb } from '@material/material-color-utilities/utils/color_utils.js'
+import { argbFromLstar, blueFromArgb, greenFromArgb, linearized, lstarFromY, redFromArgb } from '@material/material-color-utilities/utils/color_utils.js'
 
 import { encodePngDataUri } from './png.ts'
 import type { CoverPixels } from './sourceColor.ts'
@@ -22,6 +22,8 @@ export const COVER_WEIGHT = 0.45
 export const CHROMA_FLOOR = 0.35
 /** 箱形模糊半径（在 128 网格上）≈ 屏幕 40dp：只留最大的几块明暗团 */
 export const COVER_BLUR_RADIUS = 4
+/** 封面明度 p5~p95 跨度达到这么多个 L* 才让结构项吃满权重；暗角/底噪类平封面只有 0.3~1.5 */
+export const COVER_SPAN_REF = 12
 /** 纯 sRGB 灰在 HCT 里也读出 1.9~2.9 的彩度（#808080 1.896、#ffffff 2.869）。按这个彩度回 Hct.from 会染色：
  *  比灰本身少要彩度偏暖（tone 95 → 243,240,239），tone 99.2 附近求解器偏青（247,254,255）。低于此值一律按纯灰出 */
 export const NEUTRAL_CHROMA = 4
@@ -92,8 +94,24 @@ const buildRank = (values: Float32Array) => {
   }
 }
 
-const boxBlur = (src: readonly number[], w: number, h: number, radius: number) => {
-  const out = new Int32Array(w * h)
+// 秩归一只认先后不认差距：暗角封面整张只差 1.5 个色阶，也会被拉满整条带。按封面自己的 p5~p95 明度跨度
+// 给结构项打折，平封面退回纯云纹；真实封面跨度远大于参考值（实测那张 70），不受影响。
+const coverContrastOf = (tones: Float32Array) => {
+  const sorted = Float32Array.from(tones).sort()
+  const last = sorted.length - 1
+  const spread = sorted[Math.floor(last * 0.95)] - sorted[Math.floor(last * 0.05)]
+  return Math.min(1, spread / COVER_SPAN_REF)
+}
+
+interface BlurredCover {
+  r: Float32Array
+  g: Float32Array
+  b: Float32Array
+}
+
+// 糊完不取整：封面若几乎是平的（暗角、底噪），取整后只剩两三个离散值，秩归一会把每道取整台阶放大成整条带宽的硬边和白点
+const boxBlur = (src: readonly number[], w: number, h: number, radius: number): BlurredCover => {
+  const out = { r: new Float32Array(w * h), g: new Float32Array(w * h), b: new Float32Array(w * h) }
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       let sr = 0
@@ -110,13 +128,19 @@ const boxBlur = (src: readonly number[], w: number, h: number, radius: number) =
           n += 1
         }
       }
-      out[y * w + x] = ((255 << 24) | (Math.round(sr / n) << 16) | (Math.round(sg / n) << 8) | Math.round(sb / n)) | 0
+      out.r[y * w + x] = sr / n
+      out.g[y * w + x] = sg / n
+      out.b[y * w + x] = sb / n
     }
   }
   return out
 }
 
-const makeCoverSampler = (blurred: Int32Array, w: number, h: number) => {
+// HCT 的 tone 就是 L*，直接从浮点 RGB 算，免得为了过 Hct.fromInt 再取整一次
+const toneOf = (r: number, g: number, b: number) =>
+  lstarFromY(0.2126 * linearized(r) + 0.7152 * linearized(g) + 0.0722 * linearized(b))
+
+const makeCoverSampler = (blurred: BlurredCover, w: number, h: number) => {
   const lastX = w - 1
   const lastY = h - 1
   return (u: number, v: number) => {
@@ -128,16 +152,14 @@ const makeCoverSampler = (blurred: Int32Array, w: number, h: number) => {
     const y1 = Math.min(y0 + 1, lastY)
     const fx = x - x0
     const fy = y - y0
-    const at = (px: number, py: number) => blurred[py * w + px] >>> 0
-    const p00 = at(x0, y0)
-    const p10 = at(x1, y0)
-    const p01 = at(x0, y1)
-    const p11 = at(x1, y1)
-    const mix = (a: number, b: number, c: number, d: number) => (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy
-    const r = mix((p00 >> 16) & 255, (p10 >> 16) & 255, (p01 >> 16) & 255, (p11 >> 16) & 255)
-    const g = mix((p00 >> 8) & 255, (p10 >> 8) & 255, (p01 >> 8) & 255, (p11 >> 8) & 255)
-    const b = mix(p00 & 255, p10 & 255, p01 & 255, p11 & 255)
-    return Hct.fromInt(((255 << 24) | (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b)) >>> 0)
+    const mix = (c: Float32Array) =>
+      (c[y0 * w + x0] * (1 - fx) + c[y0 * w + x1] * fx) * (1 - fy) + (c[y1 * w + x0] * (1 - fx) + c[y1 * w + x1] * fx) * fy
+    const r = mix(blurred.r)
+    const g = mix(blurred.g)
+    const b = mix(blurred.b)
+    // 色相与彩度对 1 级 RGB 不敏感，照旧走整数 HCT；明度要连续，单独算
+    const hct = Hct.fromInt(((255 << 24) | (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b)) >>> 0)
+    return { tone: toneOf(r, g, b), hue: hct.hue, chroma: hct.chroma }
   }
 }
 
@@ -153,9 +175,10 @@ export const buildTextureRgba = async(request: TextureRequest, yieldRows?: () =>
 
   // 秩建在"真正被采样的那个场"（糊过的封面）上。小样建在原始场上，
   // 而模糊会把 tone 往均值收，用原始百分位映带就吃不满合法摆幅。
-  const fieldTones = new Float32Array(blurred.length)
-  for (let i = 0; i < blurred.length; i++) fieldTones[i] = Hct.fromInt(blurred[i] >>> 0).tone
+  const fieldTones = new Float32Array(blurred.r.length)
+  for (let i = 0; i < fieldTones.length; i++) fieldTones[i] = toneOf(blurred.r[i], blurred.g[i], blurred.b[i])
   const coverRank = buildRank(fieldTones)
+  const coverContrast = coverContrastOf(fieldTones)
 
   const coverRankField = new Float32Array(count)
   const coverHue = new Float32Array(count)
@@ -171,7 +194,7 @@ export const buildTextureRgba = async(request: TextureRequest, yieldRows?: () =>
       const w2 = fbm(cx * MARBLE_FREQ + 11.3, cy * MARBLE_FREQ + 2.9, TEXTURE_SEED + 31) - 0.5
       const s = sampleCover(cx + WARP_STRENGTH * w1, cy + WARP_STRENGTH * w2)
       const i = y * outWidth + x
-      coverRankField[i] = coverRank(s.tone)
+      coverRankField[i] = 0.5 + coverContrast * (coverRank(s.tone) - 0.5)
       coverHue[i] = s.hue
       coverChroma[i] = Math.min(s.chroma, CHROMA_CAP)
       marbleRaw[i] = fbm(cx * MARBLE_FREQ + 5.3, cy * MARBLE_FREQ + 9.1, TEXTURE_SEED + 707)

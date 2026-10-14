@@ -6,6 +6,7 @@ import { Hct } from '@material/material-color-utilities/hct/hct.js'
 
 import {
   CHROMA_FLOOR,
+  COVER_SPAN_REF,
   COVER_WEIGHT,
   MARBLE_FREQ,
   TEXTURE_OUT_HEIGHT,
@@ -15,7 +16,7 @@ import {
   buildTextureRgba,
   textureWidthFor,
 } from '../src/utils/monet/texture.ts'
-import { MIN_CONTRAST, parseCssColor } from '../src/utils/monet/surface.ts'
+import { CHROMA_CAP, MIN_CONTRAST, parseCssColor } from '../src/utils/monet/surface.ts'
 
 const LIGHT_FONT = parseCssColor('rgb(66,66,66)')!
 const DARK_FONT = parseCssColor('rgb(219,219,219)')!
@@ -54,16 +55,16 @@ test('同一份输入两次生成逐字节相同（纹理绝不能跟着重绘�
 test('每个 texel 都落在合法色阶带里（允许色域夹断的 tolerance）', async() => {
   const band = BAND_LIGHT
   const rgba = await buildTextureRgba({ source: cover(), band, outWidth: 16, outHeight: 36 })
-  let lo = Infinity
-  let hi = -Infinity
+  const tones: number[] = []
   for (let i = 0; i < rgba.length; i += 4) {
     const tone = Hct.fromInt((0xff << 24 | rgba[i] << 16 | rgba[i + 1] << 8 | rgba[i + 2]) >>> 0).tone
     assert.ok(tone >= band.lo - 1.5 && tone <= band.hi + 1.5, `tone ${tone} 越界（带 ${band.lo}~${band.hi}）`)
-    if (tone < lo) lo = tone
-    if (tone > hi) hi = tone
+    tones.push(tone)
   }
-  // 秩归一没做对的话，带会被压到中间一小截
-  assert.ok(hi - lo >= (band.hi - band.lo) * 0.8, `实际跨度只有 ${(hi - lo).toFixed(1)}，没吃满合法带 ${(band.hi - band.lo)}`)
+  // 量 p5~p95 而不是 min/max：去掉混合后那次秩归一，两端各剩几个 texel 照样顶到带边，只有中段塌（实测 90% → 65%）
+  tones.sort((a, b) => a - b)
+  const spread = tones[Math.floor(tones.length * 0.95)] - tones[Math.floor(tones.length * 0.05)]
+  assert.ok(spread >= (band.hi - band.lo) * 0.8, `p5~p95 只有 ${spread.toFixed(1)}，没吃满合法带 ${(band.hi - band.lo)}`)
 })
 
 test('每个 texel 对字色的真实 WCAG 对比度都 >= 4.5（夹色域也算进去了）', async() => {
@@ -153,10 +154,73 @@ test('输出宽度按屏幕宽高比折算并钳在 [40, 200]', () => {
   assert.equal(textureWidthFor(2000, 800), 200)
 })
 
+test('红封面的纹理还是红色系，彩度不超封顶，且越暗的云团越饱和', async() => {
+  const w = 64
+  const pixels: number[] = []
+  for (let y = 0; y < w; y++) {
+    for (let x = 0; x < w; x++) {
+      const v = Math.round(90 + 120 * (x / (w - 1)))
+      pixels.push((0xff << 24 | v << 16 | 20 << 8 | 30) >>> 0)
+    }
+  }
+  const redHue = Hct.fromInt(0xFFC81E1E).hue
+  // 用中段色阶带而不是亮主题那条：tone 72~100 里红色的色域本身就随明度收窄，
+  // 彩度斜坡反过来也看不出来；40~66 里红色能给到远超 CHROMA_CAP 的彩度，斜坡和封顶都只能靠实现自己
+  const rgba = await buildTextureRgba({ source: { pixels, width: w, height: w }, band: { lo: 40, hi: 66 }, outWidth: 24, outHeight: 54 })
+  const rows: { tone: number; chroma: number }[] = []
+  let hueOff = 0
+  for (let i = 0; i < rgba.length; i += 4) {
+    const hct = Hct.fromInt((0xff << 24 | rgba[i] << 16 | rgba[i + 1] << 8 | rgba[i + 2]) >>> 0)
+    const d = Math.abs(hct.hue - redHue) % 360
+    hueOff += Math.min(d, 360 - d)
+    rows.push({ tone: hct.tone, chroma: hct.chroma })
+    assert.ok(hct.chroma <= CHROMA_CAP + 2, `彩度 ${hct.chroma.toFixed(1)} 冲破封顶 ${CHROMA_CAP}`)
+  }
+  assert.ok(hueOff / rows.length < 25, `平均色相偏了 ${(hueOff / rows.length).toFixed(1)}°`)
+  rows.sort((a, b) => a.tone - b.tone)
+  const third = Math.floor(rows.length / 3)
+  const mean = (xs: typeof rows) => xs.reduce((s, r) => s + r.chroma, 0) / xs.length
+  const darkChroma = mean(rows.slice(0, third))
+  const lightChroma = mean(rows.slice(-third))
+  assert.ok(darkChroma > lightChroma * 1.5, `暗部彩度 ${darkChroma.toFixed(1)} 没明显高于亮部 ${lightChroma.toFixed(1)}`)
+})
+
+test('几乎是平的封面（暗角、底噪）不出硬边和白点：相邻 texel 的 RGB 跳变有上限', async() => {
+  let seed = 7
+  const rnd = () => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0
+    return seed / 4294967296
+  }
+  const argb = (d: number) => (0xff << 24 | (180 + d) << 16 | (150 + d) << 8 | (120 + d)) >>> 0
+  const noisy = Array.from({ length: 128 * 128 }, () => argb(Math.round((rnd() * 2 - 1) * 3)))
+  const vignette = Array.from({ length: 128 * 128 }, (_, i) => {
+    const r = Math.hypot(i % 128 - 64, Math.floor(i / 128) - 64) / 64
+    return argb(Math.round(4 * (1 - Math.min(1, r))))
+  })
+  for (const [name, pixels] of [['底噪 ±3', noisy], ['暗角 4 级', vignette]] as const) {
+    const W = 132
+    const H = TEXTURE_OUT_HEIGHT
+    const o = await buildTextureRgba({ source: { pixels, width: 128, height: 128 }, band: BAND_LIGHT, outWidth: W, outHeight: H })
+    let worst = 0
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const p = (y * W + x) * 4
+        for (const q of [x + 1 < W ? p + 4 : -1, y + 1 < H ? p + W * 4 : -1]) {
+          if (q < 0) continue
+          worst = Math.max(worst, Math.abs(o[p] - o[q]), Math.abs(o[p + 1] - o[q + 1]), Math.abs(o[p + 2] - o[q + 2]))
+        }
+      }
+    }
+    // 修前实测：底噪 100、暗角 49；修后两者 35 / 33，与完全平的封面（30）同档
+    assert.ok(worst <= 40, `${name}：相邻 texel 最大跳 ${worst} 级`)
+  }
+})
+
 test('算法常量的取值有实测出处，改动要连 spec 一起（防止有人顺手调着玩）', () => {
   assert.equal(MARBLE_FREQ, 7)
   assert.equal(WARP_STRENGTH, 0.12)
   assert.equal(COVER_WEIGHT, 0.45)
   assert.equal(CHROMA_FLOOR, 0.35)
+  assert.equal(COVER_SPAN_REF, 12)
   assert.equal(TEXTURE_OUT_HEIGHT, 294)
 })
