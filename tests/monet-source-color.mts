@@ -53,3 +53,53 @@ test('空数组 / 全透明 / 非法输入返回 null', () => {
 test('量化色数用官方 128', () => {
   assert.equal(QUANTIZE_COLORS, 128)
 })
+
+// 多色混合才能把 Wsmeans 的初始簇抖动暴露出来；纯色/两色抖动不出差别。
+// 但只有色带还不够：实测这份 6 色纯色块 50 次出的是同一种源色（Wu 给的起始簇太干净，
+// 上游那句随机分配初始簇抖不出结果），用例就会变成永真的摆设。真实封面缩略图几乎
+// 没有两个像素同色，所以这里给每个像素叠 ±12 的抖动。
+// 抖动用的是固定整数哈希，**不能**用 Math.random —— 否则 canary 数到的是这里，不是量化。
+const PALETTE = [0xFFF3DC2F, 0xFF3C5A3E, 0xFF8A2C2C, 0xFF244C6E, 0xFFD8C8A8, 0xFF5A5A5A]
+const jitter = (x: number, y: number, k: number) => (Math.imul(x * 31 + y * 71 + k * 17 + 11, 2654435761) >>> 0) % 25 - 12
+const clampChan = (argb: number, shift: number, delta: number) =>
+  Math.min(255, Math.max(0, ((argb >> shift) & 0xff) + delta))
+
+const mixedPixels = () => {
+  const out: number[] = []
+  for (let y = 0; y < 64; y++) {
+    for (let x = 0; x < 64; x++) {
+      const argb = PALETTE[((x >> 4) + (y >> 4)) % PALETTE.length]
+      const rgb =
+        (clampChan(argb, 16, jitter(x, y, 0)) << 16) |
+        (clampChan(argb, 8, jitter(x, y, 1)) << 8) |
+        clampChan(argb, 0, jitter(x, y, 2))
+      out.push(((0xff << 24) | rgb) >>> 0)
+    }
+  }
+  return out
+}
+
+test('同一份像素重复取色必须给同一个源色（上游 quantizer_wsmeans 用裸 Math.random）', () => {
+  const pixels = mixedPixels()
+  const first = analyzeArgbPixels(pixels)!.source
+  for (let i = 0; i < 50; i++) {
+    assert.equal(analyzeArgbPixels(pixels)!.source, first, `第 ${i + 1} 次取色漂了源色`)
+  }
+})
+
+test('canary：量化确实在消费 Math.random —— 计数归零就该删掉 seeding 包裹', () => {
+  let calls = 0
+  const original = Math.random
+  Math.random = () => {
+    calls += 1
+    return original()
+  }
+  try {
+    analyzeArgbPixels(mixedPixels())
+  } finally {
+    Math.random = original
+  }
+  // 这条是承重的墓碑用例：@material 的 JS 移植版把随机留在 quantizer_wsmeans.js:95。
+  // 哪天上游改成确定性实现，calls 变 0，这里会红 —— 那时请删掉 withSeededRandom，不要留着。
+  assert.ok(calls > 0, 'Math.random 未被消费：seeding 包裹已成死代码，删掉 withSeededRandom')
+})
