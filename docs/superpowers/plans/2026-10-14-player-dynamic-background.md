@@ -38,11 +38,13 @@
 | `src/utils/monet/coverPalette.ts` | 工厂：注入 fetcher，负责缓存 + in-flight 去重（不碰 react-native） |
 | `src/utils/monet/index.ts` | 把原生 fetcher 接进工厂，导出 `getCoverSurface`（唯一被 UI 引用的入口） |
 | `src/utils/monet/useCoverSurface.ts` | hook：读设置/当前歌曲/主题字色，异步算出背景配色 |
+| `src/utils/monet/backdropGate.ts` | 闸门决策表 `resolveCoverBackdrop`：`theme.dynamicBg` + 主题自带背景图 + 有没有封面 → `{ enabled, picUrl, surface }`；零运行时依赖，可被 `node --test` 直接加载 |
 | `src/components/player/CoverBackdrop/index.tsx` | 三层背景 View，供 `PlayDetail/Vertical` 使用 |
 | `src/utils/nativeModules/palette.ts` | 原生桥：`getArgbPixels(url, maxSize)` |
 | `tests/monet-source-color.mts` | sourceColor 单测 |
 | `tests/monet-surface.mts` | surface 单测（含对比度回归） |
 | `tests/monet-cover-palette.mts` | 缓存/去重/兜底单测（假 fetcher） |
+| `tests/monet-gate.mts` | 那张决策表的 6 条用例（含"切到无封面的歌同一帧交回空值"） |
 
 **新建（Android 原生）**
 | 文件 | 职责 |
@@ -94,7 +96,7 @@ npm i @material/material-color-utilities@0.4.0
   // @material/material-color-utilities 的发布产物只暴露包根 exports，而包根 index.js
   // 有 10 处无扩展名相对 import，Node（跑单测）import 包根会 ERR_MODULE_NOT_FOUND。
   // 放开子路径后 src 与 tests 都按子路径 import：Node 能跑单测，Metro 只打进真正
-  // 用到的文件（包根 import 会让 bundle +468KB）。负向前瞻保证幂等。
+  // 用到的文件（包根 import 会让 bundle +479,461 B）。负向前瞻保证幂等。
   [
     path.join(rootPath, 'node_modules/@material/material-color-utilities/package.json'),
     /("exports": \{\r?\n    "\.": \{[\s\S]{0,200}?\r?\n    \})(?![\s\S]{0,60}"\.\/\*")/,
@@ -857,8 +859,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { PIXEL_LIMIT, createCoverPalette } from '../src/utils/monet/coverPalette.ts'
-import { Hct } from '@material/material-color-utilities/hct/hct.js'
-
 const GRAY = 0xFF808080
 const RED = 0xFFCC2222
 const LIGHT_FONT = 'rgb(33, 33, 33)'
@@ -966,6 +966,43 @@ test('clearCache 后重新取色', async() => {
   await getCoverSurface('https://example.com/a.jpg', LIGHT_FONT)
   assert.equal(calls, 2)
 })
+
+test('配色层命中缓存时返回同一个对象（钉住读写 key 同源与缓存写入）', async() => {
+  const { getCoverSurface } = createCoverPalette(async() => pixels(RED))
+  const a1 = await getCoverSurface('https://example.com/k.jpg', LIGHT_FONT)
+  const a2 = await getCoverSurface('https://example.com/k.jpg', LIGHT_FONT)
+  assert.ok(a1)
+  assert.equal(a2, a1)
+})
+
+test('并发两次调用合并成同一个结果对象（钉住 pending 去重）', async() => {
+  const { getCoverSurface } = createCoverPalette(async() => pixels(RED))
+  const [a, b] = await Promise.all([
+    getCoverSurface('https://example.com/p.jpg', LIGHT_FONT),
+    getCoverSurface('https://example.com/p.jpg', LIGHT_FONT),
+  ])
+  assert.ok(a)
+  assert.equal(b, a)
+})
+
+test('clearCache 打在途请求上：旧判定不写回，下一次调用重新问原生', async() => {
+  let release: (v: number[] | null) => void = () => {}
+  let autoFail = false
+  let calls = 0
+  const { getCoverSurface, clearCache } = createCoverPalette(() => {
+    calls += 1
+    if (autoFail) return Promise.resolve(null)
+    return new Promise<number[] | null>(resolve => { release = resolve })
+  })
+  const first = getCoverSurface('https://example.com/r.jpg', LIGHT_FONT)
+  clearCache()
+  release(null)
+  assert.equal(await first, null)
+  assert.equal(calls, 1)
+  autoFail = true
+  assert.equal(await getCoverSurface('https://example.com/r.jpg', LIGHT_FONT), null)
+  assert.equal(calls, 2)
+})
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -998,11 +1035,13 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
   const pixelOrder: string[] = []
   const cache = new Map<string, CoverSurface | null>()
   const cacheOrder: string[] = []
+  // clearCache() 之后，之前那一次在途请求算出来的结果不再写回（判据在文件末尾的代数比较）
+  let generation = 0
   const pending = new Map<string, Promise<CoverSurface | null>>()
 
   // async 是仓库规则要求的（@typescript-eslint/promise-function-async：非 async 函数返回 Promise 会报），
   // 不是功能需要。去重靠 pixelCache 里那条原始 promise：async 包装只是再套一层壳，
-  // 命中缓存时不会第二次调用 fetchPixels，第 2、5 条用例仍然量得到。
+  // 命中缓存时不会第二次调用 fetchPixels，第 2、7 条用例仍然量得到。
   const fetchOnce = async(picUrl: string): Promise<number[] | null> => {
     const cached = pixelCache.get(picUrl)
     if (cached) return cached
@@ -1019,6 +1058,10 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
     return task
   }
 
+  // 读写两处的 key 只由这一条式子生成。配色层命中与否全看这两处串不串得上，
+  // 而只数 fetchPixels 调用次数的断言观察不到它：把写入那处的分隔符改掉，8 条用例照样全绿（控制方实测）。
+  const paletteKey = (picUrl: string, fontArgb: number) => `${picUrl}|${fontArgb}`
+
   const remember = (key: string, value: CoverSurface | null) => {
     if (!cache.has(key)) {
       cacheOrder.push(key)
@@ -1031,8 +1074,7 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
   }
 
   // 同上：async 只为过 lint。pending 里的原始 promise 仍是去重的那一条。
-  const load = async(picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
-    const key = `${picUrl}|${fontArgb}`
+  const load = async(key: string, picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
     if (cache.has(key)) return cache.get(key)!
     const inFlight = pending.get(key)
     if (inFlight) return inFlight
@@ -1057,12 +1099,17 @@ export const createCoverPalette = (fetchPixels: (url: string) => Promise<number[
       if (!picUrl) return null
       const fontArgb = parseCssColor(fontColor)
       if (fontArgb == null) return null
-      return load(picUrl, fontArgb).then(surface => {
-        remember(`${picUrl}|${fontArgb}`, surface)
+      const key = paletteKey(picUrl, fontArgb)
+      const gen = generation
+      return load(key, picUrl, fontArgb).then(surface => {
+        // 还在同一代里才写回：翻开关 clearCache() 之后才到达的旧判定（多半是 null）必须丢掉，
+        // 否则那次失败会重新占住这个 key，把「翻开关重试」这条唯一的出口一起废掉。
+        if (gen === generation) remember(key, surface)
         return surface
       })
     },
     clearCache() {
+      generation++
       pixelCache.clear()
       pixelOrder.length = 0
       cache.clear()
@@ -1213,6 +1260,100 @@ const styles = createStyle({
 
 `src/screens/Home/Views/Setting/settings/Theme/index.tsx`：加 `import DynamicBg from './DynamicBg'`，并把 `<DynamicBg />` 放在 `<IsFontShadow />` 之前（`IsFontShadow` 的 `marginBottom: 15` 是分组末位，新项不要抢）。
 
+- [ ] **Step 4a: 闸门决策表抽成纯函数（本单 Imp-3 / A-7、Imp-2 / A-2、Imp-4 / A-6）**
+
+**Files:**
+- Create: `src/utils/monet/backdropGate.ts`
+- Create: `tests/monet-gate.mts`
+
+决策表本体放这里，是因为 `useCoverSurface` 引 react/react-native，那张表进不了 `node --test`；PlayerOverlay（APK 反编译文件）不许 import 它，自己那句 `hasBackdropImage ||` 是冗余而不是第二套规则。
+`pic` 也进这张表：切到没有封面的歌时 `enabled` 仍为真，只挡 `enabled` 会让上一张封面的色多刷一帧，所以同一帧就要把 `surface` 交回 `null`（本单 Imp-4 / A-6，验收 ④ 的"逐像素一致"）。
+
+Create `src/utils/monet/backdropGate.ts`:
+
+```ts
+// 这一层只放纯判断：除了下面这个会被 Node 擦掉的类型 import，本文件不许有任何运行时依赖，
+// 这样 `node --test` 才能直接加载它，把这张决策表当单元测试跑。
+// `useCoverSurface` 是它唯一的调用方。PlayerOverlay（APK 反编译文件）不许 import 这里，
+// 它自己那句 `hasBackdropImage ||` 是冗余判断而不是第二套规则。
+import type { CoverSurface } from './surface.ts'
+
+export interface CoverBackdropState {
+  enabled: boolean
+  picUrl: string | null
+  surface: CoverSurface | null
+}
+
+export const resolveCoverBackdrop = (dynamicBg: boolean, hasThemeBgImage: boolean,
+  pic: string | null | undefined, surface: CoverSurface | null): CoverBackdropState => {
+  // 主题自带背景图优先：hasThemeBgImage 的实参必须是 ActiveTheme 的 theme['bg-image'] 取真值，
+  // 那是 PageContent 真正拿去画图的同一个值，不能用 extInfo 里的原始字符串（纯色主题是 ''）。
+  const enabled = dynamicBg && !hasThemeBgImage
+  // pic 也参加这条：切到没有封面的歌时 enabled 仍为真，只挡 enabled 会让上一张封面的色多刷一帧，
+  // 而那一帧模糊封面层已经因为 picUrl 变空而卸载 —— 屏幕上是"整屏纯色闪一下"，
+  // 不是验收 ④ 说的"与改动前逐像素一致"。
+  const active = enabled && !!pic && surface != null
+  return {
+    enabled,
+    picUrl: active ? pic ?? null : null,
+    surface: active ? surface : null,
+  }
+}
+```
+
+Create `tests/monet-gate.mts`:
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import { resolveCoverBackdrop } from '../src/utils/monet/backdropGate.ts'
+
+const SURFACE = { base: 'rgb(240, 244, 249)', scrimAlpha: 0.45 }
+const PIC = 'https://example.com/a.jpg'
+
+test('开关开 + 主题无背景图 + 封面和配色都有：三个字段原样交出', () => {
+  const s = resolveCoverBackdrop(true, false, PIC, SURFACE)
+  assert.equal(s.enabled, true)
+  assert.equal(s.picUrl, PIC)
+  assert.equal(s.surface, SURFACE)
+})
+
+test('开关关闭：enabled 为假，picUrl 与 surface 都不交出去', () => {
+  const s = resolveCoverBackdrop(false, false, PIC, SURFACE)
+  assert.equal(s.enabled, false)
+  assert.equal(s.picUrl, null)
+  assert.equal(s.surface, null)
+})
+
+test('主题自带背景图时整条封面取色让路（开关开着也一样）', () => {
+  const s = resolveCoverBackdrop(true, true, PIC, SURFACE)
+  assert.equal(s.enabled, false)
+  assert.equal(s.picUrl, null)
+  assert.equal(s.surface, null)
+})
+
+test('切到没有封面的歌：同一帧就把旧配色交回去，不刷一屏旧封面色', () => {
+  const s = resolveCoverBackdrop(true, false, null, SURFACE)
+  assert.equal(s.enabled, true)
+  assert.equal(s.picUrl, null)
+  assert.equal(s.surface, null)
+})
+
+test('空串 pic 不算有封面', () => {
+  const s = resolveCoverBackdrop(true, false, '', SURFACE)
+  assert.equal(s.picUrl, null)
+  assert.equal(s.surface, null)
+})
+
+test('配色还没算出来（含取色失败）：surface 交 null，整层不渲染', () => {
+  const s = resolveCoverBackdrop(true, false, PIC, null)
+  assert.equal(s.enabled, true)
+  assert.equal(s.surface, null)
+})
+```
+
+Expected：`node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-gate.mts` = **6 pass / 0 fail**。
 - [ ] **Step 4: 写 hook**
 
 Create `src/utils/monet/useCoverSurface.ts`:
@@ -1224,22 +1365,18 @@ import { usePlayerMusicInfo } from '@/store/player/hook'
 import { useSettingValue } from '@/store/setting/hook'
 import { useTheme } from '@/store/theme/hook'
 import { getCoverSurface, type CoverSurface } from '@/utils/monet'
-
-export interface CoverBackdropState {
-  enabled: boolean
-  picUrl: string | null
-  surface: CoverSurface | null
-}
+import { resolveCoverBackdrop, type CoverBackdropState } from '@/utils/monet/backdropGate'
 
 export const useCoverSurface = (): CoverBackdropState => {
-  const theme = useTheme()
   const dynamicBg = useSettingValue('theme.dynamicBg')
+  const theme = useTheme()
   const { pic } = usePlayerMusicInfo()
   const fontColor = theme['c-font']
-  // 真值判断而不是 != null：这就是 PageContent 拿去画背景图的同一个值，主题自带背景图时封面取色整条让路
-  const enabled = dynamicBg && !theme['bg-image']
 
   const [surface, setSurface] = useState<CoverSurface | null>(null)
+
+  // 决策表本体在 backdropGate.ts，那张表能用 node --test 直接跑；这里只留订阅与取色副作用
+  const { enabled, picUrl, surface: coverSurface } = resolveCoverBackdrop(dynamicBg, !!theme['bg-image'], pic, surface)
 
   useEffect(() => {
     if (!enabled || !pic) {
@@ -1253,8 +1390,7 @@ export const useCoverSurface = (): CoverBackdropState => {
     return () => { cancelled = true }
   }, [enabled, pic, fontColor])
 
-  // enabled 一翻 false 就当场交回空值：state 里上一张 surface 要等 effect 才清，那一帧会把封面色糊在主题背景图/关掉的开关上
-  return { enabled, picUrl: enabled ? pic ?? null : null, surface: enabled ? surface : null }
+  return { enabled, picUrl, surface: coverSurface }
 }
 ```
 
@@ -1288,7 +1424,8 @@ export default memo(() => {
   // 控制方实测那会盖掉 5 个内置主题（black / mid_autumn / naruto / china_ink / happy_new_year）的主题背景图 ——
   // 它们的 `c-main-background` 是 0.95/0.9/0.8 半透明，PageContent 特意让背景图从下面透出来；
   // 结果是"功能没打开就改了观感"，直接违反验收第 ① 条。另外 12 个主题 c-main-background 是全不透明白，本来就没有透出，不受影响。
-  // 顺带：surface 是用 picUrl 换来的，所以 active 为真时下面那个三元一般都有 source；切歌那一帧 picUrl 可能先变空，三元退化成纯色，由 `source ? … : null` 兜住。
+  // 顺带：surface 与 picUrl 出自 resolveCoverBackdrop 同一张决策表，active 为真就一定有 picUrl，
+  // 下面那个三元只是把类型收窄；表里那两条判据（开关/主题背景图、以及有没有封面）都在纯函数里，能用 node --test 跑。
   if (!active) return null
 
   return (
@@ -1359,8 +1496,8 @@ Expected: **本机 tsc 实测总数 137**（记忆那个 107 是"落在 `src/` �
 cd android && ./gradlew assembleDebug
 ```
 
-Expected: `BUILD SUCCESSFUL`。**子代理不执行 `adb install`**（真机唯一、注入前须确认前台，见 Task 4 Step 6 的同一约定）。以下四条由控制方装机后与用户一起看，实现者在报告里逐条标注"未验"：
-① 开关关 → 与改动前完全一致，**并且要在 black / mid_autumn / naruto / china_ink / happy_new_year 这 5 个带主题背景图的主题里各看一次**（关掉时背景图必须还透得出来；这正是控制方否掉"常驻不透明底色层"的原因）；② 开关开、暗主题、亮封面 → 背景偏暗且歌词清楚；③ 切歌时背景 300ms 内跟换；④ 无封面/取色失败 → 背景层整层不渲染，与改动前逐像素一致（不是铺一层纯色）；⑤ 开关开 + 上述 5 个带背景图主题任一 → 背景图照常显示，封面色一点都盖不上去（`useCoverSurface` 的 `bg-image` 闸门，Ruling P24）。
+Expected: `BUILD SUCCESSFUL`。**子代理不执行 `adb install`**（真机唯一、注入前须确认前台，见 Task 4 Step 6 的同一约定）。以下七条由控制方装机后与用户一起看，实现者在报告里逐条标注"未验"（①~⑤ 原计划已列，⑥⑦ 由最终修单补）：
+① 开关关 → 与改动前完全一致，**并且要在 black / mid_autumn / naruto / china_ink / happy_new_year 这 5 个带主题背景图的主题里各看一次**（关掉时背景图必须还透得出来；这正是控制方否掉"常驻不透明底色层"的原因）；② 开关开、暗主题、亮封面 → 背景偏暗且歌词清楚；③ 切歌时背景 300ms 内跟换；④ 无封面/取色失败 → 背景层整层不渲染，与改动前逐像素一致（不是铺一层纯色）；⑤ 开关开 + 上述 5 个带背景图主题任一 → 背景图照常显示，封面色一点都盖不上去（`useCoverSurface` 的 `bg-image` 闸门，Ruling P24）；⑥ 从"进播放页"到"背景上色"计时一次（慢 CDN 是这条的主要风险；若超标，把 `fetchOnce` 那侧的 `maxSize` 从 128 降到 64，一处改动，与 Task 4 Step 5 的同一口径）；⑦ 装一次 **minified release** 包确认背景仍然上色 —— R8 靠 `react-native/ReactAndroid/proguard-rules.pro:44` 保住 `PaletteModule`，这条是读规则推出来的，**没有实跑过**，所以必须装机验一次。
 
 - [ ] **Step 10: 提交**
 
@@ -1544,7 +1681,7 @@ git diff --cached --stat   # 该路径应重新消失
 
 ## Task 8: 回归 + 收尾
 
-- [ ] **Step 1: 把三个 monet 测试挂进 `npm test`，再跑全量**
+- [ ] **Step 1: 把四个 monet 测试挂进 `npm test`，再跑全量**
 
 `package.json` 的 `test` 脚本行（HEAD 与工作区都只有 1 行，`git show HEAD:package.json` 可取基线）当前**末尾带着别人未提交的 WIP**：工作区比 HEAD 多 ` tests/lyric-copy-text.mts`。直接 `git add package.json` 会把那半行提交进本功能，所以照 Task 1 的做法只暂存自己那一处：
 
@@ -1552,7 +1689,7 @@ git diff --cached --stat   # 该路径应重新消失
 mkdir -p .scratch
 node -e '
 const fs = require("fs")
-const add = " tests/monet-source-color.mts tests/monet-surface.mts tests/monet-cover-palette.mts"
+const add = " tests/monet-source-color.mts tests/monet-surface.mts tests/monet-cover-palette.mts tests/monet-gate.mts"
 // 纯文本改那一行：JSON 往返重排会让 diff 变成整文件重写，git apply --cached 的上下文也对不上索引里的原始 blob
 const withMonet = (text) => text.replace(/("test": ")([^"]*)(")/, (m, a, body, c) =>
   body.includes("monet-surface.mts") ? m : a + body + add + c)
@@ -1566,7 +1703,7 @@ git apply --cached .scratch/pkg.patch
 git diff --cached -- package.json
 ```
 
-Expected: `git diff --cached` 里**只有 `test` 那一行**，且新增的三个文件名都是 `monet-`，**不出现 `lyric-copy-text.mts`**（上面这段已在本机 `.scratch/pkgcheck/` 空跑过：`grep -c lyric-copy-text .scratch/pkg.patch` = 0，工作区改动是干净的 `14c14` 单行，行数 114 不变，JSON 仍可 parse）。工作区的 `package.json` 此时同时带着别人的 WIP 和这三个文件（`git diff -- package.json` 仍显示 lyric 那半行未暂存）。
+Expected: `git diff --cached` 里**只有 `test` 那一行**，且新增的四个文件名都是 `monet-`，**不出现 `lyric-copy-text.mts`**（上面这段已在本机 `.scratch/pkgcheck/` 空跑过：`grep -c lyric-copy-text .scratch/pkg.patch` = 0，工作区改动是干净的 `14c14` 单行，行数 114 不变，JSON 仍可 parse）。工作区的 `package.json` 此时同时带着别人的 WIP 和这三个文件（`git diff -- package.json` 仍显示 lyric 那半行未暂存）。
 
 跑全量：
 
@@ -1574,7 +1711,7 @@ Expected: `git diff --cached` 里**只有 `test` 那一行**，且新增的三�
 npm test 2>&1 | tail -8
 ```
 
-Expected: `fail 0`。控制方实测基线（加这三档**之前**，就在当前工作树上）：`npm test` = **384 tests / 384 pass / 0 fail**，exit 0。加完应是 **411 / 411 / 0**（monet 三档 6 + 13 + 8 = 27）。若出现改动前就红的用例，用 `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/<那一个>.mts` 单跑复现，认定"既有红"写进报告，**不要**顺手改别人的测试，也不要用 `git stash` 造干净基线（会动别人的工作树）。
+Expected: `fail 0`。控制方实测基线（加这四档**之前**，就在当前工作树上）：`npm test` = **384 tests / 384 pass / 0 fail**，exit 0。加完应是 **420 / 420 / 0**（monet 四档：source-color 6 + surface 13 + cover-palette 11 + gate 6 = 36；`cover-palette` 从 8 条长成 11 条、`monet-gate` 是本单新加的一档，最终修单的 Step 7 实测 **420 / 420 / 0**）。若出现改动前就红的用例，用 `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/<那一个>.mts` 单跑复现，认定"既有红"写进报告，**不要**顺手改别人的测试，也不要用 `git stash` 造干净基线（会动别人的工作树）。
 
 提交：索引里已经是"HEAD 的那行 + 只加三档"，所以直接 commit，**禁止 `git add package.json`**（工作区那一行还带着别人的 ` tests/lyric-copy-text.mts`）：
 
@@ -1628,10 +1765,12 @@ git status --short | grep -c '^??'    # 比清理前少 1（.scratch 这一条�
 
 删之前先扫一眼 `.scratch` 里有没有**唯一副本**性质的东西，判据是"删掉就没法再生成的"，而不是"看起来像备份"：`mcu-pkg-backup.json` 实测**不是**打补丁前的原文件 —— 它第 44 行已经带着 `"./*": "./*"`，与 `node_modules/@material/material-color-utilities/package.json` 只差 wireit 那段数组的排版和结尾换行（最终评审复核过），所以它其实是**打过补丁之后**的一份副本，真需要原始文件得靠重装。这条按"先挪进本计划的 SDD 工作区（`.superpowers/sdd/2026-10-14-player-dynamic-background/`，gitignored）再删目录"处理，留着不花钱；`t*.log`、`*.bundle`、`pkgcheck/`、探针脚本、`*.tgz` 这些一律可再生，直接删。
 
-- [ ] **Step 6: 两条已知限制只记录，不改仓库配置**
+- [ ] **Step 6: 四条已知限制只记录，不改仓库配置**
 
 ① `tests/*.mts` 不在 `npm run lint` 的 `--ext .js,.jsx,.ts,.tsx` 覆盖范围内，而且 `.mts` 在当前 parser 下连 `as` 断言都会直接报解析错 —— 这是仓库既有条件，本计划**不改 `.eslintrc.cjs`**（那会牵动别人的 lint 基线），monet 三档的可执行验证以 `node --test` 为准。
 ② `src/components/common/ImageBackground.tsx:63` 有一条**先前已提交**的 `__DEV__` `new Error().stack` 日志，现在正好落在播放页背景与 morph 过渡的渲染路径上，dev 包日志会被它刷屏。不属本功能，**由控制方单独报给用户**，不要混进本功能的修单里顺手删。
+③ 同一张封面每首歌会被**下载两次**：Fresco 显示一次，`PaletteModule` 的 `HttpURLConnection` 取像素一次，两侧没有共享 HTTP 缓存。"动态背景"开关默认关（`src/config/defaultSetting.ts` 里 `'theme.dynamicBg': false`），所以影响有界；后续可改成从 Fresco `ImagePipeline` 直接取字节，省掉第二次下载 —— 那是原生侧的独立改动，不在本计划里顺手做。
+④ `scrimAlpha` 的区间是 **[0.45, 0.9]**（`src/utils/monet/surface.ts`：`SCRIM_MIN = 0.45`、`SCRIM_MAX = 0.9`，`tests/monet-surface.mts` 有一条用例钉住"恒在 [0.45, 0.9] 且保留两位小数"）。此前 ledger/评审里写的 0.45~0.75 是**记录错误**，代码一直是对的（本次按实测订正，不要反向去改代码）。
 
 ---
 
