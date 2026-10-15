@@ -3,6 +3,7 @@
 import { analyzeArgbPixels, type CoverPixels } from './sourceColor.ts'
 import { buildCoverSurface, parseCssColor, type CoverSurface } from './surface.ts'
 import { TEXTURE_OUT_HEIGHT, type TextureRequest } from './texture.ts'
+import { ATTEMPT_COOLDOWN_MS } from './attemptLedger.ts'
 
 export const CACHE_LIMIT = 60
 // 像素层单独设上限，而且要比 CACHE_LIMIT 小：一个 value 是最多 16384 个数字的数组，
@@ -13,9 +14,22 @@ export const PIXEL_LIMIT = 20
 // 比一条 CoverSurface 贵三个量级，60 条就是几 MB 的常驻字符串。
 export const TEXTURE_LIMIT = 12
 
+// 失败条目的保质期。原先失败和成功一样永久缓存，于是原生一次瞬时超时（移动网络下很常见）
+// 就让那张封面整场会话不上色，用户唯一的出口是去设置里翻「动态背景」开关 —— 2026-10-15 真机
+// 报的"时有时无"就是这个。现在失败只压一个窗口，过窗后同一张封面能重新问原生（自愈）。
+// 必须比 store 那条 ATTEMPT_COOLDOWN_MS 小：两层时间戳都记在"结果到手那一刻"，而 store 的窗口
+// 从"发起请求那一刻"起算，重试点要能落在像素层已过期之后，否则那次重试只是读到同一份 null，
+// 自愈要多等一整个 store 窗口（约 30s 而不是 15s）。这里直接由冷却窗口减出来，
+// 那条大小关系就是结构性的：改冷却，保质期跟着走，不会悄悄反过来。
+// 减掉的 5_000 是给原生返回留的预算 —— 单次取色慢于 5s 时会落到第二个窗口，仍然会自己好。
+export const NEGATIVE_TTL_MS = ATTEMPT_COOLDOWN_MS - 5_000
+
+// now 是注入的时钟，只为让单测能把时间拨过窗口（node --test 里等 10 秒不可接受）；
+// 生产调用方（index.ts）不传，走 Date.now。
 export const createCoverPalette = (
   fetchPixels: (url: string) => Promise<CoverPixels | null>,
   buildTexture: (request: TextureRequest) => Promise<string | null>,
+  now: () => number = Date.now,
 ) => {
   // 两层缓存：像素按 url 缓存（下载+量化只一次），配色按 url|font 缓存（暗/亮主题各一份）
   const pixelCache = new Map<string, Promise<CoverPixels | null>>()
@@ -28,33 +42,80 @@ export const createCoverPalette = (
   const textureCache = new Map<string, string | null>()
   const textureOrder: string[] = []
   const pendingTexture = new Map<string, Promise<string | null>>()
+  // 失败条目的落地时刻（像素按 url、配色按 key）。只有失败才记：成功那份色不会随时间变，
+  // 过期机制只欠"失败要能自己好"这一件事，给成功条目设 TTL 等于白重下一张封面。
+  const pixelFailedAt = new Map<string, number>()
+  const surfaceFailedAt = new Map<string, number>()
+
+  // 判据写成 now() >= at + TTL：时钟被拨回（at 落在未来）时这条为假，条目就一直压到时钟追上为止 ——
+  // 宁可自愈晚点，也不能在这里开出第二条并发请求去挤原生那条单线程队列。
+  const isExpired = (key: string, failedAt: Map<string, number>) => {
+    const at = failedAt.get(key)
+    return at !== undefined && now() - at >= NEGATIVE_TTL_MS
+  }
+
+  // 过期淘汰要把 LRU 顺序表里的这一条一起摘掉。不摘的话数组里留下幽灵项，length 虚高，
+  // 真正的条目会被提前判成"最老"而淘汰（PIXEL_LIMIT/CACHE_LIMIT 的语义就漏了）。
+  const drop = (order: string[], key: string) => {
+    const index = order.indexOf(key)
+    if (index !== -1) order.splice(index, 1)
+  }
 
   // async 是仓库规则要求的（@typescript-eslint/promise-function-async：非 async 函数返回 Promise 会报），
   // 不是功能需要。去重靠 pixelCache 里那条原始 promise：async 包装只是再套一层壳，
   // 命中缓存时不会第二次调用 fetchPixels，第 2、7 条用例仍然量得到。
   const fetchOnce = async(picUrl: string): Promise<CoverPixels | null> => {
+    // 失败过期：把这条 url 从像素层整个摘掉，下面就走回"没缓存"那条路，重新问原生。
+    if (isExpired(picUrl, pixelFailedAt)) {
+      pixelCache.delete(picUrl)
+      pixelFailedAt.delete(picUrl)
+      drop(pixelOrder, picUrl)
+    }
     const cached = pixelCache.get(picUrl)
     if (cached) return cached
-    // 取色失败（null）也进缓存，这是 Task 5 第 4 条用例钉住的行为：原生侧是单线程队列，
+    // 取色失败（null）也进缓存，但只压 NEGATIVE_TTL_MS 那么久：原生侧是单线程队列，
     // 坏源封面若不缓存就会每跳一次这首歌再排一次失败请求，把当前这首歌的上色挤到一串失败后面。
-    // 代价是"瞬时失败即整会话不再上色"，出口在 Task 6：翻动"动态背景"开关时 clearCoverPaletteCache()。
-    const task = (async() => {
+    // 2026-10-15 之前的版本没有期限，于是"一次瞬时超时 = 这首歌整场会话不上色"，
+    // 用户只能去设置里翻「动态背景」开关（那已经是唯一的出口，见 NEGATIVE_TTL_MS 注释）。
+    const fetch = (async() => {
+      let value: CoverPixels | null = null
       try {
-        const value = await fetchPixels(picUrl)
+        const result = await fetchPixels(picUrl)
         // 原生桥是真实边界：行宽只能在这里自证。长度与宽高不自洽时纹理会跨行采样，
         // 斜纹是"看得见的花屏"，比直接不涂色更难查 —— 不如在这里判成失败走回落。
-        if (value == null || !Array.isArray(value.pixels) || value.pixels.length === 0) return null
-        if (value.width < 1 || value.height < 1) return null
-        return value.pixels.length === value.width * value.height ? value : null
+        if (result != null && Array.isArray(result.pixels) && result.pixels.length > 0 &&
+          result.width >= 1 && result.height >= 1 && result.pixels.length === result.width * result.height) {
+          value = result
+        }
       } catch {
-        return null
+        // 原生桥抛错就是取色失败：这里不改 value（初始化已是 null），时刻由下面那条 .then 记
       }
+      return value
     })()
+    // 失败时刻记在"结果到手"这一刻，和配色层那份同源（两层同时到期，重试不会一层通了另一层还压着）。
+    // 两个细节是承重的：
+    // 1) 挂在 .then 而不是内层函数体里 —— 内层若同步抛错（fetchPixels 不是 async 的替身），
+    //    在 IIFE 里引用正在初始化的 task 会踩到 TDZ 直接 ReferenceError；.then 回调永远在微任务里跑。
+    // 2) 只有还是当前条目时才改账 —— 被 LRU 提前淘汰的那条在途任务若也写时刻，就会留下
+    //    "条目没了、时间戳还在"的旧记录，下一次同 url 的在途任务会被它误判成过期，
+    //    等于自己开出第二条并发原生请求（这里要避免的恰恰就是这个）。
+    const task = fetch.then(value => {
+      if (pixelCache.get(picUrl) !== task) return value
+      // 对称改账：失败记时刻、成功清时刻。isExpired 只认时间戳，好色那一格若留着旧的失败时刻，
+      // 就会被判成过期的失败条目 —— 每过一个窗口白重下一张封面（配色层同理，见 remember）。
+      if (value == null) pixelFailedAt.set(picUrl, now())
+      else pixelFailedAt.delete(picUrl)
+      return value
+    })
     pixelCache.set(picUrl, task)
     pixelOrder.push(picUrl)
     if (pixelOrder.length > PIXEL_LIMIT) {
       const oldest = pixelOrder.shift()!
-      if (oldest !== picUrl) pixelCache.delete(oldest)
+      if (oldest !== picUrl) {
+        pixelCache.delete(oldest)
+        // 时间戳跟着条目一起删：url 都不在这层了，留着旧时刻下次会被拿来判新一轮的过期
+        pixelFailedAt.delete(oldest)
+      }
     }
     return task
   }
@@ -66,6 +127,9 @@ export const createCoverPalette = (
   // outWidth 进 key：纹理是按屏幕宽高比折算的那张，尺寸变了就是另一张图，复用会把纹路拉歪。
   const textureKeyOf = (picUrl: string, fontArgb: number, outWidth: number) => `${picUrl}|${fontArgb}|${outWidth}`
 
+  // 纹理层没有失败期限（配色/像素两层有），这是有意的：这一支现在没接进任何界面
+  // （2026-10-15 spec §8 定的是"纹理代码留着但不接线"），没有用户看得见的"永远不上色"要自愈。
+  // 真要启用纹理，这里的失败也得照 NEGATIVE_TTL_MS 过期，否则就是同一个缺陷的复刻。
   const rememberTexture = (key: string, value: string | null) => {
     if (!textureCache.has(key)) {
       textureOrder.push(key)
@@ -78,11 +142,18 @@ export const createCoverPalette = (
   }
 
   const remember = (key: string, value: CoverSurface | null) => {
+    // 失败才记时刻，成功必须把旧时刻删掉：isExpired 只认时间戳、不看这一格现在装的是不是好色，
+    // 留着旧时刻等于把一份成功的色判成过期 —— 每过一个窗口白重下一张封面。
+    if (value == null) surfaceFailedAt.set(key, now())
+    else surfaceFailedAt.delete(key)
     if (!cache.has(key)) {
       cacheOrder.push(key)
       if (cacheOrder.length > CACHE_LIMIT) {
         const oldest = cacheOrder.shift()!
-        if (oldest !== key) cache.delete(oldest)
+        if (oldest !== key) {
+          cache.delete(oldest)
+          surfaceFailedAt.delete(oldest)
+        }
       }
     }
     cache.set(key, value)
@@ -90,6 +161,12 @@ export const createCoverPalette = (
 
   // 同上：async 只为过 lint。pending 里的原始 promise 仍是去重的那一条。
   const load = async(key: string, picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
+    // 失败的配色过保质期就整个摘掉，下面重新算（像素层那一格同样会在那一刻过期，见 fetchOnce）
+    if (isExpired(key, surfaceFailedAt)) {
+      cache.delete(key)
+      surfaceFailedAt.delete(key)
+      drop(cacheOrder, key)
+    }
     if (cache.has(key)) return cache.get(key)!
     const inFlight = pending.get(key)
     if (inFlight) return inFlight
@@ -97,8 +174,14 @@ export const createCoverPalette = (
     const task = (async() => {
       try {
         const pixels = await fetchOnce(picUrl)
-        const analysis = pixels == null ? null : analyzeArgbPixels(pixels.pixels)
-        return analysis == null ? null : buildCoverSurface(analysis.source, analysis.average, fontArgb)
+        const analysis = pixels == null ? null : analyzeArgbPixels(pixels)
+        if (analysis == null) return null
+        // 具名而不是三个位置参数：average 与 highlight 传反不报错，只会让闸门悄悄变乐观
+        return buildCoverSurface({
+          sourceArgb: analysis.source,
+          averageArgb: analysis.average,
+          highlightArgb: analysis.highlight,
+        }, fontArgb)
       } catch {
         return null
       } finally {
@@ -119,8 +202,9 @@ export const createCoverPalette = (
         if (surface == null) return null
         const source = await fetchOnce(picUrl)
         if (source == null) return null
-        // 色阶带来自同一次配色：带内每一档都已过对比度校验，纹理只在这个区间里摆明度
-        return await buildTexture({ source, band: surface.band, outWidth, outHeight: TEXTURE_OUT_HEIGHT })
+        // 色阶带与那一支颜色来自同一次配色：带内每一档都已过对比度校验，纹理只在这个区间里摆明暗
+        if (surface.band == null) return null
+        return await buildTexture({ source, band: surface.band, tint: surface.tint, outWidth, outHeight: TEXTURE_OUT_HEIGHT })
       } catch {
         return null
       }
@@ -143,7 +227,7 @@ export const createCoverPalette = (
       const gen = generation
       return load(key, picUrl, fontArgb).then(surface => {
         // 还在同一代里才写回：翻开关 clearCache() 之后才到达的旧判定（多半是 null）必须丢掉，
-        // 否则那次失败会重新占住这个 key，把「翻开关重试」这条唯一的出口一起废掉。
+        // 否则它会立刻把刚清空的这一格重新占住，自愈（NEGATIVE_TTL_MS）和翻开关两条出口一起被压住。
         if (gen === generation) remember(key, surface)
         return surface
       })
@@ -164,8 +248,10 @@ export const createCoverPalette = (
       generation++
       pixelCache.clear()
       pixelOrder.length = 0
+      pixelFailedAt.clear()
       cache.clear()
       cacheOrder.length = 0
+      surfaceFailedAt.clear()
       pending.clear()
       textureCache.clear()
       textureOrder.length = 0

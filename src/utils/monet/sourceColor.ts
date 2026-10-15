@@ -1,5 +1,6 @@
 import { QuantizerCelebi } from '@material/material-color-utilities/quantize/quantizer_celebi.js'
 import { Score } from '@material/material-color-utilities/score/score.js'
+import { Hct } from '@material/material-color-utilities/hct/hct.js'
 import { argbFromRgb } from '@material/material-color-utilities/utils/color_utils.js'
 
 export const QUANTIZE_COLORS = 128
@@ -62,14 +63,69 @@ export interface CoverPixels {
 export interface CoverAnalysis {
   /** Monet 源色：色度加权后的"最丰富颜色" */
   source: number
-  /** 全图平均色：用来估封面透出后的明度漂移 */
+  /** 全图平均色：只用来估整张封面的彩度（洗色有多浓） */
   average: number
+  /** 最亮局部块的平均色：蒙版与前景闸门核的是它，不是全图平均色（见 BLOCK_GRID 那条注释） */
+  highlight: number
 }
 
-export const analyzeArgbPixels = (pixels: number[]): CoverAnalysis | null => {
+/** 分块网格数：blurRadius=90 会把单像素极值抹平，剩下的起伏尺度就是"十六分之一屏宽的那一块"，
+ *  所以判"封面透出来多少"要按块均色取最亮块。实测三张夹具的最亮块比全图平均亮 25~41 个 L*，
+ *  按平均色算的闸门对亮封面是系统性乐观的（白字 5.59 算过闸、实际 4.29 破线）。 */
+export const BLOCK_GRID = 8
+
+const blockHighlightArgb = (pixels: number[], width: number, height: number): number | null => {
+  const cellW = width / BLOCK_GRID
+  const cellH = height / BLOCK_GRID
+  let best: number | null = null
+  let bestTone = -Infinity
+  for (let by = 0; by < BLOCK_GRID; by++) {
+    for (let bx = 0; bx < BLOCK_GRID; bx++) {
+      // 行列数不整除时边缘块会窄一点，用四舍五入的整数边界，块间不重叠也不漏采样
+      const x0 = Math.round(bx * cellW)
+      const x1 = Math.max(x0 + 1, Math.round((bx + 1) * cellW))
+      const y0 = Math.round(by * cellH)
+      const y1 = Math.max(y0 + 1, Math.round((by + 1) * cellH))
+      let sumR = 0
+      let sumG = 0
+      let sumB = 0
+      let count = 0
+      for (let y = y0; y < Math.min(y1, height); y++) {
+        for (let x = x0; x < Math.min(x1, width); x++) {
+          const argb = pixels[y * width + x] >>> 0
+          if ((argb >>> 24) < 255) continue
+          sumR += (argb >> 16) & 0xff
+          sumG += (argb >> 8) & 0xff
+          sumB += argb & 0xff
+          count += 1
+        }
+      }
+      if (!count) continue
+      const argb = argbFromRgb(
+        Math.round(sumR / count),
+        Math.round(sumG / count),
+        Math.round(sumB / count),
+      ) >>> 0
+      const tone = Hct.fromInt(argb).tone
+      if (tone > bestTone) {
+        bestTone = tone
+        best = argb
+      }
+    }
+  }
+  return best
+}
+
+export const analyzeArgbPixels = (cover: CoverPixels | null | undefined): CoverAnalysis | null => {
+  const pixels = cover?.pixels
   // 入参来自 RN 原生桥，是个真实边界：`!pixels?.length` 会放过 { length: 3 } 这类 array-like，
   // 然后 `for (const pixel of pixels)` 直接抛 TypeError —— 文档承诺的是"非法输入返回 null"，就得真做到。
   if (!Array.isArray(pixels) || pixels.length === 0) return null
+  const width = cover!.width
+  const height = cover!.height
+  // 分块按行主序索引，行宽错了就会跨行取样（出来的"最亮块"是花屏不是亮度），所以不自洽直接判失败。
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) return null
+  if (pixels.length !== width * height) return null
   const opaque: number[] = []
   let sumR = 0
   let sumG = 0
@@ -90,6 +146,11 @@ export const analyzeArgbPixels = (pixels: number[]): CoverAnalysis | null => {
     Math.round(sumB / opaque.length),
   ) >>> 0
 
+  // 极扁的图（如 32×2 长条，cellH=0.25）里每一块都可能采不到像素，此时回落到平均色：
+  // 少了这条回落，null 会一路传到 buildCoverSurface 的 isUsableArgb 守卫，整条取色被判死。
+  // 见 tests/monet-source-color.mts 的"空块与回落"用例。
+  const highlight = blockHighlightArgb(pixels, width, height) ?? average
+
   // 实测：Score.score 返回 number[]（不是 Map），且**永远至少给一个**：色度 < 5 的被
   // CUTOFF_CHROMA 全滤掉时（纯灰/近灰封面）它返回内置兜底色 Google Blue 0xFF4285F4，
   // 而不是空数组。灰封面被涂成蓝色是错的，所以用官方 options 把兜底色换成封面平均色。
@@ -98,5 +159,5 @@ export const analyzeArgbPixels = (pixels: number[]): CoverAnalysis | null => {
   )
   const source = ranked[0] >>> 0
 
-  return { source, average }
+  return { source, average, highlight }
 }

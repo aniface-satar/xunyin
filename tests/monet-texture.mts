@@ -5,23 +5,31 @@ import { Contrast } from '@material/material-color-utilities/contrast/contrast.j
 import { Hct } from '@material/material-color-utilities/hct/hct.js'
 
 import {
-  CHROMA_FLOOR,
-  COVER_SPAN_REF,
-  COVER_WEIGHT,
+  CALM_END_V,
+  CALM_START_V,
+  COVER_CHROMA_RATIO,
+  LIFT_MAX,
   MARBLE_FREQ,
+  TEXTURE_CHROMA_MAX,
   TEXTURE_OUT_HEIGHT,
   TEXTURE_OUT_WIDTH_MAX,
   TEXTURE_ROWS_PER_CHUNK,
+  TEXT_SPREAD_MAX,
+  TEXT_TOP_V,
   WARP_STRENGTH,
   buildTextureRgba,
   textureWidthFor,
 } from '../src/utils/monet/texture.ts'
-import { CHROMA_CAP, MIN_CONTRAST, parseCssColor } from '../src/utils/monet/surface.ts'
+import { CHROMA_CAP, MIN_CONTRAST, ON_COVER_FONT, TEXTURE_ANCHOR_TONE, buildCoverSurface, buildToneBand, parseCssColor } from '../src/utils/monet/surface.ts'
 
 const LIGHT_FONT = parseCssColor('rgb(66,66,66)')!
-const DARK_FONT = parseCssColor('rgb(219,219,219)')!
-const BAND_LIGHT = { lo: 72, hi: 100 }
-const BAND_DARK = { lo: 0, hi: 36 }
+const ORANGE = 0xFFE8551F
+// 带不再自己编：就用 buildCoverSurface / buildToneBand 真正交出去那两条，纹理与闸门两层要能对上。
+const BAND_LIGHT = buildCoverSurface({ sourceArgb: ORANGE, averageArgb: ORANGE, highlightArgb: ORANGE }, LIGHT_FONT)!.band!
+const BAND_ON_COVER = buildToneBand(Hct.from(Hct.fromInt(ORANGE).hue, 12, TEXTURE_ANCHOR_TONE).toInt() >>> 0, ON_COVER_FONT)!
+// buildCoverSurface 现在会把整片背景共用的那一支颜色一起交给纹理（色相取源色、彩度已按封面平均色定过）。
+// 这里给的是合成夹具的固定值，纹理只认它，不再自己从 source 猜色相。
+const TINT = { hue: Hct.fromInt(ORANGE).hue, chroma: 12 }
 
 // 与真机那张专辑同构的假封面：左上暗、右下亮、中间一道暖色带，保证有"结构"可跟
 const cover = (w = 32, h = 32) => {
@@ -48,34 +56,44 @@ const argbToRgb = (argb: number) => [(argb >> 16) & 255, (argb >> 8) & 255, argb
 const fontRgb = (argb: number) => argbToRgb(argb >>> 0)
 
 test('同一份输入两次生成逐字节相同（纹理绝不能跟着重绘变样）', async() => {
-  const req = { source: cover(), band: BAND_LIGHT, outWidth: 16, outHeight: 36 }
+  const req = { source: cover(), band: BAND_LIGHT, tint: TINT, outWidth: 16, outHeight: 36 }
   assert.deepEqual(Array.from(await buildTextureRgba(req)), Array.from(await buildTextureRgba(req)))
 })
 
-test('每个 texel 都落在合法色阶带里（允许色域夹断的 tolerance）', async() => {
-  const band = BAND_LIGHT
-  const rgba = await buildTextureRgba({ source: cover(), band, outWidth: 16, outHeight: 36 })
-  const tones: number[] = []
-  for (let i = 0; i < rgba.length; i += 4) {
-    const tone = Hct.fromInt((0xff << 24 | rgba[i] << 16 | rgba[i + 1] << 8 | rgba[i + 2]) >>> 0).tone
-    assert.ok(tone >= band.lo - 1.5 && tone <= band.hi + 1.5, `tone ${tone} 越界（带 ${band.lo}~${band.hi}）`)
-    tones.push(tone)
+// 这条是红的，而且是故意的：纹理支已经从界面摘下（纯色方案恢复），但它现在越顶。
+// 实测（带 = buildCoverSurface 真正交出的 [72,88]）：正文区 tone 80.86~89.84，比上沿多出 1.84；
+// 换白墨那条带 [36,49] 时正文区到 50.77，对纯白字只剩 4.362 < 4.5。
+// texture.ts 里 LIFT_MAX 的注释说"闸门钉在正文区所以 4.5 不受影响"，代码没做到。
+// 等纹理方向定了要么把正文区夹回 band.hi，要么整条删掉；在此之前别把它改成绿。
+test('正文区必须钉在色阶带上沿以下（lift 区另计）', async() => {
+  for (const [band, outHeight] of [[BAND_LIGHT, 36], [BAND_ON_COVER, 36]] as [typeof BAND_LIGHT, number][]) {
+    const rgba = await buildTextureRgba({ source: cover(), band, tint: TINT, outWidth: 16, outHeight })
+    const tones: number[] = []
+    for (let y = 0; y < outHeight; y++) {
+      for (let x = 0; x < 16; x++) {
+        const o = (y * 16 + x) * 4
+        const tone = Hct.fromInt((0xff << 24 | rgba[o] << 16 | rgba[o + 1] << 8 | rgba[o + 2]) >>> 0).tone
+        if ((y + 0.5) / outHeight < TEXT_TOP_V) {
+          // lift 区按它自己的账：允许比带上沿最亮 LIFT_MAX，且不许越出 tone 域
+          assert.ok(tone <= band.hi + LIFT_MAX + 1.5 && tone <= 100, `lift 区 tone ${tone.toFixed(2)} 越出带 + 提亮量`)
+        } else {
+          assert.ok(tone >= band.lo - 1.5 && tone <= band.hi + 1.5, `正文区 tone ${tone.toFixed(2)} 越界（带 ${band.lo}~${band.hi}）`)
+        }
+        tones.push(tone)
+      }
+    }
+    // 量 p5~p95 而不是 min/max：去掉混合后那次秩归一，两端各剩几个 texel 照样顶到带边，只有中段塌（实测 90% → 65%）
+    tones.sort((a, b) => a - b)
+    const spread = tones[Math.floor(tones.length * 0.95)] - tones[Math.floor(tones.length * 0.05)]
+    assert.ok(spread >= (band.hi - band.lo) * 0.8, `p5~p95 只有 ${spread.toFixed(1)}，没吃满合法带 ${band.hi - band.lo}`)
   }
-  // 量 p5~p95 而不是 min/max：去掉混合后那次秩归一，两端各剩几个 texel 照样顶到带边，只有中段塌（实测 90% → 65%）
-  tones.sort((a, b) => a - b)
-  const spread = tones[Math.floor(tones.length * 0.95)] - tones[Math.floor(tones.length * 0.05)]
-  assert.ok(spread >= (band.hi - band.lo) * 0.8, `p5~p95 只有 ${spread.toFixed(1)}，没吃满合法带 ${(band.hi - band.lo)}`)
 })
 
-test('每个 texel 对字色的真实 WCAG 对比度都 >= 4.5（夹色域也算进去了）', async() => {
-  for (const [source, band, font] of [
-    [cover(), BAND_LIGHT, LIGHT_FONT],
-    [cover(), BAND_DARK, DARK_FONT],
-    [cover(128, 96), BAND_LIGHT, LIGHT_FONT],
-    [cover(96, 128), BAND_DARK, DARK_FONT],
-  ] as [ReturnType<typeof cover>, typeof BAND_LIGHT, number][]) {
-    const rgba = await buildTextureRgba({ source, band, outWidth: 16, outHeight: 36 })
-    const text = fontRgb(font)
+// 白墨那一对（BAND_ON_COVER）的破线原因和上一条同源（正文区越顶），红点只留一个信号，这里先不重复钉。
+test('纹理对字色的真实 WCAG 对比度都 >= 4.5（夹色域也算进去了）', async() => {
+  for (const source of [cover(), cover(128, 96)] as ReturnType<typeof cover>[]) {
+    const rgba = await buildTextureRgba({ source, band: BAND_LIGHT, tint: TINT, outWidth: 16, outHeight: 36 })
+    const text = fontRgb(LIGHT_FONT)
     let worst = Infinity
     for (let i = 0; i < rgba.length; i += 4) {
       worst = Math.min(worst, wcag([rgba[i], rgba[i + 1], rgba[i + 2]], text))
@@ -88,8 +106,8 @@ test('每个 texel 对字色的真实 WCAG 对比度都 >= 4.5（夹色域也算
 test('灰封面（彩度 0）不会自己染上色：每个 texel 的 RGB 三通道差 <= 1', async() => {
   for (const g of [0x10, 0x80, 0xF0]) {
     const gray = { pixels: new Array(64 * 64).fill((0xFF000000 | g << 16 | g << 8 | g) >>> 0), width: 64, height: 64 }
-    for (const band of [BAND_LIGHT, BAND_DARK]) {
-      const rgba = await buildTextureRgba({ source: gray, band, outWidth: 16, outHeight: 36 })
+    for (const band of [BAND_LIGHT, BAND_ON_COVER]) {
+      const rgba = await buildTextureRgba({ source: gray, band, tint: TINT, outWidth: 16, outHeight: 36 })
       for (let i = 0; i < rgba.length; i += 4) {
         const spread = Math.max(rgba[i], rgba[i + 1], rgba[i + 2]) - Math.min(rgba[i], rgba[i + 1], rgba[i + 2])
         assert.ok(spread <= 1, `灰 ${g} 带 ${JSON.stringify(band)}：texel ${rgba[i]},${rgba[i + 1]},${rgba[i + 2]} 染了色`)
@@ -98,8 +116,11 @@ test('灰封面（彩度 0）不会自己染上色：每个 texel 的 RGB 三通
   }
 })
 
-// 上黑下白、每一行都不同而第 0 行恒定：模糊若只读第 0 行，封面场就塌成常数，上下半区不再有明暗差
-test('封面的上下结构能穿过模糊进纹理（上半明显比下半暗）', async() => {
+// 旧判据是"封面的上下结构能穿过模糊进纹理（下半比上半亮）"。上一轮加了纵向提亮层之后这条方向反了：
+// 屏顶整段被抬上去（实测 98.9），正文区又被 CALM_*/TEXT_SPREAD_MAX 压平（上段 84.0 / 下段 84.1），
+// 封面自己的上下差已经没有落脚处。现在核的是这两层自己的账：顶部亮、正文区平。
+// "模糊确实读了整张封面而不是第 0 行"由上面吃满带宽那条 + 平封面/灰封面两条一起守着。
+test('屏顶被提亮层抬起，正文区保持平整好读字', async() => {
   const w = 32
   const h = 32
   const pixels: number[] = []
@@ -109,7 +130,7 @@ test('封面的上下结构能穿过模糊进纹理（上半明显比下半暗�
   }
   const outWidth = 16
   const outHeight = 36
-  const rgba = await buildTextureRgba({ source: { pixels, width: w, height: h }, band: BAND_LIGHT, outWidth, outHeight })
+  const rgba = await buildTextureRgba({ source: { pixels, width: w, height: h }, band: BAND_LIGHT, tint: TINT, outWidth, outHeight })
   const meanTone = (y0: number, y1: number) => {
     let sum = 0
     for (let y = y0; y < y1; y++) {
@@ -122,11 +143,15 @@ test('封面的上下结构能穿过模糊进纹理（上半明显比下半暗�
   }
   const top = meanTone(0, outHeight / 4)
   const bottom = meanTone(outHeight * 3 / 4, outHeight)
-  assert.ok(bottom - top >= 5, `上 ${top.toFixed(1)} / 下 ${bottom.toFixed(1)}：封面结构没进纹理`)
+  assert.ok(top - bottom >= 5, `上 ${top.toFixed(1)} / 下 ${bottom.toFixed(1)}：提亮层没起作用`)
+  const textStart = Math.round(outHeight * TEXT_TOP_V)
+  const half = Math.round((outHeight - textStart) / 2)
+  const spread = Math.abs(meanTone(textStart + half, outHeight) - meanTone(textStart, textStart + half))
+  assert.ok(spread <= TEXT_SPREAD_MAX, `正文区内上下段差 ${spread.toFixed(2)}，超过 ${TEXT_SPREAD_MAX} —— 字底下来回摆`)
 })
 
 test('1×1 退化封面不产 NaN，且 alpha 恒 255', async() => {
-  const rgba = await buildTextureRgba({ source: { pixels: [0xFFF3DC2F], width: 1, height: 1 }, band: BAND_LIGHT, outWidth: 16, outHeight: 36 })
+  const rgba = await buildTextureRgba({ source: { pixels: [0xFFF3DC2F], width: 1, height: 1 }, band: BAND_LIGHT, tint: TINT, outWidth: 16, outHeight: 36 })
   assert.equal(rgba.length, 16 * 36 * 4)
   for (let i = 0; i < rgba.length; i += 4) {
     assert.ok(Number.isFinite(rgba[i]) && Number.isFinite(rgba[i + 1]) && Number.isFinite(rgba[i + 2]), `第 ${i / 4} 个 texel 不是有限数`)
@@ -135,7 +160,7 @@ test('1×1 退化封面不产 NaN，且 alpha 恒 255', async() => {
 })
 
 test('分块让路不改变结果（yieldRows 只影响调度，不影响像素）', async() => {
-  const req = { source: cover(), band: BAND_LIGHT, outWidth: 17, outHeight: 33 }
+  const req = { source: cover(), band: BAND_LIGHT, tint: TINT, outWidth: 17, outHeight: 33 }
   let yields = 0
   const withYield = await buildTextureRgba(req, async() => {
     yields += 1
@@ -154,7 +179,10 @@ test('输出宽度按屏幕宽高比折算并钳在 [40, 200]', () => {
   assert.equal(textureWidthFor(2000, 800), 200)
 })
 
-test('红封面的纹理还是红色系，彩度不超封顶，且越暗的云团越饱和', async() => {
+// 莫奈式上色 = 同一支颜料摆明暗。上一轮把"彩度从封面自己猜 + 越暗越饱和"换成了 tint 统一供色，
+// 所以这里改成核"跟着 tint 走"：夹具故意用红封面配蓝 tint，输出必须是那支蓝（旧实现会跟着封面变红）。
+// 实测（outWidth 24 × 54）：平均色相偏移 1.2°、最大 3.3°，彩度均值 11.99、极差 1.01。
+test('纹理的色相与彩度跟 tint 走，不跟封面自己走', async() => {
   const w = 64
   const pixels: number[] = []
   for (let y = 0; y < w; y++) {
@@ -163,26 +191,28 @@ test('红封面的纹理还是红色系，彩度不超封顶，且越暗的云�
       pixels.push((0xff << 24 | v << 16 | 20 << 8 | 30) >>> 0)
     }
   }
-  const redHue = Hct.fromInt(0xFFC81E1E).hue
-  // 用中段色阶带而不是亮主题那条：tone 72~100 里红色的色域本身就随明度收窄，
-  // 彩度斜坡反过来也看不出来；40~66 里红色能给到远超 CHROMA_CAP 的彩度，斜坡和封顶都只能靠实现自己
-  const rgba = await buildTextureRgba({ source: { pixels, width: w, height: w }, band: { lo: 40, hi: 66 }, outWidth: 24, outHeight: 54 })
-  const rows: { tone: number; chroma: number }[] = []
-  let hueOff = 0
+  const tint = { hue: Hct.fromInt(0xFF1E4FC8).hue, chroma: 12 }
+  const hueOff = (a: number, b: number) => {
+    const d = Math.abs(a - b) % 360
+    return Math.min(d, 360 - d)
+  }
+  const rgba = await buildTextureRgba({ source: { pixels, width: w, height: w }, band: { lo: 40, hi: 66 }, tint, outWidth: 24, outHeight: 54 })
+  let sum = 0
+  let worst = 0
+  const chroma: number[] = []
   for (let i = 0; i < rgba.length; i += 4) {
     const hct = Hct.fromInt((0xff << 24 | rgba[i] << 16 | rgba[i + 1] << 8 | rgba[i + 2]) >>> 0)
-    const d = Math.abs(hct.hue - redHue) % 360
-    hueOff += Math.min(d, 360 - d)
-    rows.push({ tone: hct.tone, chroma: hct.chroma })
-    assert.ok(hct.chroma <= CHROMA_CAP + 2, `彩度 ${hct.chroma.toFixed(1)} 冲破封顶 ${CHROMA_CAP}`)
+    const d = hueOff(hct.hue, tint.hue)
+    sum += d
+    worst = Math.max(worst, d)
+    chroma.push(hct.chroma)
+    assert.ok(hct.chroma <= Math.min(CHROMA_CAP, TEXTURE_CHROMA_MAX) + 2, `彩度 ${hct.chroma.toFixed(1)} 冲破封顶`)
   }
-  assert.ok(hueOff / rows.length < 25, `平均色相偏了 ${(hueOff / rows.length).toFixed(1)}°`)
-  rows.sort((a, b) => a.tone - b.tone)
-  const third = Math.floor(rows.length / 3)
-  const mean = (xs: typeof rows) => xs.reduce((s, r) => s + r.chroma, 0) / xs.length
-  const darkChroma = mean(rows.slice(0, third))
-  const lightChroma = mean(rows.slice(-third))
-  assert.ok(darkChroma > lightChroma * 1.5, `暗部彩度 ${darkChroma.toFixed(1)} 没明显高于亮部 ${lightChroma.toFixed(1)}`)
+  const n = chroma.length
+  assert.ok(sum / n < 8, `平均色相偏了 ${(sum / n).toFixed(1)}°，纹理没照 tint 上彩`)
+  assert.ok(worst < 12, `最偏的 texel 差 ${worst.toFixed(1)}°，已经看得出第二支颜色`)
+  const mean = chroma.reduce((s, c) => s + c, 0) / n
+  assert.ok(Math.max(...chroma) - Math.min(...chroma) < 3 && Math.abs(mean - tint.chroma) < 2, `彩度散成 ${Math.min(...chroma).toFixed(1)}~${Math.max(...chroma).toFixed(1)}（tint 给的是 ${tint.chroma}）`)
 })
 
 test('几乎是平的封面（暗角、底噪）不出硬边和白点：相邻 texel 的 RGB 跳变有上限', async() => {
@@ -200,7 +230,7 @@ test('几乎是平的封面（暗角、底噪）不出硬边和白点：相邻 t
   for (const [name, pixels] of [['底噪 ±3', noisy], ['暗角 4 级', vignette]] as const) {
     const W = 132
     const H = TEXTURE_OUT_HEIGHT
-    const o = await buildTextureRgba({ source: { pixels, width: 128, height: 128 }, band: BAND_LIGHT, outWidth: W, outHeight: H })
+    const o = await buildTextureRgba({ source: { pixels, width: 128, height: 128 }, band: BAND_LIGHT, tint: TINT, outWidth: W, outHeight: H })
     let worst = 0
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
@@ -217,10 +247,16 @@ test('几乎是平的封面（暗角、底噪）不出硬边和白点：相邻 t
 })
 
 test('算法常量的取值有实测出处，改动要连 spec 一起（防止有人顺手调着玩）', () => {
-  assert.equal(MARBLE_FREQ, 7)
-  assert.equal(WARP_STRENGTH, 0.12)
-  assert.equal(COVER_WEIGHT, 0.45)
-  assert.equal(CHROMA_FLOOR, 0.35)
-  assert.equal(COVER_SPAN_REF, 12)
+  // 数值全部来自 2026-10-15 那轮"对齐参考图"的实测（spec §7.6）：
+  // 参考图去纵向色阶后局部起伏 11~17 色阶 → 摆幅收窄靠 MARBLE_RELIEF/CALM_* 这组，
+  // 柔光顶到 TEXT_TOP_V 以下、提亮封顶 LIFT_MAX，彩度由封面平均色按 COVER_CHROMA_RATIO 供。
+  assert.equal(MARBLE_FREQ, 6)
+  assert.equal(WARP_STRENGTH, 0.07)
+  assert.equal(COVER_CHROMA_RATIO, 0.55)
+  assert.equal(TEXTURE_CHROMA_MAX, 26)
+  assert.equal(CALM_START_V, 0.45)
+  assert.equal(CALM_END_V, 0.72)
+  assert.equal(TEXT_TOP_V, 0.5)
+  assert.equal(LIFT_MAX, 20)
   assert.equal(TEXTURE_OUT_HEIGHT, 294)
 })

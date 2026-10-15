@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { PIXEL_LIMIT, TEXTURE_LIMIT, createCoverPalette } from '../src/utils/monet/coverPalette.ts'
+import { NEGATIVE_TTL_MS, PIXEL_LIMIT, TEXTURE_LIMIT, createCoverPalette } from '../src/utils/monet/coverPalette.ts'
+import { ON_COVER_FONT_CSS, SCRIM_MAX, SCRIM_MIN } from '../src/utils/monet/surface.ts'
 import type { CoverPixels } from '../src/utils/monet/sourceColor.ts'
 import { TEXTURE_OUT_HEIGHT, type TextureRequest } from '../src/utils/monet/texture.ts'
 const GRAY = 0xFF808080
@@ -15,7 +16,7 @@ test('正常路径：返回亮主题高 tone 底色 + 合法 scrim', async() => 
   const { getCoverSurface } = createCoverPalette(async() => pixels(RED), TEXTURE)
   const surface = await getCoverSurface('https://example.com/a.jpg', LIGHT_FONT)
   assert.ok(surface)
-  assert.ok(surface!.scrimAlpha >= 0.45 && surface!.scrimAlpha <= 0.9)
+  assert.ok(surface!.scrimAlpha >= SCRIM_MIN && surface!.scrimAlpha <= SCRIM_MAX)
   assert.match(surface!.base, /^rgb\(\d+, \d+, \d+\)$/)
 })
 
@@ -47,7 +48,7 @@ test('并发调用合并成一次网络取色', async() => {
   assert.ok(a && b && c)
 })
 
-test('取色失败（null 像素）→ 返回 null 且被缓存，不再反复重试', async() => {
+test('取色失败（null 像素）→ 返回 null 且被缓存，窗口内不再反复重试', async() => {
   let calls = 0
   const { getCoverSurface } = createCoverPalette(async() => {
     calls += 1
@@ -56,6 +57,38 @@ test('取色失败（null 像素）→ 返回 null 且被缓存，不再反复�
   assert.equal(await getCoverSurface('https://example.com/bad.jpg', LIGHT_FONT), null)
   assert.equal(await getCoverSurface('https://example.com/bad.jpg', LIGHT_FONT), null)
   assert.equal(calls, 1)
+})
+
+// 2026-10-15 真机缺陷：上面那条"失败也缓存"没有期限，于是原生一次瞬时超时（移动网络下很常见）
+// 就让这首歌整场会话不上色，用户唯一的出口是去设置里翻"动态背景"开关。
+// 现在失败只压一个冷却窗口：窗口内不重复问（第 4 条用例钉的仍是这件事），过窗后必须能自愈。
+test('失败只在冷却窗口内压住，不永久封杀', async() => {
+  let calls = 0
+  let now = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    return null
+  }, TEXTURE, () => now)
+  assert.equal(await getCoverSurface('https://example.com/bad.jpg', LIGHT_FONT), null)
+  now = NEGATIVE_TTL_MS - 1
+  assert.equal(await getCoverSurface('https://example.com/bad.jpg', LIGHT_FONT), null)
+  assert.equal(calls, 1)
+})
+
+test('过冷却窗口再要同一张封面：重新问原生，并且这次拿得到真色（自愈）', async() => {
+  let calls = 0
+  let now = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    // 第一次模拟瞬时失败，第二次网络恢复
+    return calls === 1 ? null : pixels(RED)
+  }, TEXTURE, () => now)
+  assert.equal(await getCoverSurface('https://example.com/flaky.jpg', LIGHT_FONT), null)
+  now = NEGATIVE_TTL_MS
+  const healed = await getCoverSurface('https://example.com/flaky.jpg', LIGHT_FONT)
+  assert.equal(calls, 2)
+  assert.ok(healed, '网络恢复后必须能自己上色，不该等用户翻开关')
+  assert.match(healed!.base, /^rgb\(\d+, \d+, \d+\)$/)
 })
 
 test('空 url / 非法字体色直接 null，不碰原生', async() => {
@@ -225,15 +258,36 @@ test('输出宽度不同就是两张图，不能复用（折叠屏展开、分�
   assert.notEqual(wide, narrow)
 })
 
-test('暗/亮主题各自一张：字色变了色阶带就变了，纹理不能共用', async() => {
+// 两支都能算出色阶带的字色：带不同 → 纹理各自一张。
+// 注意这里不能用 DARK_FONT（内置暗主题那支中灰字色）：它的带现在是 null，
+// 纹理支会在闸门处直接不生成（这是纯色方案恢复后的既定行为，见 monet-surface 的"带塌了也不牵连纯色背景"）。
+test('两种字色各自一张：带变了纹理就不能共用', async() => {
   let builds = 0
   const { getCoverTexture } = createCoverPalette(async() => pixels(RED), async() => {
     builds += 1
     return `data:image/png;base64,${builds}`
   })
   await getCoverTexture('https://example.com/a.jpg', LIGHT_FONT, 132)
-  await getCoverTexture('https://example.com/a.jpg', DARK_FONT, 132)
+  await getCoverTexture('https://example.com/a.jpg', ON_COVER_FONT_CSS, 132)
   assert.equal(builds, 2)
+})
+
+test('字色的带塌了（内置暗主题那支中灰墨）：纯色底照旧，纹理一支都不生成', async() => {
+  let builds = 0
+  let pixelsCalls = 0
+  const { getCoverTexture, getCoverSurface } = createCoverPalette(async() => {
+    pixelsCalls += 1
+    return pixels(RED)
+  }, async() => {
+    builds += 1
+    return 'data:image/png;base64,AAAA'
+  })
+  const surface = await getCoverSurface('https://example.com/a.jpg', DARK_FONT)
+  assert.ok(surface != null && surface.band == null)
+  assert.equal(await getCoverTexture('https://example.com/a.jpg', DARK_FONT, 132), null)
+  assert.equal(builds, 0)
+  // 像素按 url 只问原生一次：纹理支那一路命中 pixelCache（连 fetchPixels 都不该重跑，更不该重下封面）
+  assert.equal(pixelsCalls, 1)
 })
 
 test('取色失败时绝不跑纹理生成', async() => {
