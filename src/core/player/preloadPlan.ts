@@ -19,8 +19,11 @@ export interface PreloadFlags {
   /** 取色那一步单独受它管，别把整条预热带过去 */
   dynamicBg: boolean
   audioTier: PreloadAudioTier
-  /** `parseInt(player.cacheSize) > 0` 为假时不开：播放器手里没有 SimpleCache，下字节无处可写 */
-  cacheEnabled: boolean
+  /** 播放器那份 SimpleCache 的容量，字节（`player.cacheSize` 的单位是 MB，换算见 preloadNextMusic.ts）。
+   *  两道都要过才发音频字节：`<= 0` 时 LocalPlayback 根本不建 cache（cache == null），下字节无处可写；
+   *  `> 0` 但装不下 `AUDIO_HEAD_BYTES` 时更要命 —— LRU 淘汰会把*正在播的那首*的片段挤出去，
+   *  预热反而拖垮播放，这是 spec 禁止的失效方向，所以判据是"装得下前缀"而不是"大于 0"。 */
+  cacheBytes: number
 }
 
 export interface PreloadPlanInput {
@@ -68,9 +71,11 @@ export const buildPreloadPlan = (input: PreloadPlanInput): PreloadPlan => {
   // 取色要等 pic 的结果：配色层的缓存键是 `picUrl|fontArgb`，没有 url 就没有这一步
   if (input.flags.dynamicBg && input.hasPicUrl && !input.done.palette) steps.push('palette')
   if (input.targetIsOnline && input.hasPicUrl && !input.done.coverBytes) steps.push('coverBytes')
+  // 容量这道门限 head 与 full 共用：连 8MB 前缀都装不下的缓存更装不下整首，
+  // 而 full 档（maxBytes<=0 → LENGTH_UNSET）没有上限兜底，挤掉的只能是正在播的那首 —— 宁可这步不发。
   if (input.targetIsOnline &&
     input.flags.audioTier !== 'off' &&
-    input.flags.cacheEnabled &&
+    input.flags.cacheBytes >= AUDIO_HEAD_BYTES &&
     input.resolvedAge >= AUDIO_DELAY_SECONDS &&
     !input.done.audio) steps.push('audio')
 

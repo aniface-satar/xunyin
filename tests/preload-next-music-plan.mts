@@ -12,7 +12,8 @@ import {
   type PreloadStep,
 } from '../src/core/player/preloadPlan.ts'
 
-const FLAGS = { preloadNextMusic: true, dynamicBg: true, audioTier: 'head' as const, cacheEnabled: true }
+// cacheBytes 给 1GB（默认 player.cacheSize='1024' 换算出来的字节数），远大于 8MB 前缀；只有钉门限的那两个用例动它
+const FLAGS = { preloadNextMusic: true, dynamicBg: true, audioTier: 'head' as const, cacheBytes: 1024 * 1024 * 1024 }
 const NO_DONE: Record<PreloadStep, boolean> = { pic: false, lyric: false, palette: false, coverBytes: false, audio: false }
 
 /** 默认输入：播到 50s / 共 60s（剩 10s，落在 60s 门限内），下一首已解析、还没有封面 URL、解析刚完成。 */
@@ -91,9 +92,26 @@ test('audio 要等解析完成后满 3s 才发（给连点下一首留反悔窗�
 
 test('audio 三种关闭情形：档位 off / 缓存 0 / 非在线曲，各自只少 audio 一步', () => {
   assert.equal(buildPreloadPlan(input({ hasPicUrl: true, resolvedAge: 5, flags: { ...FLAGS, audioTier: 'off' } })).steps.includes('audio'), false)
-  assert.equal(buildPreloadPlan(input({ hasPicUrl: true, resolvedAge: 5, flags: { ...FLAGS, cacheEnabled: false } })).steps.includes('audio'), false)
-  const off = buildPreloadPlan(input({ hasPicUrl: true, resolvedAge: 5, flags: { ...FLAGS, cacheEnabled: false } }))
+  assert.equal(buildPreloadPlan(input({ hasPicUrl: true, resolvedAge: 5, flags: { ...FLAGS, cacheBytes: 0 } })).steps.includes('audio'), false)
+  const off = buildPreloadPlan(input({ hasPicUrl: true, resolvedAge: 5, flags: { ...FLAGS, cacheBytes: 0 } }))
   assert.deepEqual(off.steps, ['pic', 'lyric', 'palette', 'coverBytes'])
+})
+
+test('缓存装不下 8MB 前缀（6MB）：只少 audio 一步，其余照发；head 与 full 共用这道门限', () => {
+  const smallCache = { ...FLAGS, cacheBytes: 6 * 1024 * 1024 }
+  const head = buildPreloadPlan(input({ hasPicUrl: true, resolvedAge: 5, flags: smallCache }))
+  assert.equal(head.steps.includes('audio'), false)
+  assert.deepEqual(head.steps, ['pic', 'lyric', 'palette', 'coverBytes'])
+  // full 档（audioMaxBytes 为 0 → 原生按 LENGTH_UNSET 下整首）没有上限兜底，被挤掉的只能是正在播那首，
+  // 所以它受的是同一个下限，而不是"反正能装多少算多少"
+  const full = buildPreloadPlan(input({ hasPicUrl: true, resolvedAge: 5, flags: { ...smallCache, audioTier: 'full' } }))
+  assert.equal(full.steps.includes('audio'), false)
+  assert.deepEqual(full.steps, ['pic', 'lyric', 'palette', 'coverBytes'])
+})
+
+test('缓存恰好等于 AUDIO_HEAD_BYTES 时 audio 这一步要发（门限含等号，别让 8MB 缓存白置）', () => {
+  const exact = buildPreloadPlan(input({ hasPicUrl: true, resolvedAge: 5, flags: { ...FLAGS, cacheBytes: AUDIO_HEAD_BYTES } }))
+  assert.deepEqual(exact.steps, ['pic', 'lyric', 'palette', 'coverBytes', 'audio'])
 })
 
 test('preloadNextMusic=false 时五步全不发、也不解析', () => {

@@ -5,7 +5,7 @@ import settingState from '@/store/setting/state'
 import { isCached, cacheTrack, cancelCacheTrack } from '@/plugins/player/utils'
 import { getCoverSurface } from '@/utils/monet'
 import { ON_COVER_FONT_CSS } from '@/utils/monet/surface'
-import { buildPreloadPlan, audioMaxBytes, type PreloadStep } from '@/core/player/preloadPlan'
+import { buildPreloadPlan, audioMaxBytes, AUDIO_HEAD_BYTES, type PreloadStep } from '@/core/player/preloadPlan'
 import { prefetchCoverImage } from '@/utils/nativeModules/palette'
 import { defaultHeaders } from '@/components/common/Image'
 // 与播放路径同一个 UA（playList.ts:14 那条常量就是给 TrackPlayer 填 userAgent 用的那个值）：
@@ -61,10 +61,11 @@ const flags = () => ({
   preloadNextMusic: settingState.setting['player.preloadNextMusic'],
   dynamicBg: settingState.setting['theme.dynamicBg'],
   audioTier: settingState.setting['player.preloadNextMusicAudio'],
-  // 与 core/player/player.ts:248 同式：那个设置项是字符串，空串也会算成 0，
-  // 而 maxCacheSize <= 0 时 LocalPlayback 根本不建 SimpleCache（cache == null），
-  // 字节下下去没地方写，只能整条禁用音频字节这步。
-  cacheEnabled: parseInt(settingState.setting['player.cacheSize'] || '0') > 0,
+  // 单位是 MB：默认 '1024'（src/config/defaultSetting.ts:23），core/player/player.ts:248 按 MB parseInt，
+  // 原生（MusicManager.java:131 再乘 1024）最后拿到的正是 MB * 1024 * 1024 字节，所以这里换成字节喂给纯表。
+  // 判据不再是"大于 0"：`<= 0` 时 LocalPlayback 不建 SimpleCache（cache == null）字节没处写，
+  // 装不下 8MB 前缀时 LRU 会把正在播那首的片段挤掉 —— 预热反过来拖垮播放。`|| '0'` 保住空串算 0 的旧行为。
+  cacheBytes: parseInt(settingState.setting['player.cacheSize'] || '0') * 1024 * 1024,
 })
 
 const resolveTarget = async() => {
@@ -150,9 +151,10 @@ const runStep = async(step: PreloadStep) => {
         const url = await warmAudio(target)
         if (!url || generation !== state.generation) return
         // 档位翻动走的是 bump()，上面那道代数比对就拦下了，这次重读管不着它；
-        // 真正靠这一次的是 player.cacheSize —— 它不在 bump 名单里，只有这一刻重读才知道缓存是不是被清成了 0。
+        // 真正靠这一次的是 player.cacheSize —— 它不在 bump 名单里，只有这一刻重读才知道缓存是不是被清成 0、
+        // 或者被改小到装不下那道 8MB 前缀（判据与纯表同一个，见 preloadPlan.ts 的 cacheBytes）。
         const currentFlags = flags()
-        if (currentFlags.audioTier === 'off' || !currentFlags.cacheEnabled) return
+        if (currentFlags.audioTier === 'off' || currentFlags.cacheBytes < AUDIO_HEAD_BYTES) return
         state.audioToken = `${target.musicInfo.id}|${generation}`
         await cacheTrack(url, { 'User-Agent': defaultUserAgent }, audioMaxBytes(currentFlags.audioTier), state.audioToken)
         break

@@ -1,6 +1,7 @@
 // 这一层只放纯判断：除了下面这个会被 Node 擦掉的类型 import，本文件不许有任何运行时依赖，
 // 这样 `node --test` 才能直接加载它，把这张决策表当单元测试跑。
-// `useCoverSurface` 是它唯一的调用方。PlayerOverlay（APK 反编译文件）不许 import 这里，
+// 调用方只有 `coverBackdropStore`（那里两处 resolveCoverBackdrop）；`useCoverSurface` 只从这里取
+// `CoverBackdropState` 那个类型，不调用判据。PlayerOverlay（APK 反编译文件）不许 import 这里，
 // 它自己那句 `hasBackdropImage ||` 是冗余判断而不是第二套规则。
 import type { CoverSurface } from './surface.ts'
 
