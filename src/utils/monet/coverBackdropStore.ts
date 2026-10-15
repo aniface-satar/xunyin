@@ -6,8 +6,10 @@
 //
 // 决策表本身仍在 backdropGate.ts（那张表能用 node --test 直接跑）；"这张封面问过没有"的账
 // 在 attemptLedger.ts（同样能用 node --test 跑）。这个文件带原生桥依赖，单测加载不了，
-// 所以不往里加任何判断，只加订阅、在途调度和一条自愈的重试定时器。
-import { resolveCoverBackdrop, type CoverBackdropState } from './backdropGate'
+// 所以不往里加任何判断，只加订阅、在途调度和两条定时器（自愈重试、宽限到期）。
+// 两条定时器都不自己决定留哪一层：回调一律重新调 updateCoverBackdrop，让表按"当下"再判一次，
+// 于是加在表里的判据不会在这里长出第二个版本。
+import { resolveCoverBackdrop, COVER_BACKDROP_GRACE_MS, type CoverBackdropState, type CoverBackdropStale } from './backdropGate'
 import { getCoverSurface } from './index'
 import { ON_COVER_FONT_CSS } from './surface'
 import { createAttemptLedger } from './attemptLedger'
@@ -30,6 +32,15 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null
 const clearRetry = () => {
   if (retryTimer != null) clearTimeout(retryTimer)
   retryTimer = null
+}
+
+// 换到当前这首歌的时刻（ms）。宽限期从它起算，判据由表算，这里只管时钟。
+let switchedAt = 0
+let graceTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearGrace = () => {
+  if (graceTimer != null) clearTimeout(graceTimer)
+  graceTimer = null
 }
 
 export const getCoverBackdropState = () => state
@@ -110,19 +121,35 @@ const arm = (url: string | null, next: CoverBackdropState) => {
  */
 export function updateCoverBackdrop(dynamicBg: boolean, hasThemeBgImage: boolean, pic: string | null | undefined) {
   const url = pic ?? null
+  if (url !== inputs.pic) switchedAt = Date.now()
   inputs = { dynamicBg, hasThemeBgImage, pic: url }
   // 手里那份色只在该它属于这张封面时才交进去：换歌瞬间不交，决策表就把它判成"还没有色"，
   // 既不拿上一张的底色铺新一张，又立刻为新那张发一次取色。
   const held = url != null && url === state.picUrl ? state.surface : null
-  const next = resolveCoverBackdrop(dynamicBg, hasThemeBgImage, url, held)
+  // 与 held 相对的另一条读法：屏幕上正在铺的那一支（可能属于上一首），它是宽限期的素材。
+  const stale: CoverBackdropStale | null = state.picUrl != null && state.surface != null
+    ? { picUrl: state.picUrl, surface: state.surface }
+    : null
+  const now = Date.now()
+  const next = resolveCoverBackdrop(dynamicBg, hasThemeBgImage, url, held, stale, now - switchedAt < COVER_BACKDROP_GRACE_MS)
   if (!isSame(next, state)) publish(next)
   arm(url, next)
+  // 铺着的还是别的那一首 → 到点必须自己再算一次，否则旧色会永远挂在新一首上（spec §4.6-4）。
+  clearGrace()
+  if (next.picUrl != null && next.picUrl !== url) {
+    graceTimer = setTimeout(() => {
+      graceTimer = null
+      if (inputs.pic === url) updateCoverBackdrop(inputs.dynamicBg, inputs.hasThemeBgImage, url)
+    }, Math.max(0, COVER_BACKDROP_GRACE_MS - (now - switchedAt)))
+  }
 }
 
 /** 「动态背景」开关翻动时的配套清理：与 clearCoverPaletteCache() 成对调用。 */
 export function resetCoverBackdrop() {
   generation += 1
   clearRetry()
+  clearGrace()
+  switchedAt = 0
   attempts.reset()
   inputs = { dynamicBg: false, hasThemeBgImage: false, pic: null }
   publish(IDLE)
