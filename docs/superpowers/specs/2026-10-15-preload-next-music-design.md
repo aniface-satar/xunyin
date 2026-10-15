@@ -299,8 +299,9 @@ incoming : { picUrl, surface } | null   // 新一首的色已到手、正在淡�
 
 ## 9. 落地与偏离（执行完毕：2026-10-16）
 
-实施计划 `docs/superpowers/plans/2026-10-15-preload-next-music.md` 的 10 个任务全部执行完，20 笔提交在
-`feat/music-recognition-phase1` 上（链见本节末）。**代码与静态闸门已落地；真机那条链一次没跑**（写这份状态时
+实施计划 `docs/superpowers/plans/2026-10-15-preload-next-music.md` 的 10 个任务全部执行完，**代码 20 笔提交**在
+`feat/music-recognition-phase1` 上（链见本节末；本节这几段自身的 docs 提交不计入那个数，所以别拿 `git rev-list --count` 对号）。
+**代码与静态闸门已落地；真机那条链一次没跑**（写这份状态时
 `adb devices` 列表为空），所以下面第 4 条是唯一未闭合的门。
 
 ### 9.1 闸门实测数（下次别照抄本文正文里的旧数）
