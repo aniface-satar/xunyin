@@ -5,11 +5,12 @@ import settingState from '@/store/setting/state'
 import { isCached, cacheTrack, cancelCacheTrack } from '@/plugins/player/utils'
 import { getCoverSurface } from '@/utils/monet'
 import { ON_COVER_FONT_CSS } from '@/utils/monet/surface'
-import { buildPreloadPlan, audioMaxBytes, AUDIO_HEAD_BYTES, type PreloadStep } from '@/core/player/preloadPlan'
+import { buildPreloadPlan, audioMaxBytes, cacheFitsAudioWarm, type PreloadStep } from '@/core/player/preloadPlan'
 import { prefetchCoverImage } from '@/utils/nativeModules/palette'
 import { defaultHeaders } from '@/components/common/Image'
 // 与播放路径同一个 UA（playList.ts:14 那条常量就是给 TrackPlayer 填 userAgent 用的那个值）：
-// 原生侧 remove("User-Agent") 之后重新塞，UA 一换就等于换了请求，更糟的是换了缓存 key。
+// 带 UA 校验的源会让预热这一趟 403，字节根本没写进播放器之后要读的那份缓存。
+// （缓存 key 是 URI 本身，media3 没有换过 CacheKeyFactory，所以 UA 不会换 key —— 别照着这个理由改判据。）
 import { defaultUserAgent } from '@/plugins/player/playList'
 
 // 完成标记用类型标注而不是 `as Record<...>`：本仓库的 eslint（standard-with-typescript）
@@ -152,9 +153,9 @@ const runStep = async(step: PreloadStep) => {
         if (!url || generation !== state.generation) return
         // 档位翻动走的是 bump()，上面那道代数比对就拦下了，这次重读管不着它；
         // 真正靠这一次的是 player.cacheSize —— 它不在 bump 名单里，只有这一刻重读才知道缓存是不是被清成 0、
-        // 或者被改小到装不下那道 8MB 前缀（判据与纯表同一个，见 preloadPlan.ts 的 cacheBytes）。
+        // 或者被改小到装不下那道 8MB 前缀（判据与纯表共用 preloadPlan.ts 的 cacheFitsAudioWarm，别在这儿重写一遍）。
         const currentFlags = flags()
-        if (currentFlags.audioTier === 'off' || currentFlags.cacheBytes < AUDIO_HEAD_BYTES) return
+        if (currentFlags.audioTier === 'off' || !cacheFitsAudioWarm(currentFlags.cacheBytes)) return
         state.audioToken = `${target.musicInfo.id}|${generation}`
         await cacheTrack(url, { 'User-Agent': defaultUserAgent }, audioMaxBytes(currentFlags.audioTier), state.audioToken)
         break

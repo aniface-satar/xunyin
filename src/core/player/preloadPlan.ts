@@ -55,6 +55,10 @@ export const AUDIO_HEAD_BYTES = 8 * 1024 * 1024
 
 export const audioMaxBytes = (tier: PreloadAudioTier): number => tier === 'full' ? 0 : AUDIO_HEAD_BYTES
 
+/** 缓存装不下一个 8MB 前缀时，下字节只会把正在播的那首挤出去 —— 宁可这步不发。
+ *  表与执行器（发起那一刻的重读）共用这一句，别各写一遍：两边一旦分叉，保护就没了。 */
+export const cacheFitsAudioWarm = (cacheBytes: number): boolean => cacheBytes >= AUDIO_HEAD_BYTES
+
 export const buildPreloadPlan = (input: PreloadPlanInput): PreloadPlan => {
   if (!input.flags.preloadNextMusic) return { resolveTarget: false, steps: [] }
 
@@ -75,7 +79,7 @@ export const buildPreloadPlan = (input: PreloadPlanInput): PreloadPlan => {
   // 而 full 档（maxBytes<=0 → LENGTH_UNSET）没有上限兜底，挤掉的只能是正在播的那首 —— 宁可这步不发。
   if (input.targetIsOnline &&
     input.flags.audioTier !== 'off' &&
-    input.flags.cacheBytes >= AUDIO_HEAD_BYTES &&
+    cacheFitsAudioWarm(input.flags.cacheBytes) &&
     input.resolvedAge >= AUDIO_DELAY_SECONDS &&
     !input.done.audio) steps.push('audio')
 
