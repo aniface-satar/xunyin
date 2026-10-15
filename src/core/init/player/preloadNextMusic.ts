@@ -90,14 +90,30 @@ const resolveTarget = async() => {
  * 返回可直接下字节的 url，拿不到（含被作废）就返回 ''，由调用方决定不发。 */
 const warmAudio = async(target: LX.Player.PlayMusicInfo): Promise<string> => {
   const generation = state.generation
-  let url = await getMusicUrl({ musicInfo: target.musicInfo }).catch(() => '')
+  // 取直链的次序照抄 core/player/player.ts:107-119：手动换过源（meta.toggleMusicInfo 有值）时先按那条源取、
+  // 且不许再自动换源，取不到才回落到本曲。缓存 key 就是 url 字符串，预热与播放拿到不同的 url 就是不同的 key，
+  // 焐下去的字节白下，换源照样卡。
+  const fetchUrl = async(isRefresh: boolean): Promise<string> => {
+    const musicInfo = target.musicInfo
+    const toggleMusicInfo = ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
+    if (toggleMusicInfo) {
+      const toggled = await getMusicUrl({
+        musicInfo: toggleMusicInfo,
+        isRefresh,
+        allowToggleSource: false,
+      }).catch(() => '')
+      if (toggled) return toggled
+    }
+    return getMusicUrl({ musicInfo, isRefresh }).catch(() => '')
+  }
+  let url = await fetchUrl(false)
   if (!url || generation !== state.generation) return ''
   const [cached, available] = await Promise.all([
     isCached(url),
     checkUrl(url).then(() => true).catch(() => false),
   ])
   if (!cached && !available) {
-    const fresh = await getMusicUrl({ musicInfo: target.musicInfo, isRefresh: true }).catch(() => '')
+    const fresh = await fetchUrl(true)
     if (generation !== state.generation) return ''
     if (fresh) url = fresh
   }
@@ -133,8 +149,8 @@ const runStep = async(step: PreloadStep) => {
       case 'audio': {
         const url = await warmAudio(target)
         if (!url || generation !== state.generation) return
-        // 档位与缓存在发起这一刻再读一次：从解析到这一步中间有 3s 反悔窗口，
-        // 期间用户可能已经把档切成 off 或把缓存清成 0。
+        // 档位翻动走的是 bump()，上面那道代数比对就拦下了，这次重读管不着它；
+        // 真正靠这一次的是 player.cacheSize —— 它不在 bump 名单里，只有这一刻重读才知道缓存是不是被清成了 0。
         const currentFlags = flags()
         if (currentFlags.audioTier === 'off' || !currentFlags.cacheEnabled) return
         state.audioToken = `${target.musicInfo.id}|${generation}`
@@ -159,8 +175,11 @@ export default () => {
       bump()
     }
     // 预加载相关设置翻了也要重来：关掉要作废在途，打开（含「动态背景」）才能补发没发过的那几步
+    // 音质也要算：直链是按音质取的（online.ts:55 在调用这一刻才读 player.playQuality），
+    // 窗口内改音质会让在途那条 warm 落在旧音质的 url 上，作废重来才不会白下。
     if (keys.includes('player.preloadNextMusic') ||
       keys.includes('player.preloadNextMusicAudio') ||
+      keys.includes('player.playQuality') ||
       keys.includes('theme.dynamicBg')) bump()
   }
 
