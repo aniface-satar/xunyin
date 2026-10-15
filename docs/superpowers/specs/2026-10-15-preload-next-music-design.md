@@ -1,6 +1,7 @@
 # 下一首预加载（封面 / 歌词 / 背景色 / 音频）+ 动态背景渐变浮现
 
-日期：2026-10-15 · 分支：`feat/music-recognition-phase1` · 状态：待实现（spec 已过自审）
+日期：2026-10-15 · 分支：`feat/music-recognition-phase1` · 状态：代码已落地、静态闸门全过（20 笔提交），**真机探针 P-1 / P-2 与观感项未跑**；
+本文 §4.6、§6 的字面表述有四处与最终实现不一致，**先读文末 §9「落地与偏离」**再按本文改代码
 
 ## 1. 要解决的问题
 
@@ -295,3 +296,119 @@ incoming : { picUrl, surface } | null   // 新一首的色已到手、正在淡�
   而 lx 的 JS 队列语义是单曲 add→skip→remove，改它会牵连通知栏队列与 `playerEnded → playNext` 的自动续播
   （可能双重前进）。1.8.0 确有该 API（javap 确认），但风险/收益不划算，且它是否写入同一个 `SimpleCache` 未证明。
 - 不把 `PaletteModule` 改成优先读 Fresco 缓存（现在它自己下图，等于每张封面下两次）。这是后续独立一项。
+
+## 9. 落地与偏离（执行完毕：2026-10-16）
+
+实施计划 `docs/superpowers/plans/2026-10-15-preload-next-music.md` 的 10 个任务全部执行完，20 笔提交在
+`feat/music-recognition-phase1` 上（链见本节末）。**代码与静态闸门已落地；真机那条链一次没跑**（写这份状态时
+`adb devices` 列表为空），所以下面第 4 条是唯一未闭合的门。
+
+### 9.1 闸门实测数（下次别照抄本文正文里的旧数）
+
+- `npm test`：**531 / 530 / fail 1**。那唯一一条红是既有的 `tests/monet-texture.mts:68`（纹理支故意红），
+  本计划既没把它改绿也没让它更红；新增的 21 条分支在 `tests/preload-next-music-plan.mts`（16 条，含收尾两轮补的
+  "缓存装不下前缀"两枚）与 `tests/monet-gate.mts`（5 条）。总数只增不减，`fail` 恒为 1。
+- `npx tsc --noEmit`：**137 条**才是本机基线，计划里写的 107 是错的（那 137 条全部来自本功能无关的既有文件）。
+  因此执行期间的判据统一改成"本次改到的文件在 tsc 输出里出现 0 次"——别拿总数当判据，收尾这次实测已到 161 行，
+  多出来的 88 行全在 `src/components/player/PlayerOverlay/index.tsx`（别人未提交的 WIP，本功能一笔都没碰它）。
+- `npx eslint <本次改到的 .ts/.tsx>`：全部静默（`playList.ts:55` 那两条既有告警除外）。`dependencies-patch.js` 是个例外——
+  它 HEAD 就有 17 条 `no-regex-spaces`，本次新增的 3 条沿用同一种"字面多空格锚点"写法（这类锚点全仓库都这么写），判为不修；
+  收尾那两行注释订正后仍是 20 条，零新增（用"HEAD 原文 + 只改这两处"的候选文件对比过，才敢这么写）。
+- `compileDebugJavaWithJavac`：BUILD SUCCESSFUL（含 track-player 那三条补丁真的参与编译）。
+- `assembleRelease`：BUILD SUCCESSFUL，实测三次 **7m17s / 6m25s / 7m48s**（计划里写的"2–3 分钟"是错的，别按它排期）。
+  Java 文本每改一次都要重跑这两道，不能只跑前者——收尾这次就是先 `compileDebugJavaWithJavac`（1m17s）再整包重来一遍。
+
+### 9.2 与本文字面不一致的四处（以代码为准）
+
+1. **§4.6 说的"`CoverBackdropState` 加 `displayed` / `incoming` 两支"没做。** 实现改成：宽限期内把"旧的 `{picUrl, surface}` 那一支"
+   **原样重新发布**，状态形状一个字没变。收益是 `isSame()` 去重、`OnCoverThemeProvider` 的墨色联动、`navigation.ts` 的
+   `peekCoverBackdrop()` 三条读点全都不用动，叠层/淡出的簿籍收进组件自己。判据本身（"手里有旧层且仍在宽限期内就继续铺旧那一支"）
+   与 §4.6 完全一致，只是它住在 `backdropGate.ts` 的可选入参 `stale` / `withinGrace` 里。
+2. **§6 说 `tests/monet-gate.mts:44` 是"唯一被改写的既有判据"——其实它无需改写。** 那条用例是 4 个实参调用（没有旧层可留），
+   在新表里走的仍然是"整层不渲染"分支，`surface === null` 原样成立，只有测试名被改得更准确。
+   §4.6 要求的那句"不能靠顺手让旧用例变绿"由**新用例自己命名**承担（`:83` 宽限期内留旧层、`:91` 过期交回主题、
+   `:98` 新歌根本没封面不给宽限、`:103` 新色到手立即换、`:110` 没有旧层可留时不造假层）。
+3. **§4.2 的"兜底补触发 ≤10s"没有单独分支。** 进度事件约每 1s 一发，剩余 ≤10s 必然先穿过 ≤60s 那道门，
+   所以表里只有一条解析门限 `RESOLVE_AHEAD_SECONDS = 60`，加上既有的时长下界 `MIN_DURATION_SECONDS = 10`
+   （它挡的是电台/未知长度流）。两者的包含关系由 `tests/preload-next-music-plan.mts:57` 钉住。
+4. **`graceMs = 8000` 落在 `src/utils/monet/backdropGate.ts` 的 `COVER_BACKDROP_GRACE_MS`**，调它只需改这一处常量；
+   淡入 380ms / 淡出 260ms 落在 `CoverBackdrop/index.tsx`。这两组值都还是 §4.6 的字面值，只是**主观观感未经真机确认**。
+
+### 9.3 执行中新暴露的事实（不写下来，下次一定会再踩）
+
+- **补丁锚点只能钉 `isCached`。** ExoPlayback 那条补丁原本要钉 `public int getAudioSessionId()`——那个方法**只由另一条
+  尚未提交的音量均衡补丁产生**，钉它等于让干净安装（`npm i` 后重跑 `node dependencies-patch.js`）匹配不上 ExoPlayback、
+  却照样打上 MusicModule，于是 `getPlayback().cacheTrack(...)` 找不到符号、编译红。现在钉的是上游就有的
+  `public abstract void isCached(String url, Promise promise);`。已用 pinned 提交 `bfe3393` 克隆 pristine 复现过整条链。
+- **JS 侧那个模块叫 `TrackPlayerModule`，不叫 `MusicModule`**（`MusicModule.java:61-65` 的 `getName()`；库自己和
+  `src/utils/nativeModules/volumeBalancer.ts` 都这么取）。写成 `MusicModule` 不会有任何静态告警——包装层的契约是
+  "取不到就返回 false / 静默 no-op"，于是这项功能在真机上永远不生效而全闸门绿。这类洞只有"读原生 `getName()`"能堵。
+- **`cacheTrack` 返回 `true` 的确切含义**：请求的那一段进了缓存、且那一刻 token 还在 writers 表里。`'head'` 档的 `true`
+  **只代表前缀拿到**，不代表能播；`false` 只代表未知/未完成，**不代表"没开始"**（取消排在开始之前时也算 false）。
+  被取消的那条现在靠 `promise.resolve(cacheWriters.remove(token) != null)` 报 false。
+- **url 字符串就是缓存 key**（原生没有自定义 `CacheKeyFactory`）。所以预热必须与播放路径**同序**取直链：先看
+  `meta.toggleMusicInfo`（用户手动换过源），再回落本曲（`core/player/player.ts:107-119` 的形状）；而直链是按音质取的
+  （`core/music/online.ts:55` 在调用那一刻才读 `player.playQuality`），所以**改音质也要作废在途**。
+  任一条不同序，下回来的字节都是白下。
+- **`Animated.timing` + `useNativeDriver: true` 时 JS 侧的 `AnimatedValue._value` 不会更新**，所以"淡入未结束就被打断"
+  能否连续，只有真机能判（见 9.4 第 6 条）。铺底组件的动画触发判据是"**发布出来的 `picUrl` 变了**"，不是"publish 发生了"——
+  切歌那一瞬 `isSame` 会因为 `wantsSurface` 翻真而多发一次同层状态。
+- **切歌那一刻会先来一发 `(0, 0)` 的进度事件**（`core/player/playInfo.ts:126` 的 `setProgress(0, 0)` 排在
+  `:135` 的 `musicToggled()` 之前）。它落进表里时 `maxPlayTime = 0`，被 `MIN_DURATION_SECONDS` 那道下界直接挡掉，
+  且紧接着 `musicToggled → bump()` 就把 `resolveTried` 抹回 false —— 所以这发假进度**不会**把目标解析提前到上一首的尾巴上。
+  顺序是查过的（不是"碰巧没出事"），改 `playInfo.ts` 那两行顺序时要重新查一遍。
+- **media3 1.8.0 的取消有多"软"，javap 实测**：`CacheWriter.cancel()` 只有 `isCanceled = true` 一条语句（没有中断、没有回调），
+  正在阻塞的读要等下一次 `throwIfCanceled()` 才以 `InterruptedIOException` 收摊；`CacheWriter` 构造函数也不拿任何锁，
+  只做字段赋值与 `CacheKeyFactory.buildCacheKey(dataSpec)`。所以"取消生效"从来不是即时的，别按即时设计判据。
+- **一条 runaway 预热占住的是该 key 的 hole span，不是一个叫 CacheLock 的对象**（1.8.0 里没这个类）。
+  拿它的地方是 `Cache.startReadWrite`（`CacheDataSource.open()` → `openNextSource` 里），还它的是 `Cache.releaseHoleSpan`
+  （在 `CacheDataSource.close() → closeCurrentSource()` 里）。占着期间播放器再读同一段只能等或绕过缓存。
+  `CacheWriter.readBlockToCache` 的常规路径末尾与异常路径（`DataSourceUtil.closeQuietly`）都会关，所以
+  `cacheTrack` 里那句 `finally { cacheDataSource.close(); }` 是"到不了那两步"时的兜底，重复关无害。
+- **缓存容量不足时宁可不发**：`player.cacheSize` 小于 8MB 前缀时，`SimpleCache` 的 LRU 会把**正在播的那首**的片段挤出去，
+  预热反而拖垮播放（spec 禁止的失效方向）。判据是 `cacheFitsAudioWarm(cacheBytes)`（`preloadPlan.ts`，表与执行器共用），
+  不是"大于 0"；`'full'` 档更没有上限兜底，最坏是一整首。
+
+### 9.4 唯一未闭合的门：真机清单（按此顺序跑，跑完把结论写回本节）
+
+1. **P-2 音频字节**（最要命的一条）：装 release 包 → 播一首等到剩 ≤60s → `cacheTrack` 返回后 `isCached(url)` 必须为 `true`。
+   不过 ⇒ 预热与播放的缓存 key 不同源，回头读 `CacheDataSource` 的 `CacheKeyFactory`；判不清就把 `audio` 这一步删掉，
+   前四步照旧交付。
+2. **起播体感**：同一条 url 分别在档位 `'off'` 与 `'head'` 下各切一次，`loadstart → playing` 应有明显差。
+3. **`'full'` 档**：整首下完后 `isCached` 仍真，播完不重复请求。
+4. **连点下一首 5 次**：`adb logcat -s ReactNativeJS` 不应出现 `[player] cacheTrack failed`，且同一 token 不被重复下载（流量核对）。
+5. **P-1 封面字节**：预热过又恰好是"没封面的歌 / 首次进入"这类路径时，`prefetchCoverImage` 的 true 是否真的代表 Fresco 盘缓存命中
+   （现在只有"非 Android / 非 http / 取不到模块返回 false"这一侧的证据）。
+6. **观感四项**：弱网下旧底色停留 ≤8s 后淡回主题底、晚到的色只淡入一次；切到没封面的歌不刷旧色；翻「动态背景」开关是淡出；
+   A→B→A 在 380ms 内回切时 opacity 不能跳变（这条证的是 9.3 里 `useNativeDriver` 那条前提）。另外三处已披露的重叠窗（退场瞬间露底、
+   晚到色叠层、快回切）观感是否可接受。
+7. **设置项本身能存**：档位选「不下载」→ 杀掉应用重进 → 仍是「不下载」（Task 2 顺延的一步，只验读写）。
+8. **列表抖动**：`pic` 步骤回写带 `listId`，会走到 `updateListMusics`；若歌单页出现抖动，逃生口是去掉那个实参（§7 已记）。
+9. **取消真的收摊**：档位设 `'full'` → 播一首等到剩 ≤60s、字节开始下 → 立刻连点下一首。`cancel()` 只置标志位（9.3 那条），
+   所以判据不是"瞬时停"而是"不再继续增长、且切过去之后播放不受影响"；配合第 4 条一起看 logcat。
+10. **小缓存不挤掉正在播的那首**：把 `player.cacheSize` 改到 8MB 以下 → 走完一整首歌，播放与进度条都不该出现卡顿或重新取字节
+    （这条验的是 9.3 最后那条判据在真上是不是真的短路了）。
+
+### 9.5 基线与卫生（读历史时别误判）
+
+- 本计划第 6 笔提交 `30a7e0e` 把**此前未跟踪**的莫奈/动态背景模块与它们的测试文件入了仓，作为 Task 5 的编译基线——
+  那部分代码不属于本功能，但从现在起在历史里，`git diff --name-only` 会把它们一起列出来。
+- 工作区里与本功能无关的未提交 WIP（约 232 项）一律未清理、未"顺手整理"；`dependencies-patch.js` 与
+  `package.json` 都用"HEAD 内容 + 本次改动"的定向入索引方式提交，所以别人的 37 行音量均衡补丁始终留在工作区。
+- 已知遗留：`dependencies-patch.js` 里别人那条 `metro-file-map` 补丁**没有幂等前瞻**，每重跑一次脚本就往
+  `node_modules/metro-file-map/src/Watcher.js:66` 追加一行注释（无害、可再生，属那位作者的活）。
+- `package.json` 的 `test` 脚本在 HEAD 上**只列已跟踪的用例文件**（`cb9c928` 去掉多余的转义 `\"`，`d2960da` 把
+  `tests/overlayBackdropFill.test.mts`、`tests/lyric-copy-text.mts` 两条退回工作区）——  checkout 出去跑 `npm test` 才是自洽的，
+  这两条用例本身仍是别人的 WIP。
+- **从这个工作树产出的 release 包只用于验证，不是发布候选**：它把上面那 232 项未提交 WIP 一起打进去了
+  （本机没有 keystore，签名还会回落 `debug.keystore`）。要出正式包得先有一个干净的工作树。
+
+### 9.6 提交链（`a410617..HEAD`，20 笔）
+
+`9a34e6d` 纯表与 14 条用例 · `a555939` 两个设置项与三语文案 · `26fb84d` 执行器按表派发 · `ca89201` 封面字节走带 UA 的原生 prefetch ·
+`971f7c6` prefetch 只在终态 settle · `30a7e0e` 莫奈基线入仓（见 9.5）· `e7c2a59` 宽限判据进表 · `89d6eee` 宽限分支两枚钉子 ·
+`86eea9d` store 起宽限计时 · `d81b56f` 铺底先叠后撤 · `48f4ef9` track-player 三条补丁 · `4c48253` 模块名与取消语义 ·
+`8690365` 音频字节接进执行器 · `a8658fa` 换源同序与音质作废 · `cb9c928` `npm test` 脚本去掉多余转义引号（sh 下会整条炸）·
+`fba1694` 缓存装不下 8MB 前缀就不下字节（小缓存不再挤掉正在播的那首）· `b9c1d0a` `CacheWriter` 在调用线程登记（取消不打空枪）·
+`d2960da` `test` 脚本只列已跟踪的用例文件（HEAD 自洽，别人那两条留在工作区）· `5c92b62` 容量门限抽成 `cacheFitsAudioWarm` ·
+`bfc67bc` 补丁注释换成 javap 实测的机制（hole span / close 的真实代价）。
