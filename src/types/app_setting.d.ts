@@ -141,6 +141,16 @@ declare global {
     'player.cacheSize': string
 
     /**
+       * 切歌前是否提前准备下一首的封面、歌词、配色与音频
+       */
+    'player.preloadNextMusic': boolean
+
+    /**
+       * 下一首音频字节的预热档位：off 不下、head 只下开头、full 整首
+       */
+    'player.preloadNextMusicAudio': 'off' | 'head' | 'full'
+
+    /**
        * 定时暂停播放-倒计时时间
        */
     'player.timeoutExit': string
