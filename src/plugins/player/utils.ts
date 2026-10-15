@@ -343,9 +343,11 @@ export { updateMetaData, initTrackInfo } from './playList'
 /** 预热音频字节到播放器正在用的那份缓存里；maxBytes <= 0 表示整首。
  *  补丁没重打、iOS、缓存被关掉时都返回 false，不抛（这项功能自己熄火，其余预热不受牵连）。 */
 export const cacheTrack = async(url: string, headers: Record<string, string>, maxBytes: number, token: string): Promise<boolean> => {
-  if (Platform.OS !== 'android' || !url.startsWith('http')) return false
+  // url 可能是 undefined（Task 9 的竞态），所以在 try 之外也只认字符串，非字符串一律 false，别把 async 函数抛成 reject。
+  if (Platform.OS !== 'android' || typeof url !== 'string' || !url.startsWith('http')) return false
   // 只有重打过补丁的原生模块才有这个方法，返回值按 unknown 收：只有字面 true 才算预热成功。
-  const musicModule = NativeModules.MusicModule as { cacheTrack?: (url: string, headers: Record<string, string>, maxBytes: number, token: string) => Promise<unknown> }
+  // 模块名取 MusicModule.getName() 返回的 "TrackPlayerModule"（MusicModule.java:63-65），不是 Java 类名。
+  const musicModule = NativeModules.TrackPlayerModule as { cacheTrack?: (url: string, headers: Record<string, string>, maxBytes: number, token: string) => Promise<unknown> }
   if (!musicModule?.cacheTrack) return false
   try {
     return await musicModule.cacheTrack(url, headers, maxBytes, token) === true
@@ -357,7 +359,7 @@ export const cacheTrack = async(url: string, headers: Record<string, string>, ma
 
 export const cancelCacheTrack = (token: string | null) => {
   if (!token) return
-  const musicModule = NativeModules.MusicModule as { cancelCacheTrack?: (token: string) => void }
+  const musicModule = NativeModules.TrackPlayerModule as { cancelCacheTrack?: (token: string) => void }
   if (!musicModule?.cancelCacheTrack) return
   try {
     musicModule.cancelCacheTrack(token)
