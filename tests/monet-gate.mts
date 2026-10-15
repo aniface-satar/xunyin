@@ -41,7 +41,7 @@ test('空串 pic 不算有封面', () => {
   assert.equal(s.surface, null)
 })
 
-test('配色还没算出来（含取色失败）：surface 交 null，整层不渲染', () => {
+test('配色还没算出来、手里也没有旧层：surface 交 null，整层不渲染（有旧层可留时走下面那组宽限用例）', () => {
   const s = resolveCoverBackdrop(true, false, PIC, null)
   assert.equal(s.enabled, true)
   assert.equal(s.surface, null)
@@ -72,4 +72,40 @@ test('带算不出来（band 为 null）时纯色背景照旧交出，不被纹�
   const s = resolveCoverBackdrop(true, false, PIC, { ...SURFACE, band: null })
   assert.equal(s.surface?.band, null)
   assert.equal(s.surface?.base, SURFACE.base)
+})
+
+// 下面五条钉的是 spec §4.6 的过渡态。第 1、2 条是「晚到不要闪」这一半，第 2 条同时防死锁：
+// 留住旧层不等于关掉取色请求 —— 否则就把 2026-10-15 晚修掉的「时有时无」重写一遍。
+// 第 3 条钉「没有封面的歌不给宽限期」，第 4 条钉新色到手立即换，第 5 条钉无旧层可留时不造假。
+const OLD_PIC = 'https://example.com/old.jpg'
+const STALE = { picUrl: OLD_PIC, surface: SURFACE }
+
+test('新歌有封面、色还没到手、宽限期内：继续铺旧那一支（含它自己的 picUrl），不是闪回主题底', () => {
+  const s = resolveCoverBackdrop(true, false, PIC, null, STALE, true)
+  assert.equal(s.enabled, true)
+  assert.equal(s.picUrl, OLD_PIC, '屏上是"背景还没变过来"，不是整屏纯色')
+  assert.equal(s.surface, SURFACE)
+})
+
+test('宽限期已过：旧层交回去，底下是主题底（晚到的色仍然会淡进来一次）', () => {
+  const s = resolveCoverBackdrop(true, false, PIC, null, STALE, false)
+  assert.equal(s.picUrl, null)
+  assert.equal(s.surface, null)
+  assert.equal(s.wantsSurface, true, '过期不等于放弃 —— 冷却重试还要靠这一格为真')
+})
+
+test('新歌根本没有封面：不给宽限期，旧层同一帧交回去', () => {
+  assert.equal(resolveCoverBackdrop(true, false, null, null, STALE, true).picUrl, null)
+  assert.equal(resolveCoverBackdrop(true, false, '', null, STALE, true).picUrl, null)
+})
+
+test('新色到手就立刻换过来，宽限期不再有意义', () => {
+  const s = resolveCoverBackdrop(true, false, PIC, SURFACE, STALE, true)
+  assert.equal(s.picUrl, PIC)
+  assert.equal(s.surface, SURFACE)
+  assert.equal(s.wantsSurface, false)
+})
+
+test('没有旧层可留时（首次进入/上一首本来就没上色）：宽限期不造假出任何层', () => {
+  assert.equal(resolveCoverBackdrop(true, false, PIC, null, null, true).picUrl, null)
 })
