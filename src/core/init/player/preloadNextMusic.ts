@@ -2,12 +2,15 @@ import { getMusicUrl, getPicPath, getLyricInfo } from '@/core/music'
 import { getNextPlayMusicInfo, resetRandomNextMusicInfo } from '@/core/player/player'
 import { checkUrl } from '@/utils/request'
 import settingState from '@/store/setting/state'
-import { isCached } from '@/plugins/player/utils'
+import { isCached, cacheTrack, cancelCacheTrack } from '@/plugins/player/utils'
 import { getCoverSurface } from '@/utils/monet'
 import { ON_COVER_FONT_CSS } from '@/utils/monet/surface'
-import { buildPreloadPlan, type PreloadStep } from '@/core/player/preloadPlan'
+import { buildPreloadPlan, audioMaxBytes, type PreloadStep } from '@/core/player/preloadPlan'
 import { prefetchCoverImage } from '@/utils/nativeModules/palette'
 import { defaultHeaders } from '@/components/common/Image'
+// 与播放路径同一个 UA（playList.ts:14 那条常量就是给 TrackPlayer 填 userAgent 用的那个值）：
+// 原生侧 remove("User-Agent") 之后重新塞，UA 一换就等于换了请求，更糟的是换了缓存 key。
+import { defaultUserAgent } from '@/plugins/player/playList'
 
 // 完成标记用类型标注而不是 `as Record<...>`：本仓库的 eslint（standard-with-typescript）
 // 把 object 字面量上的类型断言判红（objectLiteralTypeAssertions: 'never'）。
@@ -31,6 +34,8 @@ const state = {
   resolvedAt: 0,
   done: { ...initialDone },
   isResolving: false,
+  /** 在途的字节预热任务标识，切歌时据此让原生那条读循环收摊 */
+  audioToken: null as string | null,
 }
 
 const reset = () => {
@@ -40,11 +45,15 @@ const reset = () => {
   state.picUrl = null
   state.resolvedAt = 0
   state.isResolving = false
+  state.audioToken = null
   for (const key of Object.keys(state.done) as PreloadStep[]) state.done[key] = false
 }
 
+// 顺序承重：先 cancelCacheTrack 再 reset()。reset() 会把 token 清成 null，
+// 而 cancelCacheTrack 对 null 直接 return —— 反过来写就是在途那条原生读循环没人收摊。
 const bump = () => {
   state.generation++
+  cancelCacheTrack(state.audioToken)
   reset()
 }
 
@@ -64,31 +73,35 @@ const resolveTarget = async() => {
   state.resolveTried = true
   const generation = state.generation
   const info = await getNextPlayMusicInfo().catch(() => null)
-  if (generation !== state.generation) {
-    state.isResolving = false
-    return
-  }
+  // 代数不匹配就整块不写回，而且绝不能碰 isResolving：作废时 reset() 已经把它清回 false 了，
+  // 这一轮再清一次等于把*新*那轮在途解析的门卫也清掉，两场解析就会同时跑、互相覆盖 target。
+  if (generation !== state.generation) return
   state.isResolving = false
   state.target = info
   state.resolvedAt = Date.now()
-  if (info) {
-    const musicInfo = info.musicInfo
-    // 下载曲带 progress 字段，本地曲 source === 'local'；这两类没有"再下一趟网络"可省
-    state.targetIsOnline = !('progress' in musicInfo) && musicInfo.source !== 'local'
-  }
+  // 无条件赋值：info 为 null（列表播完/没有下一首）时也要把上一轮留下的 true 落下来，
+  // 否则脏的 targetIsOnline 会让 coverBytes 与音频字节两步继续对一个不存在的目标发。
+  const musicInfo = info?.musicInfo
+  // 下载曲带 progress 字段，本地曲 source === 'local'；这两类没有"再下一趟网络"可省
+  state.targetIsOnline = musicInfo != null && !('progress' in musicInfo) && musicInfo.source !== 'local'
 }
 
-/** 沿用现状那条链：先拿直链，再用 isCached + HEAD 探活，两者都不成才 isRefresh 重取一次 */
-const warmAudio = async(target: LX.Player.PlayMusicInfo) => {
+/** 沿用现状那条链：先拿直链，再用 isCached + HEAD 探活，两者都不成才 isRefresh 重取一次。
+ * 返回可直接下字节的 url，拿不到（含被作废）就返回 ''，由调用方决定不发。 */
+const warmAudio = async(target: LX.Player.PlayMusicInfo): Promise<string> => {
   const generation = state.generation
-  const url = await getMusicUrl({ musicInfo: target.musicInfo }).catch(() => '')
-  if (!url || generation !== state.generation) return
+  let url = await getMusicUrl({ musicInfo: target.musicInfo }).catch(() => '')
+  if (!url || generation !== state.generation) return ''
   const [cached, available] = await Promise.all([
     isCached(url),
     checkUrl(url).then(() => true).catch(() => false),
   ])
-  if (cached || available) return
-  await getMusicUrl({ musicInfo: target.musicInfo, isRefresh: true }).catch(() => '')
+  if (!cached && !available) {
+    const fresh = await getMusicUrl({ musicInfo: target.musicInfo, isRefresh: true }).catch(() => '')
+    if (generation !== state.generation) return ''
+    if (fresh) url = fresh
+  }
+  return url
 }
 
 const runStep = async(step: PreloadStep) => {
@@ -117,9 +130,17 @@ const runStep = async(step: PreloadStep) => {
       case 'coverBytes':
         await prefetchCoverImage(state.picUrl, defaultHeaders)
         break
-      case 'audio':
-        await warmAudio(target)
+      case 'audio': {
+        const url = await warmAudio(target)
+        if (!url || generation !== state.generation) return
+        // 档位与缓存在发起这一刻再读一次：从解析到这一步中间有 3s 反悔窗口，
+        // 期间用户可能已经把档切成 off 或把缓存清成 0。
+        const currentFlags = flags()
+        if (currentFlags.audioTier === 'off' || !currentFlags.cacheEnabled) return
+        state.audioToken = `${target.musicInfo.id}|${generation}`
+        await cacheTrack(url, { 'User-Agent': defaultUserAgent }, audioMaxBytes(currentFlags.audioTier), state.audioToken)
         break
+      }
     }
   } catch (e) {
     if (__DEV__) console.log('[preload]', step, 'failed', e)
