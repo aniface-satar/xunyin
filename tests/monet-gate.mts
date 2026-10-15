@@ -85,6 +85,7 @@ test('新歌有封面、色还没到手、宽限期内：继续铺旧那一支�
   assert.equal(s.enabled, true)
   assert.equal(s.picUrl, OLD_PIC, '屏上是"背景还没变过来"，不是整屏纯色')
   assert.equal(s.surface, SURFACE)
+  assert.equal(s.wantsSurface, true, '留住旧层不等于关掉取色请求')
 })
 
 test('宽限期已过：旧层交回去，底下是主题底（晚到的色仍然会淡进来一次）', () => {
@@ -108,4 +109,7 @@ test('新色到手就立刻换过来，宽限期不再有意义', () => {
 
 test('没有旧层可留时（首次进入/上一首本来就没上色）：宽限期不造假出任何层', () => {
   assert.equal(resolveCoverBackdrop(true, false, PIC, null, null, true).picUrl, null)
+  // 宽限期不许插到"开关关掉"前面：关功能（或被主题背景图让路）时哪怕留着旧层也得交回主题，走退场淡出。
+  assert.equal(resolveCoverBackdrop(false, false, PIC, null, STALE, true).picUrl, null)
+  assert.equal(resolveCoverBackdrop(true, true, PIC, null, STALE, true).picUrl, null)
 })

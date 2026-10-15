@@ -42,6 +42,7 @@ export const resolveCoverBackdrop = (dynamicBg: boolean, hasThemeBgImage: boolea
   // 新歌的色还没到手：宽限期内且手里真的有一支旧层，就把它原样重新发布（底与字同一份、同一次 publish 一起翻）。
   // 留住的是带自己 picUrl 的完整那一支（糊封面 + 底色 + 蒙版），不是把上一首的纯色铺到新一首上，
   // 所以这不是 backdropGate 旧注释担心的"刷一屏旧封面色"。
+  // 末句 `stale.picUrl !== pic` 是防御性余量：Task 6 的接线里同一 url 会先被上面的 surface != null 接住，走不到这里。
   if (withinGrace && stale != null && stale.picUrl !== pic) {
     return { enabled, picUrl: stale.picUrl, surface: stale.surface, wantsSurface: true }
   }
