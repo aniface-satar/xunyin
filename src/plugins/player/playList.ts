@@ -9,7 +9,9 @@ import playerState from '@/store/player/state'
 
 const list: LX.Player.Track[] = []
 
-const defaultUserAgent = 'Mozilla/5.0 (Linux; Android 10; Pixel 3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Mobile Safari/537.36'
+// 预热带同一个 UA（cacheTrack 走的是与 Track.java:137-170 同源的 DefaultHttpDataSource），
+// 两个值一旦分叉，带校验的源就会"播得出、预热带不进"。
+export const defaultUserAgent = 'Mozilla/5.0 (Linux; Android 10; Pixel 3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Mobile Safari/537.36'
 const httpRxp = /^(https?:\/\/.+|\/.+)/
 
 export const state = {

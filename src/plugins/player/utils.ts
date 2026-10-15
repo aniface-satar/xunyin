@@ -1,4 +1,5 @@
 import TrackPlayer, { Capability, Event, RatingType, RepeatMode, State } from 'react-native-track-player'
+import { NativeModules, Platform } from 'react-native'
 import BackgroundTimer from 'react-native-background-timer'
 import { playMusic as handlePlayMusic } from './playList'
 import { existsFile, moveFile, privateStorageDirectoryPath, temporaryDirectoryPath } from '@/utils/fs'
@@ -338,3 +339,29 @@ export const updateOptions = async(options = {
 // }
 
 export { updateMetaData, initTrackInfo } from './playList'
+
+/** 预热音频字节到播放器正在用的那份缓存里；maxBytes <= 0 表示整首。
+ *  补丁没重打、iOS、缓存被关掉时都返回 false，不抛（这项功能自己熄火，其余预热不受牵连）。 */
+export const cacheTrack = async(url: string, headers: Record<string, string>, maxBytes: number, token: string): Promise<boolean> => {
+  if (Platform.OS !== 'android' || !url.startsWith('http')) return false
+  // 只有重打过补丁的原生模块才有这个方法，返回值按 unknown 收：只有字面 true 才算预热成功。
+  const musicModule = NativeModules.MusicModule as { cacheTrack?: (url: string, headers: Record<string, string>, maxBytes: number, token: string) => Promise<unknown> }
+  if (!musicModule?.cacheTrack) return false
+  try {
+    return await musicModule.cacheTrack(url, headers, maxBytes, token) === true
+  } catch (e) {
+    if (__DEV__) console.log('[player] cacheTrack failed', url, e)
+    return false
+  }
+}
+
+export const cancelCacheTrack = (token: string | null) => {
+  if (!token) return
+  const musicModule = NativeModules.MusicModule as { cancelCacheTrack?: (token: string) => void }
+  if (!musicModule?.cancelCacheTrack) return
+  try {
+    musicModule.cancelCacheTrack(token)
+  } catch (e) {
+    if (__DEV__) console.log('[player] cancelCacheTrack failed', token, e)
+  }
+}
