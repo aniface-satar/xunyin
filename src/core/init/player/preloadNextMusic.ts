@@ -6,6 +6,8 @@ import { isCached } from '@/plugins/player/utils'
 import { getCoverSurface } from '@/utils/monet'
 import { ON_COVER_FONT_CSS } from '@/utils/monet/surface'
 import { buildPreloadPlan, type PreloadStep } from '@/core/player/preloadPlan'
+import { prefetchCoverImage } from '@/utils/nativeModules/palette'
+import { defaultHeaders } from '@/components/common/Image'
 
 // 完成标记用类型标注而不是 `as Record<...>`：本仓库的 eslint（standard-with-typescript）
 // 把 object 字面量上的类型断言判红（objectLiteralTypeAssertions: 'never'）。
@@ -113,6 +115,7 @@ const runStep = async(step: PreloadStep) => {
         await getCoverSurface(state.picUrl, ON_COVER_FONT_CSS)
         break
       case 'coverBytes':
+        await prefetchCoverImage(state.picUrl, defaultHeaders)
         break
       case 'audio':
         await warmAudio(target)

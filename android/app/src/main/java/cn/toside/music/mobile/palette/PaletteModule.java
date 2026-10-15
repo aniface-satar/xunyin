@@ -3,6 +3,16 @@ package cn.toside.music.mobile.palette;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.util.Log;
+import com.facebook.common.executors.CallerThreadExecutor;
+import com.facebook.datasource.BaseDataSubscriber;
+import com.facebook.datasource.DataSource;
+import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.ReadableType;
+import com.facebook.react.modules.fresco.ReactNetworkImageRequest;
+import com.facebook.drawee.backends.pipeline.Fresco;
+import com.facebook.imagepipeline.request.ImageRequest;
+import com.facebook.imagepipeline.request.ImageRequestBuilder;
 
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -106,6 +116,46 @@ public class PaletteModule extends ReactContextBaseJavaModule {
         }
       }
     });
+  }
+
+  // 封面字节预热：把下一首的封面原图下载进 Fresco 的磁盘缓存。
+  // 不能用 RN 自带的 Image.prefetch —— 它建请求时不带 headers
+  // （ImageLoaderModule.java:219 是 ImageRequestBuilder.newBuilderWithSource(uri).build()），
+  // 而有 UA 校验的 CDN 会 403。这里复用 ReactNetworkImageRequest，
+  // headers 由 ReactOkHttpNetworkFetcher.java:60-63 真正发出去，落到与页面渲染同一个 pipeline。
+  @ReactMethod
+  public void prefetchImageWithHeaders(String url, ReadableMap headers, Promise promise) {
+    if (url == null || url.isEmpty() || !url.startsWith("http")) {
+      promise.resolve(false);
+      return;
+    }
+    try {
+      ImageRequest request = ReactNetworkImageRequest.fromBuilderWithHeaders(
+        ImageRequestBuilder.newBuilderWithSource(Uri.parse(url)), headers);
+      DataSource<Void> prefetchSource = Fresco.getImagePipeline().prefetchToDiskCache(request, null);
+      prefetchSource.subscribe(new BaseDataSubscriber<Void>() {
+        @Override
+        protected void onNewResultImpl(DataSource<Void> dataSource) {
+          boolean isFinished = dataSource.isFinished();
+          dataSource.close();
+          if (isFinished) promise.resolve(true);
+        }
+
+        @Override
+        protected void onFailureImpl(DataSource<Void> dataSource) {
+          Throwable t = dataSource.getFailureCause();
+          dataSource.close();
+          // 预热失败只是"下一首还得现下"，不值得像 getArgbPixels 那样 reject：
+          // reject 会让 JS 侧每个坏封面都走一遍 catch，还会在 __DEV__ 刷一堆红字。
+          Log.d("PaletteModule", "cover prefetch failed: " + (t == null ? "unknown" : t.getMessage()));
+          promise.resolve(false);
+        }
+      }, CallerThreadExecutor.getInstance());
+    } catch (Throwable t) {
+      // 工作线程外的 Throwable 也一并吃掉：prefetch 不是正确性路径。
+      Log.d("PaletteModule", "cover prefetch threw: " + t);
+      promise.resolve(false);
+    }
   }
 
   private byte[] readBytes(String url) throws Exception {
