@@ -8,7 +8,6 @@ import com.facebook.common.executors.CallerThreadExecutor;
 import com.facebook.datasource.BaseDataSubscriber;
 import com.facebook.datasource.DataSource;
 import com.facebook.react.bridge.ReadableMap;
-import com.facebook.react.bridge.ReadableType;
 import com.facebook.react.modules.fresco.ReactNetworkImageRequest;
 import com.facebook.drawee.backends.pipeline.Fresco;
 import com.facebook.imagepipeline.request.ImageRequest;
@@ -34,6 +33,8 @@ public class PaletteModule extends ReactContextBaseJavaModule {
 
   // 与 src/components/common/Image.tsx 的 defaultHeaders 保持一致，否则部分音源封面取不到图
   private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36";
+
+  private static final String TAG = "PaletteModule";
 
   private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -122,7 +123,7 @@ public class PaletteModule extends ReactContextBaseJavaModule {
   // 不能用 RN 自带的 Image.prefetch —— 它建请求时不带 headers
   // （ImageLoaderModule.java:219 是 ImageRequestBuilder.newBuilderWithSource(uri).build()），
   // 而有 UA 校验的 CDN 会 403。这里复用 ReactNetworkImageRequest，
-  // headers 由 ReactOkHttpNetworkFetcher.java:60-63 真正发出去，落到与页面渲染同一个 pipeline。
+  // headers 由 ReactOkHttpNetworkFetcher.java:59-72 真正发出去，落到与页面渲染同一个 pipeline。
   @ReactMethod
   public void prefetchImageWithHeaders(String url, ReadableMap headers, Promise promise) {
     if (url == null || url.isEmpty() || !url.startsWith("http")) {
@@ -136,24 +137,29 @@ public class PaletteModule extends ReactContextBaseJavaModule {
       prefetchSource.subscribe(new BaseDataSubscriber<Void>() {
         @Override
         protected void onNewResultImpl(DataSource<Void> dataSource) {
-          boolean isFinished = dataSource.isFinished();
-          dataSource.close();
-          if (isFinished) promise.resolve(true);
+          // prefetch 会先推一次"还没结束"的中间结果再推终态，中间结果这次 isFinished 还是 false，
+          // 必须早退等下一个回调，此刻既不能 settle 也不能 close：
+          // close 等于把中间结果当终态、自己把这次预热取消掉，而 BaseDataSubscriber.onCancellation
+          // 是空实现、不会被回调，promise 就永久 settle 不了了 —— Task 5 那边按 url 缓存了这个
+          // promise 的话，下一首的封面到杀进程为止都不会再预热。
+          // 终态回调（成功或失败）之后 Fresco 的 BaseDataSubscriber 自己会 close，所以这里不手动 close。
+          if (!dataSource.isFinished()) return;
+          promise.resolve(true);
         }
 
         @Override
         protected void onFailureImpl(DataSource<Void> dataSource) {
           Throwable t = dataSource.getFailureCause();
-          dataSource.close();
           // 预热失败只是"下一首还得现下"，不值得像 getArgbPixels 那样 reject：
           // reject 会让 JS 侧每个坏封面都走一遍 catch，还会在 __DEV__ 刷一堆红字。
-          Log.d("PaletteModule", "cover prefetch failed: " + (t == null ? "unknown" : t.getMessage()));
+          // 带上 url：坏封面得能在 logcat 里对上号，否则只知道"有一张没预热上"。
+          Log.w(TAG, "cover prefetch failed: " + url + " - " + (t == null ? "unknown" : t.getMessage()));
           promise.resolve(false);
         }
       }, CallerThreadExecutor.getInstance());
     } catch (Throwable t) {
       // 工作线程外的 Throwable 也一并吃掉：prefetch 不是正确性路径。
-      Log.d("PaletteModule", "cover prefetch threw: " + t);
+      Log.w(TAG, "cover prefetch threw: " + url + " - " + t);
       promise.resolve(false);
     }
   }
