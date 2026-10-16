@@ -1,6 +1,6 @@
 // 相对 import 必须带 .ts：这个文件被 `node --test` 直接加载，Node ESM 不认无扩展名的相对路径
 // （实测 ERR_MODULE_NOT_FOUND: .../monet/sourceColor），而 Metro 0.80.12 带扩展名照样解析成功（已用探针 bundle 验过）。
-import { analyzeArgbPixels, type CoverPixels } from './sourceColor.ts'
+import { analyzeArgbPixels, averageArgbOfPixels, type CoverPixels } from './sourceColor.ts'
 import { buildCoverSurface, parseCssColor, type CoverSurface } from './surface.ts'
 import { TEXTURE_OUT_HEIGHT, type TextureRequest } from './texture.ts'
 import { ATTEMPT_COOLDOWN_MS } from './attemptLedger.ts'
@@ -243,6 +243,12 @@ export const createCoverPalette = (
         if (gen === generation) rememberTexture(key, uri)
         return uri
       })
+    },
+    // 分享卡的明暗判定只看"这张封面整体偏亮还是偏暗"，所以只要平均色，不跑官方量化那 123ms。
+    // 复用像素层的 fetchOnce：同一张封面在播放页已经暖过，海报页不该再问一次原生。
+    getCoverAverageArgb: async(picUrl: string | null | undefined): Promise<number | null> => {
+      if (!picUrl) return null
+      return averageArgbOfPixels(await fetchOnce(picUrl))
     },
     clearCache() {
       generation++

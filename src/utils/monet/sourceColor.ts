@@ -69,6 +69,38 @@ export interface CoverAnalysis {
   highlight: number
 }
 
+/** 封面的全图平均色（只用不透明像素，alpha 恒 255）。
+ *  只要这一个数就绝不碰 QuantizerCelebi —— 实测 143ms 里有 123ms 是那一段量化，
+ *  而"这张封面整体偏亮还是偏暗"用不着挑源色。
+ *  入参来自原生桥，是真实边界，所以行宽/长度不自洽直接判 null（和 analyzeArgbPixels 同一套守卫）。
+ *  与 analyzeArgbPixels 里那段累加是同义不同用：那一支还要 opaque 数组喂量化，接不了这个返回值。 */
+export const averageArgbOfPixels = (cover: CoverPixels | null | undefined): number | null => {
+  const pixels = cover?.pixels
+  if (!Array.isArray(pixels) || pixels.length === 0) return null
+  const width = cover!.width
+  const height = cover!.height
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) return null
+  if (pixels.length !== width * height) return null
+  let sumR = 0
+  let sumG = 0
+  let sumB = 0
+  let count = 0
+  for (const pixel of pixels) {
+    const argb = pixel >>> 0
+    if ((argb >>> 24) < 255) continue
+    sumR += (argb >> 16) & 0xff
+    sumG += (argb >> 8) & 0xff
+    sumB += argb & 0xff
+    count += 1
+  }
+  if (!count) return null
+  return argbFromRgb(
+    Math.round(sumR / count),
+    Math.round(sumG / count),
+    Math.round(sumB / count),
+  ) >>> 0
+}
+
 /** 分块网格数：blurRadius=90 会把单像素极值抹平，剩下的起伏尺度就是"十六分之一屏宽的那一块"，
  *  所以判"封面透出来多少"要按块均色取最亮块。实测三张夹具的最亮块比全图平均亮 25~41 个 L*，
  *  按平均色算的闸门对亮封面是系统性乐观的（白字 5.59 算过闸、实际 4.29 破线）。 */

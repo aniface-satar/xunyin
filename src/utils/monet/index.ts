@@ -15,6 +15,10 @@ export const getCoverSurface = async(picUrl: string | null | undefined, fontColo
 export const getCoverTexture = async(picUrl: string | null | undefined, fontColor: string, outWidth: number) =>
   palette.getCoverTexture(picUrl, fontColor, outWidth)
 
+// 包一层箭头的原因同上面两条导出（@typescript-eslint/unbound-method）
+export const getCoverAverageArgb = async(picUrl: string | null | undefined) =>
+  palette.getCoverAverageArgb(picUrl)
+
 export const clearCoverPaletteCache = () => {
   palette.clearCache()
 }
