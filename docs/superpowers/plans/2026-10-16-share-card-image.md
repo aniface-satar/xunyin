@@ -1263,9 +1263,10 @@ git commit -m "feat(分享图): ShareCard 两层结构与两种内容"
 Modify `android/app/src/main/java/cn/toside/music/mobile/utils/UtilsModule.java`，紧跟现有 `shareText` 方法之后插入：
 
 ```java
-  // 分享一张导出的图。故意不复用 shareText 的 Uri.fromFile 写法：
-  // 那条在 API 24+ 会让收端抛 FileUriExposedException，而 view-shot 的临时文件在
-  // getCacheDir() 里，manifest 的 <cache-path name="cache" path="/" /> 已经覆盖得到。
+  // 分享一张导出的图。file:// 直接放进 EXTRA_STREAM 在 API 24+ 会让收端抛 FileUriExposedException，
+  // 所以过一道 FileProvider。view-shot 3.8.0 的 createTempFile 挑"剩余空间大的那个缓存"
+  // （RNViewShotModule.java:186-188），真机上通常是外置缓存，所以下面 cache-path 与 external-cache-path
+  // 两条声明都得在 —— 缺一条的表现就是"分享按钮点了没反应"，而且换一台机器可能换一条路。
   @ReactMethod
   public void shareImage(String filePath, String authority, String shareTitle, String title, String text, Promise promise) {
     File file = new File(filePath);
@@ -1277,7 +1278,7 @@ Modify `android/app/src/main/java/cn/toside/music/mobile/utils/UtilsModule.java`
     try {
       contentUri = FileProvider.getUriForFile(getReactApplicationContext(), authority, file);
     } catch (Exception e) {
-      promise.reject("SHARE_IMAGE_FAILED", "FileProvider rejected " + filePath + ": " + e.getMessage());
+      promise.reject("SHARE_IMAGE_FAILED", "FileProvider rejected " + filePath + ": " + e);
       return;
     }
     Intent shareIntent = new Intent(Intent.ACTION_SEND);
@@ -1291,7 +1292,9 @@ Modify `android/app/src/main/java/cn/toside/music/mobile/utils/UtilsModule.java`
         .startActivity(Intent.createChooser(shareIntent, shareTitle));
       promise.resolve(null);
     } catch (Exception e) {
-      promise.reject("SHARE_IMAGE_FAILED", e.getMessage());
+      // 用 e 不用 e.getMessage()：requireNonNull 抛的 NPE 没有 message，null 到了 RN 那边只剩
+      // "Unexpected error has occurred"，真实原因（哪个 activity、什么异常）就丢了
+      promise.reject("SHARE_IMAGE_FAILED", "share failed: " + e);
     }
   }
 ```
@@ -1314,9 +1317,11 @@ Modify `src/utils/nativeModules/utils.ts`，在 `shareText` 之后加：
 
 ```ts
 export const shareImage = async(filePath: string, authority: string, shareTitle: string, title: string, text: string): Promise<void> => {
-  UtilsModule.shareImage(filePath, authority, shareTitle, title, text)
+  return UtilsModule.shareImage(filePath, authority, shareTitle, title, text)
 }
 ```
+
+**这个 `return` 是有承重的，不是风格问题**（2026-10-16 任务评审裁定，覆盖本节原先的写法）：Java 那侧的签名末尾带 `Promise`，legacy bridge 就把 JS 侧的调用**变成返回一个 Promise**（`node_modules/react-native/Libraries/BatchedBridge/NativeModules.js:56-64, 100-106` 的 promise-type 判定）。写成裸语句的话包装函数立刻 resolve，`promise.reject` 的那几条（文件不存在 / FileProvider 拒绝 / activity 为 null）全变成 unhandled rejection —— 表现正是"分享按钮点了没反应"，而 Task 9 那两枚按钮永远 catch 不到东西。同文件里 `getSystemLocales`（`:55-56`）就是带 `return` 的写法；`shareText`（`:47-48`）不带 return 是**对的**，因为它的 Java 方法本来就没有 `Promise` 参数，没有 promise 可丢。
 
 - [ ] **Step 4: 导出层**
 
@@ -1358,6 +1363,9 @@ export const shareCapturedCard = async(path: string, shareTitle: string, title: 
   await shareImage(path, APP_PROVIDER_NAME, shareTitle, title, text)
 }
 ```
+
+> **`fileName` 到不了收端手里（Task 7 评审实测机制）**：`RNViewShotModule.java:192` 把这个名字交给 `File.createTempFile(prefix, suffix, dir)` —— 它是**前缀**，系统会在 `.png` 前面插一串随机数字；再叠上 `safeFileName` 把所有非 `[A-Za-z0-9_.-]` 换成 `_`，`cardFileName('平凡之路', '朴树')` 落到磁盘上是 `_____-_-____1638429384.png` 这种形状。所以"分享出去的文件名就是歌名"这个期待是**不成立**的：歌名走 Task 8 那条保存路径（`saveShareCard(tempPath, baseName)` 的名字是另传的），Task 10 的文案不要把收端看到的文件名算进验收。
+> **这些临时 PNG 没人删，是有意的**：库自带的清理只认它自己的默认前缀（`RNViewShotModule.java:150-152`），传了自定义 `fileName` 就落在过滤外面；文档给的收口是 `releaseCapture(uri)`。但**不要在 `shareCapturedCard` 返回后就调它** —— `startActivity(chooser)` 返回时用户还没选完收端，收端是**之后**才通过被授权的 content URI 惰性读那个文件的，删早了就是"分享出去打不开"。现阶段接受泄漏：文件在应用自己的缓存目录里，系统按空间压力回收。Task 11 真机清单里确认"反复分享 10 次不炸、图片都能打开"，要真做配额再说。
 
 - [ ] **Step 5: 过闸门**
 
