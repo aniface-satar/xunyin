@@ -4,7 +4,7 @@ import Text from '@/components/common/Text'
 import { BrandLine } from './BrandLine'
 import CoverImage from './CoverImage'
 import { type CardTheme } from './cardTheme'
-import { type LyricBlockLine, fitLyricBlock } from './fitLyricBlock'
+import { type LyricBlockLine, fitLyricBlock, LYRIC_LINE_HEIGHT_RATIO } from './fitLyricBlock'
 
 interface Props {
   lines: readonly LyricBlockLine[]
@@ -25,16 +25,16 @@ export default ({ lines, name, singer, pic, lyricMaxHeight, theme, onCoverReady 
         {
           shown.map((line, index) => (
             <View key={`${index}-${line.text}`}>
-              { line.text?.trim() ? <Text style={{ fontSize: fit.fontSize, lineHeight: fit.fontSize * 1.5, color: theme.lyricColor }}>{line.text}</Text> : null }
+              { line.text?.trim() ? <Text style={{ fontSize: fit.fontSize, lineHeight: fit.fontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.lyricColor }}>{line.text}</Text> : null }
               {
                 (line.extendedLyrics ?? []).map((text, i) => text?.trim()
-                  ? <Text key={i} style={{ fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * 1.5, color: theme.subtitleColor }}>{text}</Text>
+                  ? <Text key={i} style={{ fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.subtitleColor }}>{text}</Text>
                   : null)
               }
             </View>
           ))
         }
-        { fit.truncated ? <Text style={{ fontSize: fit.extendedFontSize, color: theme.subtitleColor }}>…</Text> : null }
+        { fit.truncated ? <Text style={{ fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.subtitleColor }}>…</Text> : null }
       </View>
       <View style={[styles.separator, { backgroundColor: theme.subtitleColor }]} />
       <View style={styles.footer}>

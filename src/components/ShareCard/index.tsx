@@ -19,8 +19,11 @@ export const CARD_PADDING = 20
 // 这一支整屏铺满、那条边正好落在导出图的屏幕上沿。Task 11 真机清单要看这一条，别看漏就照着播放页加外扩。
 export const BLUR_RADIUS = 90
 
-// 歌词卡底部那一坨：分隔线 + 小封面行（含落款）+ 上下卡内边距
-const LYRIC_FOOTER_RESERVE = 140
+// 歌词卡底部那一坨，最坏情况：省略号一行 22×1.5=33 + 分隔线（14+1+14=29）+ 小封面行（歌名两行 2×~19 + 歌手 2+~17 + 落款 16+20 ≈ 93）≈ 155。
+// 卡内上下边距不在这里，由下面 CARD_PADDING * 2 单独扣。
+const LYRIC_FOOTER_RESERVE = 160
+// 音乐卡里封面之外的那几行：标题 18+3×30=108、歌手 6+2×~25=56、落款 16+20=36 ≈ 200
+const MUSIC_CARD_TEXT_RESERVE = 200
 
 export interface ShareCardData {
   name: string
@@ -47,17 +50,22 @@ const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLine
   useEffect(() => {
     let cancelled = false
     setAverageArgb(null)
-    if (!musicInfo.pic) return
+    // 歌词卡的配色写死在 LYRIC_CARD_THEME，这个平均色取到也不用 —— 别为一趟没人读的取色去敲原生
+    if (!musicInfo.pic || mode === 'lyric') return
     void getCoverAverageArgb(musicInfo.pic).then(value => {
       if (!cancelled) setAverageArgb(value)
     })
     return () => { cancelled = true }
-  }, [musicInfo.pic])
+  }, [musicInfo.pic, mode])
 
   const theme: CardTheme = mode === 'lyric' ? LYRIC_CARD_THEME : pickMusicCardTheme(averageArgb)
   const cardWidth = width * CARD_WIDTH_RATIO
-  const coverSize = cardWidth - CARD_PADDING * 2
   const cardMaxHeight = height * CARD_MAX_HEIGHT_RATIO
+  // 封面同时受两条边管：只按宽算，长歌名在矮窗口上会把标题/落款顶到卡底外面（RN 默认不缩不裁）。
+  const coverSize = Math.max(0, Math.min(
+    cardWidth - CARD_PADDING * 2,
+    cardMaxHeight - CARD_PADDING * 2 - MUSIC_CARD_TEXT_RESERVE,
+  ))
   const lyricMaxHeight = Math.max(0, cardMaxHeight - CARD_PADDING * 2 - LYRIC_FOOTER_RESERVE)
 
   return (
