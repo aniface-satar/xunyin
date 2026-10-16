@@ -124,8 +124,14 @@ const COVER_RULES: Record<string, CoverRule> = {
   'c-border-background': { kind: 'plate', ink: 'fontLabel' },
   'c-list-header-border-bottom': { kind: 'plate', ink: 'primary' },
   'c-primary-alpha-200': { kind: 'plate', ink: 'primary' },
+  // common/Slider.tsx 的 minimum/maximumTrackTintColor，播放器设置里音量/倍速/字号/歌词偏移四条都走它。
+  // 漏这一条的症状是"圆点跟封面、槽是主题色"，看着就是两套色。
+  'c-primary-alpha-500': { kind: 'plate', ink: 'primary' },
   'c-primary-alpha-900': { kind: 'plate', ink: 'primary' },
   'c-primary-light-100-alpha-400': { kind: 'plate', ink: 'primary' },
+  // ProgressBar.tsx 拖拽时"跟手那一段"（非拖拽态的已填充段是上面那条 alpha-400）。
+  // 漏这一条的症状是进度条不拖还好、一拖就冒出主题色。
+  'c-primary-light-100-alpha-600': { kind: 'plate', ink: 'primary' },
   'c-primary-light-100-alpha-700': { kind: 'plate', ink: 'accent' },
   'c-primary-light-300-alpha-800': { kind: 'plate', ink: 'primary' },
   'c-primary-light-400-alpha-700': { kind: 'plate', ink: 'primary' },

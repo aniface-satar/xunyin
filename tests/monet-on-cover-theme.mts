@@ -83,6 +83,8 @@ const TEXT_KEYS: Array<{ key: string, min: number }> = [
   { key: 'c-300', min: 3.0 },
 ]
 const PANEL_KEYS = ['c-content-background', 'c-main-background', 'c-primary-light-900-alpha-200']
+// 组件里读得到、但场上必须跟着封面走的两个"条"键：见下面那条用例的注释。
+const SLIDER_AND_DRAG_KEYS = ['c-primary-light-100-alpha-600', 'c-primary-alpha-500']
 
 test('内置主题共 17 套，且每条映射规则打的键都真实存在', () => {
   assert.equal(ALL_THEMES.length, 17)
@@ -157,6 +159,31 @@ test('透光键保住主题自己那条 alpha，只换颜料', () => {
           continue
         }
         assert.equal(after, before, `${theme.id} ${key}：alpha ${before} 被改成了 ${after}`)
+      }
+    }
+  }
+})
+
+test('进度条拖拽段与设置滑动条的槽都跟着封面墨色走', () => {
+  // 2026-10-16 真机反馈的两处漏网，两处症状各对应一个键：
+  //   c-primary-light-100-alpha-600 —— ProgressBar.tsx 拖拽时"跟手那一段"（非拖拽态的已填充段用 alpha-400，早就在表里）
+  //   c-primary-alpha-500          —— common/Slider.tsx 的轨道，播放器设置里音量/倍速/字号/歌词偏移四条都走它
+  // 规则表没打这两个键时，场上留的是主题自己的颜料，于是"一拖进度条就冒出主题色"。
+  // 断言写成"颜料等于 primary 那档墨色"而不是"不等于原值"：后者任何无关改动都能糊过去。
+  for (const key of SLIDER_AND_DRAG_KEYS) {
+    assert.ok(COVER_RULE_KEYS.includes(key), `${key} 没进规则表：场上会留主题色`)
+  }
+  for (const { name, surface } of surfaces) {
+    const ink = buildOnCoverInk(surface)!
+    for (const theme of ALL_THEMES) {
+      const next = applyOnCoverTheme(theme.active, surface)
+      for (const key of SLIDER_AND_DRAG_KEYS) {
+        // parseCssColor 只看 rgb 三个通道（alpha 恒被它丢成 255），所以这里量的是颜料，
+        // alpha 有没有被改写归上面"透光键保住 alpha"那条管。
+        const argb = parseCssColor(next[key])
+        assert.ok(argb != null, `${name}/${theme.id} ${key}=${next[key]} 解析不出颜色`)
+        assert.equal(Hct.fromInt(argb!).tone, Hct.fromInt(ink.primary).tone,
+          `${name}/${theme.id} ${key} 的明度不是 primary 那档（拿到的是主题色？）`)
       }
     }
   }
