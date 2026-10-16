@@ -1471,6 +1471,7 @@ const MAX_BASE_NAME = 72
 
 /** 文件名里的非法字符一律去掉：SAF 那边不会替你报错，只会写不出或者写歪。 */
 export const cardFileName = (name: string, singer: string) => {
+  // eslint-disable-next-line no-control-regex
   const clean = (value: string) => value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim()
   const title = clean(name)
   const artist = clean(singer)
@@ -1628,8 +1629,10 @@ test('primary volume maps back to /storage/emulated/0 for the media scan', () =>
 })
 
 test('removable volume maps to /storage/<volume>', () => {
-  const usb = 'content://com.android.externalstorage.documents/tree/1234-ABCD'
-  assert.equal(childRealPath(usb, 'poster.png'), '/storage/1234-ABCD/poster.png')
+  // 可移除卷的真实 docId 形如 `1234-ABCD:`（树 URI 里是 `1234-ABCD%3A`），
+  // 不带冒号的裸卷名不是 SAF 会给的形态，走的是下面"认不出卷名"那一支
+  const usb = 'content://com.android.externalstorage.documents/tree/1234-ABCD%3AMusic'
+  assert.equal(childRealPath(usb, 'poster.png'), '/storage/1234-ABCD/Music/poster.png')
 })
 
 test('a private app path cannot be restored, so the media scan is skipped', () => {
@@ -2173,7 +2176,7 @@ ETA 6–8 分钟（Task 1 起过 Java 改动后首次）。
 cd android && ./gradlew assembleDebug && adb -s <serial> install -r app/build/outputs/apk/debug/xunyin-v1.1.0-arm64-v8a.apk
 ```
 
-- [ ] **Step 3: [真机] 十条验收清单**
+- [ ] **Step 3: [真机] 十三条验收清单**
 
 逐条向用户要结论并记进 spec：
 
@@ -2187,6 +2190,13 @@ cd android && ./gradlew assembleDebug && adb -s <serial> install -r app/build/ou
 8. 点分享 → 系统面板收到的是 PNG 图，不是文本。
 9. 导出图里**没有**右上角那两枚按钮。
 10. 预览页按返回 → 只关预览，回到歌词工具模式（不是一退两级回播放页）。
+11. 同一张海报**再保存一次** → 文件名是 `xxx (1).png`，不是覆盖。这条是 `existsFile(完整 document URI)` 的唯一验法：
+    如果原生 `exists` 认不出 document URI 而恒返回 false，表现就是一路堆 `(1)(2)(3)`（Task 8 评审指出的假设）。
+12. **杀掉 App 再进来**，直接点保存 → 不该再弹一次文件夹选择器。这条同时验 `isDirGranted` 的祖先判定和
+    `existsFile(tree URI)`（裸树 URI 能不能被 `exists` 认下来，HEAD 里没有任何先例，`src/utils/log.ts` 那些调用点给的都是文件系统路径）。
+13. 选完文件夹后 `shareCard.savePathName` 里存的是可读名字（`Music` 这种），不是整条 `content://…` ——
+    `openDocumentTree` 返回值到底带不带 `name` 字段，HEAD 里没人读过它（`src/core/common.ts:106-108` 只取 `.path`/`.isDirectory`）。
+    取不到会回落成 URI，功能不坏但难看；这一条只记观感，不算验收失败。
 
 - [ ] **Step 4: 回写 spec 状态**
 
