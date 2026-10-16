@@ -607,14 +607,18 @@ git commit -m "feat(分享图): 卡片明暗判据（跟随封面平均色 tone�
 ### Task 4: monet 出口 `getCoverAverageArgb`
 
 **Files:**
+- Modify: `src/utils/monet/sourceColor.ts`（新增导出 `averageArgbOfPixels`）
 - Modify: `src/utils/monet/coverPalette.ts`（`createCoverPalette` 的返回对象）
 - Modify: `src/utils/monet/index.ts`
 - Test: `tests/monet-cover-average.mts`
 - Modify: `package.json`
 
 **Interfaces:**
-- Consumes: `coverPalette` 内部已有的 `fetchOnce`（像素层按 url 的 LRU + 失败保质期）、`measureArgbPixels`
+- Consumes: `coverPalette` 内部已有的 `fetchOnce`（像素层按 url 的 LRU + 失败保质期）、本任务新增的 `averageArgbOfPixels`
 - Produces: `const getCoverAverageArgb: (picUrl: string | null | undefined) => Promise<number | null>`（`@/utils/monet`），返回 `>>> 0` 的无符号 ARGB，失败/无封面给 `null`。Task 6 的 `ShareCard` 喂给 `pickMusicCardTheme`。
+
+> **为什么这里不直接用 `measureArgbPixels`（2026-10-16 控制方裁定）：** 工作区里的 `sourceColor.ts` 有它，HEAD 没有 —— 那一支是「播放页动态背景」尚未提交的改动（`git status` 显示 7 个 monet 文件 M + 2 个未跟踪）。本任务的提交是"HEAD + 本次改动"定向入索引，若引用 WIP 符号，那笔提交单独 checkout 出来直接编译不过；若改成调 HEAD 有的 `analyzeArgbPixels`，就为了一个平均色白跑官方量化那 123ms（同一张封面在播放页展开动画里已经因为这段同步计算掉过帧）。所以本任务自带一个 15 行的平均色判据：只吃像素数组、零 `react-native`，和 WIP 那一支互不干扰。
+> 等动态背景那批 WIP 提交之后，`averageArgbOfPixels` 与 `measureArgbPixels` 就是两份同义实现，届时把这一处调用换过去、删掉本函数（Task 11 的回写清单里有这条）。
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -649,7 +653,9 @@ test('returns the average argb of the cover', async() => {
 test('shares one native fetch with the surface branch', async() => {
   const calls: string[] = []
   const palette = build(white, calls)
-  await palette.getCoverSurface('http://x/b.jpg', 'rgb(255, 255, 255)', 'monet')
+  // 只传两个参数：HEAD 的签名就是 (picUrl, fontColor)。工作区那份 WIP 加了第三个可选参数（算法档位），
+  // 传了它这笔提交单独 checkout 出来就是 TS2554。
+  await palette.getCoverSurface('http://x/b.jpg', 'rgb(255, 255, 255)')
   await palette.getCoverAverageArgb('http://x/b.jpg')
   assert.equal(calls.length, 1, '像素层缓存要能被两个出口共用，否则同一张封面下载两遍')
 })
@@ -686,20 +692,56 @@ node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-
 
 预期：FAIL，`palette.getCoverAverageArgb is not a function`。
 
-- [ ] **Step 3: 加实现**
+- [ ] **Step 3: 加实现（两处，顺序不能反）**
 
-Modify `src/utils/monet/coverPalette.ts`，在返回对象的 `getCoverTexture` 之后、`clearCache` 之前插入：
+**3a.** Modify `src/utils/monet/sourceColor.ts`，在 `CoverAnalysis` 接口之后、`/** 分块网格数` 那条注释之前插入：
+
+```ts
+/** 封面的全图平均色（只用不透明像素，alpha 恒 255）。
+ *  只要这一个数就绝不碰 QuantizerCelebi —— 实测 143ms 里有 123ms 是那一段量化，
+ *  而"这张封面整体偏亮还是偏暗"用不着挑源色。
+ *  入参来自原生桥，是真实边界，所以行宽/长度不自洽直接判 null（和 analyzeArgbPixels 同一套守卫）。
+ *  与 analyzeArgbPixels 里那段累加是同义不同用：那一支还要 opaque 数组喂量化，接不了这个返回值。 */
+export const averageArgbOfPixels = (cover: CoverPixels | null | undefined): number | null => {
+  const pixels = cover?.pixels
+  if (!Array.isArray(pixels) || pixels.length === 0) return null
+  const width = cover!.width
+  const height = cover!.height
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) return null
+  if (pixels.length !== width * height) return null
+  let sumR = 0
+  let sumG = 0
+  let sumB = 0
+  let count = 0
+  for (const pixel of pixels) {
+    const argb = pixel >>> 0
+    if ((argb >>> 24) < 255) continue
+    sumR += (argb >> 16) & 0xff
+    sumG += (argb >> 8) & 0xff
+    sumB += argb & 0xff
+    count += 1
+  }
+  if (!count) return null
+  return argbFromRgb(
+    Math.round(sumR / count),
+    Math.round(sumG / count),
+    Math.round(sumB / count),
+  ) >>> 0
+}
+```
+
+**3b.** Modify `src/utils/monet/coverPalette.ts`，首行那条 import 加上 `averageArgbOfPixels`（保持现有 `import { analyzeArgbPixels, type CoverPixels } from './sourceColor.ts'` 的形状，只多一个名字），然后在返回对象的 `getCoverTexture` 之后、`clearCache` 之前插入：
 
 ```ts
     // 分享卡的明暗判定只看"这张封面整体偏亮还是偏暗"，所以只要平均色，不跑官方量化那 123ms。
     // 复用像素层的 fetchOnce：同一张封面在播放页已经暖过，海报页不该再问一次原生。
     getCoverAverageArgb: async(picUrl: string | null | undefined): Promise<number | null> => {
       if (!picUrl) return null
-      const pixels = await fetchOnce(picUrl)
-      if (pixels == null) return null
-      return measureArgbPixels(pixels)?.average ?? null
+      return averageArgbOfPixels(await fetchOnce(picUrl))
     },
 ```
+
+（`fetchOnce` 失败时给 `null`，`averageArgbOfPixels` 收到 `undefined | null` 也返回 `null`，所以这一支没有第二条回落路径要写。）
 
 - [ ] **Step 4: 跑测试确认通过**
 
@@ -723,18 +765,19 @@ export const getCoverAverageArgb = async(picUrl: string | null | undefined) =>
 
 ```bash
 npx tsc --noEmit
-npx eslint src/utils/monet/coverPalette.ts src/utils/monet/index.ts tests/monet-cover-average.mts
+npx eslint src/utils/monet/sourceColor.ts src/utils/monet/coverPalette.ts src/utils/monet/index.ts
 node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-cover-palette.mts
+node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/monet-source-color.mts
 ```
 
-预期：tsc 报错数不变；eslint 0 error；既有的 `monet-cover-palette` 仍全绿（这条改动只加了一个返回字段，不该动到旧行为）。
+预期：tsc 报错数不变；eslint 0 error（`tests/monet-cover-average.mts` 是 `.mts`，不在这次 lint 范围里，见 Global Constraints）；既有的 `monet-cover-palette` 与 `monet-source-color` 仍全绿（这条改动只加了一个导出和一个返回字段，不该动到旧行为）。
 
 - [ ] **Step 7: 挂进 npm test 清单并提交**
 
 Modify `package.json`：`"test"` 末尾追加 ` tests/monet-cover-average.mts`。
 
 ```bash
-git add src/utils/monet/coverPalette.ts src/utils/monet/index.ts tests/monet-cover-average.mts package.json
+git add src/utils/monet/sourceColor.ts src/utils/monet/coverPalette.ts src/utils/monet/index.ts tests/monet-cover-average.mts package.json
 git commit -m "feat(monet): 加 getCoverAverageArgb 出口，与配色层共用像素缓存"
 ```
 
