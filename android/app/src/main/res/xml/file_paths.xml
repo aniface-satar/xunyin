@@ -6,6 +6,8 @@
 
   <!-- cache dir is always available and requires no permissions, but space may be limited -->
   <cache-path name="cache" path="/" />
+  <!-- view-shot 3.8.0 的 createTempFile 会挑剩余空间大的缓存目录，真机上通常是外置缓存 -->
+  <external-cache-path name="external-cache" path="/" />
   <!-- <files-path name="name" path="/" />  -->
 
   <!-- External cache dir is maybe user-friendly for downloaded APKs, but you must be careful. -->

@@ -270,6 +270,38 @@ public class UtilsModule extends ReactContextBaseJavaModule {
     Objects.requireNonNull(reactContext.getCurrentActivity()).startActivity(Intent.createChooser(shareIntent, shareTitle));
   }
 
+  // 分享一张导出的图。故意不复用 shareText 的 Uri.fromFile 写法：
+  // 那条在 API 24+ 会让收端抛 FileUriExposedException，而 view-shot 的临时文件在
+  // getCacheDir() 里，manifest 的 <cache-path name="cache" path="/" /> 已经覆盖得到。
+  @ReactMethod
+  public void shareImage(String filePath, String authority, String shareTitle, String title, String text, Promise promise) {
+    File file = new File(filePath);
+    if (!file.exists()) {
+      promise.reject("SHARE_IMAGE_FAILED", "file not found: " + filePath);
+      return;
+    }
+    Uri contentUri;
+    try {
+      contentUri = FileProvider.getUriForFile(getReactApplicationContext(), authority, file);
+    } catch (Exception e) {
+      promise.reject("SHARE_IMAGE_FAILED", "FileProvider rejected " + filePath + ": " + e.getMessage());
+      return;
+    }
+    Intent shareIntent = new Intent(Intent.ACTION_SEND);
+    shareIntent.setType("image/png");
+    shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+    shareIntent.putExtra(Intent.EXTRA_SUBJECT, title);
+    shareIntent.putExtra(Intent.EXTRA_TEXT, text);
+    shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    try {
+      Objects.requireNonNull(reactContext.getCurrentActivity())
+        .startActivity(Intent.createChooser(shareIntent, shareTitle));
+      promise.resolve(null);
+    } catch (Exception e) {
+      promise.reject("SHARE_IMAGE_FAILED", e.getMessage());
+    }
+  }
+
   // https://stackoverflow.com/questions/73463341/in-per-app-language-how-to-get-app-locale-in-api-33-if-system-locale-is-diffe
   @ReactMethod
   public void getSystemLocales(Promise promise) {
