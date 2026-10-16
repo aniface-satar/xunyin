@@ -1799,12 +1799,55 @@ git commit -m "feat(分享图): SAF 保存到相册，独立 shareCard.savePath 
 
 **Files:**
 - Create: `src/components/ShareCard/ShareCardModal.tsx`
+- Modify: `src/lang/zh-cn.json` / `src/lang/zh-tw.json` / `src/lang/en-us.json`（本任务自己用到的 5 枚 key）
 
 **Interfaces:**
-- Consumes: `ShareCard`（Task 6）、`captureShareCard` / `shareCapturedCard`（Task 7）、`saveShareCard`（Task 8）、`cardFileName`（Task 8 的纯模块）、`useWindowSize`、`useStatusbarHeight`（`@/store/common/hook`）、`toast`、`useI18n`、`Icon`（`download-2` / `share` 两枚字形已在用）
+- Consumes: `ShareCard`（Task 6）、`captureShareCard` / `shareCapturedCard`（Task 7）、`saveShareCard`（Task 8）、`cardFileName`（Task 8 的纯模块）、`useWindowSize`（`@/utils/hooks`）、`useStatusbarHeight`（`@/store/common/hook`）、`toast`、`useI18n`、`Icon`（`download-2` / `share` 两枚字形已在用）
 - Produces:
   - `interface ShareCardModalProps { visible: boolean, mode: 'music' | 'lyric', musicInfo: ShareCardData, lyricLines?: readonly LyricBlockLine[], onClose: () => void }`
   - `default ShareCardModal`
+  - i18n key `share_card_capture_failed` / `share_card_save` / `share_card_save_canceled` / `share_card_save_failed` / `share_card_saved`（Task 10 只补剩下那 4 枚）
+
+- [ ] **Step 0: 先把本任务代码要用到的 5 枚 key 放进去**
+
+`useI18n()` 返回的 `t` 是 `(key: keyof Message, val?) => string`（`src/lang/i18n.ts:19`），而 `Message` 是三份语言的
+`Record<keyof …>` 联合，`keyof` 到联合上取的是**交集** —— 一份缺了就编译不过。所以 key 必须跟代码同笔落地，
+不能留给 Task 10（这是本计划原先的任务边界错误，2026-10-16 控制方修正）。
+
+三个文件都插到已有的 `"share_card_title_music"`（`zh-cn.json:473` 附近）旁边，**别重排整表**（这三份都不是全字母序）：
+
+`src/lang/zh-cn.json`：
+```json
+  "share_card_capture_failed": "生成图片失败",
+  "share_card_save": "保存图片",
+  "share_card_save_canceled": "未选择保存位置",
+  "share_card_save_failed": "保存失败",
+  "share_card_saved": "已保存：{name}",
+```
+
+`src/lang/zh-tw.json`：
+```json
+  "share_card_capture_failed": "產生圖片失敗",
+  "share_card_save": "儲存圖片",
+  "share_card_save_canceled": "未選擇儲存位置",
+  "share_card_save_failed": "儲存失敗",
+  "share_card_saved": "已儲存：{name}",
+```
+
+`src/lang/en-us.json`：
+```json
+  "share_card_capture_failed": "Couldn't create the image",
+  "share_card_save": "Save image",
+  "share_card_save_canceled": "No folder chosen",
+  "share_card_save_failed": "Couldn't save",
+  "share_card_saved": "Saved as {name}",
+```
+
+自查（三份必须齐）：
+
+```bash
+node -e "for (const f of ['zh-cn','zh-tw','en-us']) { const j=require('./src/lang/'+f+'.json'); for (const k of ['share_card_capture_failed','share_card_save','share_card_save_canceled','share_card_save_failed','share_card_saved']) if (!(k in j)) throw new Error(f+' missing '+k) } console.log('i18n ok')"
+```
 
 - [ ] **Step 1: 写实现**
 
@@ -1820,10 +1863,10 @@ import { useI18n } from '@/lang'
 import { useStatusbarHeight } from '@/store/common/hook'
 import { useWindowSize } from '@/utils/hooks'
 import { cardFileName } from '@/utils/shareCard/cardFileName'
-import { type LyricBlockLine } from './fitLyricBlock'
 import { captureShareCard, shareCapturedCard } from '@/utils/shareCard/exportCard'
 import { saveShareCard } from '@/utils/shareCard/saveCard'
 import { createStyle, toast } from '@/utils/tools'
+import { type LyricBlockLine } from './fitLyricBlock'
 
 interface Props {
   visible: boolean
@@ -1918,37 +1961,67 @@ const styles = createStyle({
 })
 ```
 
-`statusBarTranslucent` + 按钮层 `paddingTop: statusBarHeight` 是探针 3 的处置：预览仍然铺满，但**被拍的 `ShareCard` 高度用的是 `useWindowSize().height`（不含状态栏）**，所以图里不会带状态栏。若真机发现带，就把 `ShareCard` 的 `height` 改成 `height - statusBarHeight` 并回报。
+`statusBarTranslucent` + 按钮层 `paddingTop: statusBarHeight` 是探针 3 的处置。要说清一件事：**`useWindowSize().height` 到底含不含状态栏，取决于走哪条分支**（`src/utils/windowSizeTools.ts:42-53` 实测读过的两条路）：
+
+- 正常路径：原生 `getWindowSize()` 拿像素、除以 `Dimensions.get('window').scale` 得 dp，**不加** `StatusBar.currentHeight`；
+  这个原生窗口高度含不含状态栏，就是 Task 1 探针 3 要在真机上回答的问题。
+- 兜底路径（原生返回 0 宽时）：`Dimensions.get('window').height + (StatusBar.currentHeight ?? 0)` —— 这一条是**主动加了**状态栏的。
+
+所以现在不能断言"图里不会带状态栏"。真机探针 3 若发现导出图顶部有一条状态栏，处理方向是把传给 `ShareCard` 的
+`height` 减掉 `statusBarHeight`（兜底路径下要减两次），减完把结论回写进 spec §8，不要在这段代码里先猜。
 
 - [ ] **Step 2: 过闸门**
 
 ```bash
 npx tsc --noEmit
 npx eslint src/components/ShareCard/ShareCardModal.tsx
+node -e "for (const f of ['zh-cn','zh-tw','en-us']) { const j=require('./src/lang/'+f+'.json'); for (const k of ['share_card_capture_failed','share_card_save','share_card_save_canceled','share_card_save_failed','share_card_saved']) if (!(k in j)) throw new Error(f+' missing '+k) } console.log('i18n ok')"
 ```
+
+预期：tsc 条数不变且 grep 不到 `ShareCardModal` / `src/lang`；eslint 0 error；`i18n ok`。
 
 - [ ] **Step 3: 提交**
 
+`src/lang/*.json` 三份在本分支上带着别的会话未提交的 key（`git status` 显示 ` M`），**不能整文件 `git add`**，
+按 Global Constraints 那条走"HEAD + 本次改动"定向入索引（先 `git diff --cached --name-only` 确认索引是空的）：
+
 ```bash
+for f in src/lang/zh-cn.json src/lang/zh-tw.json src/lang/en-us.json; do
+  git show HEAD:"$f" > "/tmp/base_$(basename "$f")"
+  # 在 /tmp/base_* 那份副本上只插本任务那 5 行（别把别人未提交的 key 抄进去）
+  git hash-object -w "/tmp/base_$(basename "$f")"
+done
+git update-index --cacheinfo 100644,<blob>,src/lang/zh-cn.json   # 另两份同样
 git add src/components/ShareCard/ShareCardModal.tsx
+
+git diff --cached --name-only          # 必须正好是这 4 个路径
+git diff --cached -- src/lang          # 只允许出现那 5 枚 share_card_* key
 git commit -m "feat(分享图): 全屏预览 Modal，下载与分享按钮在被拍层之外"
 ```
 
 ---
 
-### Task 10: 接线两个入口 + 文案
+### Task 10: 接上播放页头部的图片分享入口 + 文案
 
 **Files:**
-- Modify: `src/screens/PlayDetail/Vertical/Lyric.tsx:501`
 - Create: `src/screens/PlayDetail/Vertical/components/ShareModeSheet.tsx`
 - Modify: `src/screens/PlayDetail/Vertical/components/Header.tsx:51-59,103-105`
 - Modify: `src/lang/zh-cn.json`、`src/lang/zh-tw.json`、`src/lang/en-us.json`
 
 **Interfaces:**
-- Consumes: `ShareCardModal`（Task 9）、`pickLyricLinesForCopy` / `hasLyricText`（`@/core/lyricCopy`）、`shareMusic`（`@/utils/tools`，文本那条路原样保留）
-- Produces: 用户可见的两个入口 + i18n key `share_mode_sheet_title` / `share_mode_text` / `share_mode_image` / `share_card_save` / `share_card_saved` / `share_card_save_failed` / `share_card_save_canceled` / `share_card_capture_failed` / `share_card_no_selection`
+- Consumes: `ShareCardModal`（Task 9）、`shareMusic`（`@/utils/tools`，文本那条路原样保留）
+- Produces: 用户可见的头部入口 + i18n key `share_mode_sheet_title` / `share_mode_text` / `share_mode_image` / `share_card_no_selection`（另外 5 枚 `share_card_*` 由 Task 9 Step 0 落地）
 
-- [ ] **Step 1: 歌词海报按钮接上**
+> **歌词海报那半个入口本轮不做（2026-10-16 控制方裁定，复现过）**：下面 Step 1 整段留作以后接线参考，本轮**跳过**。
+> 判据是两条实测：① `git ls-files src/core/lyricCopy*` 空输出 —— 那个模块（`hasLyricText` / `pickLyricLinesForCopy` /
+> 勾选状态）根本没进版本库；② `git show HEAD:src/screens/PlayDetail/Vertical/Lyric.tsx` 里 grep 不到
+> `海报` / `lyricCopy` / 工具模式，而工作区那 220 行未提交改动（`git diff --stat` 实测 220+/40−）才是"歌词工具页"功能本身。
+> 也就是说：**海报按钮这个宿主 UI 还没进 HEAD**，本任务的提交要是引它，单独 checkout 直接编译不过（与 Task 8 的
+> `@/core/download` 同一类边界）。等歌词工具页那批改动提交后，按 Step 1 原文接上（记为 Task 10b）。
+> 代价：`ShareCardModal` 的 `mode: 'lyric'` 这条路本轮交付后**没有用户入口**（dark），Task 2/6 的歌词卡只能等 10b 才在真机上可见；
+> Task 11 清单第 4/5/6 条跟着一起挂起。头部这一支（音乐卡）不受影响。
+
+- [ ] **Step 1: ⛔ 歌词海报按钮接上 —— 本轮跳过（Task 10b）**
 
 Modify `src/screens/PlayDetail/Vertical/Lyric.tsx`：
 
@@ -2092,29 +2165,20 @@ const handleShareMode = (mode: ShareMode) => {
 
 - [ ] **Step 4: 文案**
 
+剩下这 **4** 枚 key 归本任务（`share_card_capture_failed` / `share_card_save` / `share_card_save_canceled` / `share_card_save_failed` / `share_card_saved` 已由 Task 9 Step 0 放进去，**别重复插一遍**）。
 Modify `src/lang/zh-cn.json`：插到已有的 `share_card_title_music` / `share_title_music` 那几行旁边即可（**这三个文件都不是全字母序**，实测 `share_card_title_songlist` 就排在 `share_title_music` 之后，别为了一枚 key 重排整表）：
 
 ```json
-  "share_card_capture_failed": "生成图片失败",
   "share_card_no_selection": "先勾选几句歌词",
-  "share_card_save": "保存图片",
-  "share_card_save_canceled": "未选择保存位置",
-  "share_card_save_failed": "保存失败",
-  "share_card_saved": "已保存：{name}",
   "share_mode_image": "分享图片",
   "share_mode_sheet_title": "分享方式",
   "share_mode_text": "分享文字",
 ```
 
-`zh-tw.json` 同样这 **9** 个 key（三份必须齐，Step 5 那条脚本逐份查缺）：
+`zh-tw.json` 同样这 **4** 个 key（三份必须齐，Step 5 那条脚本逐份查缺）：
 
 ```json
-  "share_card_capture_failed": "產生圖片失敗",
   "share_card_no_selection": "先勾選幾句歌詞",
-  "share_card_save": "儲存圖片",
-  "share_card_save_canceled": "未選擇儲存位置",
-  "share_card_save_failed": "儲存失敗",
-  "share_card_saved": "已儲存：{name}",
   "share_mode_image": "分享圖片",
   "share_mode_sheet_title": "分享方式",
   "share_mode_text": "分享文字",
@@ -2123,12 +2187,7 @@ Modify `src/lang/zh-cn.json`：插到已有的 `share_card_title_music` / `share
 `en-us.json`：
 
 ```json
-  "share_card_capture_failed": "Couldn't create the image",
   "share_card_no_selection": "Pick some lyric lines first",
-  "share_card_save": "Save image",
-  "share_card_save_canceled": "No folder chosen",
-  "share_card_save_failed": "Couldn't save",
-  "share_card_saved": "Saved as {name}",
   "share_mode_image": "Share image",
   "share_mode_sheet_title": "Share as",
   "share_mode_text": "Share text",
@@ -2138,17 +2197,32 @@ Modify `src/lang/zh-cn.json`：插到已有的 `share_card_title_music` / `share
 
 ```bash
 npx tsc --noEmit
-npx eslint src/screens/PlayDetail/Vertical src/components/ShareCard
+npx eslint src/screens/PlayDetail/Vertical/components/ShareModeSheet.tsx src/screens/PlayDetail/Vertical/components/Header.tsx
 node -e "for (const f of ['zh-cn','zh-tw','en-us']) { const j=require('./src/lang/'+f+'.json'); for (const k of ['share_card_capture_failed','share_card_no_selection','share_card_save','share_card_save_canceled','share_card_save_failed','share_card_saved','share_mode_image','share_mode_sheet_title','share_mode_text']) if (!(k in j)) throw new Error(f+' missing '+k) } console.log('i18n ok')"
 ```
 
-预期：tsc 报错数不变；eslint 0 error；`i18n ok`。
+预期：tsc 报错数不变；eslint 只在**这两个文件**上 0 error（不要 `eslint src/screens/PlayDetail/Vertical` 整目录 —— 那底下全是别的会话未提交的东西，报的是他们的错）；`i18n ok`。
 
 - [ ] **Step 6: 提交**
 
+四个路径全带别人的改动：`Header.tsx` 在 HEAD 里是 `:51-59,103-105` 那个形状，工作区版本是莫奈/玻璃那支 WIP 改过的；三份 lang 文件同理。
+**不许** `git add src/screens/PlayDetail/Vertical src/lang`，全部按"HEAD + 本次改动"定向入索引（先确认索引是空的）：
+
 ```bash
-git add src/screens/PlayDetail/Vertical src/lang
-git commit -m "feat(分享图): 接上歌词海报按钮与播放页分享入口"
+git diff --cached --name-only            # 必须为空，否则停下来报 BLOCKED
+for f in src/screens/PlayDetail/Vertical/components/Header.tsx src/lang/zh-cn.json src/lang/zh-tw.json src/lang/en-us.json; do
+  git show HEAD:"$f" > "/tmp/base_$(basename "$f")"
+  # 在 /tmp/base_* 上只做本任务那几行（Header 的三处改动 + 每份 lang 的 4 枚 key）
+  git hash-object -w "/tmp/base_$(basename "$f")"
+done
+# 四个文件各一步：git update-index --cacheinfo 100644,<blob>,<path>
+git add src/screens/PlayDetail/Vertical/components/ShareModeSheet.tsx
+
+git diff --cached --name-only            # 必须正好是这 5 个路径
+git diff --cached -- src/lang src/screens/PlayDetail/Vertical/components/Header.tsx
+#   ↑ 只允许出现本任务的 4 枚 key 与 Header 的三处改动；看见别人的行就是暂存错了，
+#     git reset -- <那几个路径> 重来（只动索引，安全）
+git commit -m "feat(分享图): 接上播放页头部的图片分享入口与四枚文案"
 ```
 
 ---
@@ -2183,13 +2257,14 @@ cd android && ./gradlew assembleDebug && adb -s <serial> install -r app/build/ou
 1. 亮封面（白色系专辑）→ 白卡黑字。
 2. 暗封面（黑金专辑）→ 深卡白字。
 3. 本地歌无封面 → 深卡 + 空封面位不崩、导出按钮仍可用。
-4. 歌词卡只选 1 句 → 大字号、卡偏矮。
-5. 歌词卡全选 20+ 句 → 先缩字号，缩到 16 还装不下就截断补 `…`。
-6. 选带译文的段落 → 译文紧跟自己那行、字更小。
+4. 歌词卡只选 1 句 → 大字号、卡偏矮。⚠️ 依赖 Task 10b 的入口（歌词工具页那批改动没进 HEAD，本轮 `mode: 'lyric'` 无用户入口）；
+   10b 之前这三条按"挂起"记，不算验收失败。
+5. 歌词卡全选 20+ 句 → 先缩字号，缩到 16 还装不下就截断补 `…`。⚠️ 同上，依赖 10b。
+6. 选带译文的段落 → 译文紧跟自己那行、字更小。⚠️ 同上，依赖 10b。
 7. 首次点下载 → 弹系统文件夹选择器，落地文件在系统图库里能看到。
 8. 点分享 → 系统面板收到的是 PNG 图，不是文本。
 9. 导出图里**没有**右上角那两枚按钮。
-10. 预览页按返回 → 只关预览，回到歌词工具模式（不是一退两级回播放页）。
+10. 预览页按系统返回 → 只关预览，不连带把播放页也关掉、也不吞掉上一层。（歌词工具模式那一层要等 10b 才存在，本轮只测头部这条路。）
 11. 同一张海报**再保存一次** → 文件名是 `xxx (1).png`，不是覆盖。这条是 `existsFile(完整 document URI)` 的唯一验法：
     如果原生 `exists` 认不出 document URI 而恒返回 false，表现就是一路堆 `(1)(2)(3)`（Task 8 评审指出的假设）。
 12. **杀掉 App 再进来**，直接点保存 → 不该再弹一次文件夹选择器。这条同时验 `isDirGranted` 的祖先判定和
@@ -2219,7 +2294,9 @@ git commit -m "docs(分享图): 真机验收结论与实现偏离回写"
 
 ## 自查（写完后跑一遍）
 
-1. **spec 覆盖**：spec §2 依赖选型 → Task 1；§3 两层结构与明暗 → Task 3/4/6；§4 最大高度 → Task 2；§5 导出/分享/下载 → Task 7/8/9；§6 入口 → Task 10；§8 探针 → Task 1；§9 测试 → 各任务 + Task 11。无遗漏。
+1. **spec 覆盖**：spec §2 依赖选型 → Task 1；§3 两层结构与明暗 → Task 3/4/6；§4 最大高度 → Task 2；§5 导出/分享/下载 → Task 7/8/9；§6 入口 → Task 10（头部图片分享这一支）+ **Task 10b 挂起**（歌词海报那一支：宿主 UI 与 `@/core/lyricCopy` 都还没进 HEAD，见 Task 10 的裁定）；§8 探针 → Task 1；§9 测试 → 各任务 + Task 11。
+   另有两处任务边界修正：5 枚 `share_card_*` 文案从 Task 10 挪进 Task 9 Step 0 —— `t` 的类型是 `(key: keyof Message, …)`，
+   `Message` 是三份语言的联合、`keyof` 取交集，key 与用它的代码必须同笔落地，否则那一支单独 checkout 编译不过。
 2. **占位符**：0 处。每段代码都是要落下去的最终形态，包括 `BrandLine`（真 `<Image source={require(...)}>`）和 Task 8 的第 2 条测试（期望串已按非法字符表算准）。
 3. **类型一致性**：`LyricBlockLine`（Task 2 定义，Task 6/9/10 消费，与 `@/core/lyricCopy` 的 `LyricCopyLine` 结构同形）、`CardTheme`（Task 3 定义，Task 6 消费）、`ShareCardData`（Task 6 定义，Task 9/10 消费）、`CapturedCard`（Task 7 定义，Task 9 消费）。
    就绪链只有一条：`CoverImage.onReady` → `MusicCard/LyricCard.onCoverReady` → `ShareCard.onReadyChange` → `ShareCardModal.handleReady` → 两枚按钮的 `disabled`。中间任何一层都不许再存一份 state。
