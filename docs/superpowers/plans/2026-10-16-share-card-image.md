@@ -907,6 +907,7 @@ git commit -m "feat(分享图): 私有封面组件，拍摄前真等 onLoad"
 **Files:**
 - Create: `src/components/ShareCard/MusicCard.tsx`
 - Create: `src/components/ShareCard/LyricCard.tsx`
+- Create: `src/components/ShareCard/BrandLine.tsx`
 - Create: `src/components/ShareCard/index.tsx`
 - Delete: `src/components/ShareCard/probe/BlurProbeCard.tsx`（连同 `probe/` 目录）
 
@@ -919,6 +920,26 @@ git commit -m "feat(分享图): 私有封面组件，拍摄前真等 onLoad"
   - `default ShareCard`（`forwardRef<View>`，ref 指向**被拍的那一层**）
   - `MusicCard` / `LyricCard` 各接一个可选 `onCoverReady?: (ready: boolean) => void`，由 ShareCard 把 `onReadyChange` 原样透下去（就绪链只有这一条，别在中间层再存一份 state）
   - `const CARD_WIDTH_RATIO = 0.78`、`const CARD_MAX_HEIGHT_RATIO = 0.62`、`const CARD_PADDING = 20`、`const BLUR_RADIUS = 90`
+
+- [ ] **Step 0: 坐标系判据（先读这条，它覆盖下面代码里的 `createStyle`）**
+
+本任务**四个新文件里一处都不许用 `createStyle`**。原因实测在 `src/utils/tools.ts:494-543` + `src/utils/pixelRatio.ts:46-79`：`createStyle` 把每个数字过一遍 `scaleSizeH/scaleSizeW`（`height`/`margin*`/`padding`/`gap`/`width`）或 `setSpText`（`fontSize`/`lineHeight`），而这两支最后都乘 **`global.lx.fontSize`**（用户在设置里调的字号）。于是会出现两套坐标系：
+
+- `fitLyricBlock`（Task 2）拿的是**原始 dp**（档位 24/22/20/18/16、行高 ×1.5），`lyricMaxHeight = height * 0.62 - 20*2 - 140` 也是原始 dp；
+- 卡里的静态样式若走 `createStyle`，同一个 20 在用户开了大字号时变成 26，而歌词块还是 20 —— 小封面那格（56）撑出 `LYRIC_FOOTER_RESERVE` 预留、文字压过 `maxHeight`，截出来的就是被裁掉的卡。
+
+分享图是**产物**不是界面，它必须与用户的字号设置无关。做法：把下面各步代码里的 `const styles = createStyle({...})` 换成**同一批数字、同一批键**的普通对象，并用 RN 的样式类型标注住（`flexDirection: 'row'` 这类字符串字面量没有标注会被推成 `string`，tsc 就红）：
+
+```tsx
+import { type ImageStyle, type TextStyle, type ViewStyle } from 'react-native'
+
+const styles: Record<string, ViewStyle | TextStyle | ImageStyle> = { ... }
+```
+
+按用途分别标也行（`Text` 的 style 用 `TextStyle`、`View` 用 `ViewStyle`），但**不要**再包 `StyleSheet.create`：那个只是同一份对象的包装，加了反而看不出"这里故意不换算"。`StyleSheet.absoluteFillObject` 与 `StyleSheet.hairlineWidth` 不是数字换算，照用。
+
+同一判据的另一半：卡里的文字一律用 `@/components/common/Text` 的 **`style.fontSize`** 传字号，**不要用它的 `size` prop** —— `Text.tsx:32-47` 那条 `fontSize: setSpText(size)` 就是走 `global.lx.fontSize` 的那支（`style` 在 `StyleSheet.compose` 里后写，会盖掉默认值，所以我们传的就是原值）。
+落卡上的文字还会带上主题的 text-shadow（`useTextShadow`），这是有意的（预览与实拍同一个组件）；若真机觉得脏，Task 11 再换成 RN 的 `Text`，不要在这一步偷偷绕。
 
 - [ ] **Step 1: 音乐卡内容**
 
@@ -1085,7 +1106,11 @@ import { type LyricBlockLine } from './fitLyricBlock'
 export const CARD_WIDTH_RATIO = 0.78
 export const CARD_MAX_HEIGHT_RATIO = 0.62
 export const CARD_PADDING = 20
-// 与 CoverBackdrop 同一个值（spec §1）：分享卡的底就是播放页那张模糊底的静态版
+// 播放页那一支模糊底有两个半径：src/components/player/CoverBackdrop/index.tsx:13 的 WASH_BLUR_RADIUS=90
+// （① 莫奈档，糊到只剩大块起伏）与 :17 的 COVER_BLUR_RADIUS=5（②「动态取色」，要隐隐看出是封面）。
+// 分享卡的底对着的是 ① 那一支（spec §1 的"虚化封面铺底"），所以是 90，不要跟着 ② 改成 5。
+// 已知代价：Fresco 的框糊会在边缘读到图外面，留一圈发暗的边 —— 播放页用 OVERSCAN=1.25 的 GPU 变换躲开，
+// 这一支整屏铺满、那条边正好落在导出图的屏幕上沿。Task 11 真机清单要看这一条，别看漏就照着播放页加外扩。
 export const BLUR_RADIUS = 90
 
 // 歌词卡底部那一坨：分隔线 + 小封面行（含落款）+ 上下卡内边距
@@ -1176,14 +1201,18 @@ npx eslint src/components/ShareCard
 git rm -r src/components/ShareCard/probe
 ```
 
-同时把 `Lyric.tsx` 里 Task 1 临时加的 `import BlurProbeCard` / `probeOpen` state / 那行 `{probeOpen ? <BlurProbeCard /> : null}` 撤掉（按钮先留 disabled，Task 10 再接）。
+同时把 `Lyric.tsx` 里 Task 1 临时加的三行撤掉（`import BlurProbeCard`、`const [probeOpen, setProbeOpen] = useState(false)`、`{probeOpen ? <BlurProbeCard /> : null}`；本轮落地时实测在工作区 `:27`、`:175`、`:510`），按钮先留 disabled，Task 10 再接。
+
+**这三行只在工作区里删，`Lyric.tsx` 不进这笔提交。** 判据：Task 1 那次裁决就是"探针挂载留在工作区不提交"（HEAD 的 `Lyric.tsx` 里根本没有「歌词海报」按钮，"HEAD + 本次改动"那份底本拼不出来），所以这一支没有可提交的改动；把工作区的 `Lyric.tsx` 直接 `git add` 会把整批歌词工具页 WIP（+187/−13）写进本功能的提交里，历史再也分不开。
 
 - [ ] **Step 8: 提交**
 
 ```bash
-git add src/components/ShareCard src/resources/images/app-icon-glyph.png src/screens/PlayDetail/Vertical/Lyric.tsx
+git add src/components/ShareCard src/resources/images/app-icon-glyph.png
 git commit -m "feat(分享图): ShareCard 两层结构与两种内容"
 ```
+
+（`git add src/components/ShareCard` 会把 Step 7 的 `git rm` 与四个新文件一起收进来；提交后用 `git show --stat HEAD` 复核**没有** `src/screens/PlayDetail/Vertical/Lyric.tsx`。）
 
 ---
 
