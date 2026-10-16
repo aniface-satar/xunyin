@@ -26,6 +26,13 @@
 - **改 Java 用 `cd android && ./gradlew :app:compileDebugJavaWithJavac` 验编译**，不要为了验一行 Java 跑整包。
 - **落款**：`app-icon-glyph.png` + 紧跟 `Music` 两个字母，不带 App 名。
 - **透明度初值**（真机观感调参项，不是判据）：底层 scrim `rgba(0,0,0,0.20)`；深卡卡底 `rgba(28,28,30,0.72)`；亮卡卡底 `#FFFFFF` 不透明。
+- **共享文件的提交只能用「HEAD + 本次改动」定向入索引**（2026-10-16 实测：本分支的工作区里躺着另外两个会话未提交的改动，写这份计划时就 ` M` 的文件有 `package.json`、`src/types/app_setting.d.ts`、`src/config/defaultSetting.ts`、`src/screens/PlayDetail/Vertical/Lyric.tsx`、`src/screens/PlayDetail/Vertical/components/Header.tsx`、`metro.config`、`dependencies-patch.js`、全部 mipmap 图标等 —— 一次 `git add <文件>` 就会把别人没写完的东西当成我的提交推出去）。做法是**只动索引、绝不动工作区**：
+  1. 先按正常方式把改动写进工作区（闸门要在真实文件上跑）；
+  2. `git show HEAD:<path> > /tmp/base.json` 取回提交基线，在**那份临时副本**上只做本任务那几行插入；
+  3. `blob=$(git hash-object -w /tmp/base.json)`，`git update-index --cacheinfo 100644,$blob,<path>`；
+  4. 新建的文件照常 `git add`（它们没有别人的改动，也没有历史）；
+  5. 验收两条，两条都过才许 `git commit`（不带 pathspec，提交的就是索引）：`git diff --cached -- <path>` 只出现本任务的行；`git diff HEAD -- <path>`（commit 之后）剩下的**全是别人的** hunk，我的工作区改动必须还在那儿。
+  **禁止**：`git add -A` / `git add .` / `git commit -a` / `git stash` / `git clean` / `git checkout -- <file>` / `git restore`；也禁止"`git show HEAD:f > f` 直接覆写工作区再改回来"那种变体 —— 中途崩掉就把别人的 WIP 抹了。暂存前先 `git diff --cached --name-only` 确认索引是空的，不是空的就停下来报 BLOCKED。
 
 ### 关于真机步骤
 
@@ -1387,18 +1394,24 @@ git commit -m "feat(分享图): captureRef 导出与 FileProvider 图片分享"
 
 **Files:**
 - Create: `src/utils/shareCard/cardFileName.ts`（零 import 的纯判据）
+- Create: `src/utils/shareCard/saveTarget.ts`（零第三方 import 的纯 SAF 路径判据）
 - Create: `src/utils/shareCard/saveCard.ts`
-- Modify: `src/types/app_setting.d.ts`（在 `download.savePathName` 之后）
-- Modify: `src/config/defaultSetting.ts`（在 `:74` 之后）
+- Modify: `src/utils/fs.ts`（`:46` 把 `copyFile` 前面的注释符去掉）
+- Modify: `src/types/app_setting.d.ts`（在 `'download.fileName'` 那段之后，HEAD `:362`）
+- Modify: `src/config/defaultSetting.ts`（在 `'download.fileName': '歌名 - 歌手',` 之后，HEAD `:72`）
 - Test: `tests/share-card-file-name.mts`
+- Test: `tests/share-card-save-target.mts`
 - Modify: `package.json`
 
 **Interfaces:**
-- Consumes: `@/utils/fs` 的 `copyFile` / `existsFile` / `selectManagedFolder` / `getPersistedUriList`；`@/core/download/safPath` 的 `isDirGranted` / `childWritePath` / `childRealPath`；`@/core/download/target` 的 `uniqueChildName`；`@/core/common` 的 `updateSetting`；`settingState`
+- Consumes: `@/utils/fs` 的 `copyFile` / `existsFile` / `selectManagedFolder` / `getPersistedUriList`（这四个里只有 `copyFile` 需要解冻，另外三个 HEAD 已有）；`@/utils/savePath` 的 `joinSavePath`（HEAD 已跟踪，写路径就靠它）；`@/core/common` 的 `updateSetting`；`settingState`；`react-native-fs` 的 `scanFile`
+- **不得引用 `@/core/download/*`**：见 Step 3 的裁定，那个目录是本分支之外的工作区文件，还没进 HEAD
 - Produces:
   - `const cardFileName: (name: string, singer: string) => string`（纯函数，去非法字符；住在 `cardFileName.ts`）
+  - `const parseSaveDir / isDirGranted / childProbePath / childRealPath`（纯判据；住在 `saveTarget.ts`）
   - `const saveShareCard: (tempPath: string, baseName: string) => Promise<string | null>`（返回落地的文件名，用户取消选择器返回 `null`）
   - 新设置键 `shareCard.savePath` / `shareCard.savePathName`
+  - 解冻的 `copyFile(fromPath: string, toPath: string): Promise<void>`
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -1444,7 +1457,7 @@ node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-
 
 预期：FAIL，`Cannot find module '.../cardFileName.ts'`。
 
-- [ ] **Step 3: 写实现（两个文件，判据单独一层）**
+- [ ] **Step 3: 写纯判据（两个文件，都能被 `node --test` 直接加载）**
 
 Create `src/utils/shareCard/cardFileName.ts`:
 
@@ -1466,17 +1479,182 @@ export const cardFileName = (name: string, singer: string) => {
 }
 ```
 
+Create `src/utils/shareCard/saveTarget.ts`（只许 import 同样纯净的 `savePath.ts`）:
+
+```ts
+import { joinSavePath } from '../../utils/savePath.ts'
+
+/**
+ * 分享图落盘的 SAF 路径判据。本文件除 savePath.ts 外不许有 import（规矩同 cardFileName.ts）：
+ * node --test 走 ESM，相对 import 不带 .ts 扩展名会 ERR_MODULE_NOT_FOUND（实测），
+ * 而带扩展名的写法 tsc 认——基座 @react-native/typescript-config 开了 allowImportingTsExtensions。
+ *
+ * 语义与下载那边（src/core/download/safPath.ts）一致，两份合一见 Task 11。
+ */
+const TREE_URI_RXP = /^content:\/\/([^/]+)\/tree\/([^/]+)(?:\/document\/(.+))?$/
+
+const PRIMARY_VOLUME_ROOT = '/storage/emulated/0'
+
+export type SaveDirRef =
+  | { kind: 'plain', path: string }
+  | { kind: 'tree', authority: string, treeSegment: string, parentDocId: string }
+
+const decodeSegment = (value: string) => {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+/** 保存目录两种形态：App 私有/公共裸路径，和系统文件夹选择器（SAF）给的 tree URI（可能带 /document/ 尾段） */
+export const parseSaveDir = (dir: string): SaveDirRef => {
+  const matched = TREE_URI_RXP.exec(dir)
+  if (!matched) return { kind: 'plain', path: dir }
+  const [, authority, treeSegment, documentSegment] = matched
+  return {
+    kind: 'tree',
+    authority,
+    treeSegment,
+    parentDocId: documentSegment ? decodeSegment(documentSegment) : decodeSegment(treeSegment),
+  }
+}
+
+/** docId 拆成 [卷名, 层级...]：primary:Music/LxMusic 的祖先是 primary: 和 primary:Music */
+const docSegments = (docId: string) => {
+  const index = docId.indexOf(':')
+  const volume = index < 0 ? docId : docId.slice(0, index)
+  const relative = index < 0 ? '' : docId.slice(index + 1)
+  return [volume, ...relative.split('/').filter(Boolean)]
+}
+
+const isDocAncestor = (ancestor: string, docId: string) => {
+  const short = docSegments(ancestor)
+  const long = docSegments(docId)
+  return short.length <= long.length && short.every((segment, index) => long[index] == segment)
+}
+
+/**
+ * 授权列表里有没有覆盖这个目录的树。只认"同一棵树"或"授权目录是所选目录的祖先"：
+ * 拿着子目录的授权写父目录，系统那边直接拒绝。裸路径是 App 自己的目录，不需要 SAF 授权。
+ */
+export const isDirGranted = (persisted: string[], dir: string) => {
+  const target = parseSaveDir(dir)
+  if (target.kind == 'plain') return true
+  return persisted.some((uri) => {
+    const grant = parseSaveDir(uri)
+    if (grant.kind != 'tree' || grant.authority != target.authority) return false
+    return isDocAncestor(grant.parentDocId, target.parentDocId)
+  })
+}
+
+/**
+ * 判断文件是否已存在时必须给完整的 document URI：原生层按最后一个斜杠拆目录和文件名，
+ * 裸拼出来的 URI 少一层，exists 永远返回 false，同名不覆盖就会一路堆 (1)(2)(3)。
+ */
+export const childProbePath = (dir: string, name: string) => {
+  const ref = parseSaveDir(dir)
+  if (ref.kind == 'plain') return joinSavePath(ref.path, name)
+  return `content://${ref.authority}/tree/${ref.treeSegment}/document/${encodeURIComponent(`${ref.parentDocId}/${name}`)}`
+}
+
+/** 媒体库扫描只认真实文件系统路径；还原不了（私有目录、认不出卷名）就返回 null，调用方跳过扫描 */
+export const childRealPath = (dir: string, name: string) => {
+  const ref = parseSaveDir(dir)
+  if (ref.kind == 'plain') return /^(\/storage|\/sdcard)\//.test(ref.path) ? joinSavePath(ref.path, name) : null
+  const docId = `${ref.parentDocId}/${name}`
+  const separatorIndex = docId.indexOf(':')
+  if (separatorIndex < 0) return null
+  const volume = docId.slice(0, separatorIndex)
+  const relativePath = docId.slice(separatorIndex + 1)
+  if (!relativePath) return null
+  if (volume == 'primary') return `${PRIMARY_VOLUME_ROOT}/${relativePath}`
+  if (/^[A-Za-z0-9-]{4,}$/.test(volume)) return `/storage/${volume}/${relativePath}`
+  return null
+}
+```
+
+- [ ] **Step 4: 给 SAF 判据补测试（这几条是全任务里最容易写错的地方）**
+
+Create `tests/share-card-save-target.mts`:
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import { childProbePath, childRealPath, isDirGranted, parseSaveDir } from '../src/utils/shareCard/saveTarget.ts'
+
+const MUSIC_TREE = 'content://com.android.externalstorage.documents/tree/primary%3AMusic'
+const LX_SUB = `${MUSIC_TREE}/document/primary%3AMusic%2FLxMusic`
+
+test('a plain app directory needs no SAF grant', () => {
+  assert.equal(isDirGranted([], '/data/user/0/cn.toside.music.mobile/files'), true)
+})
+
+test('the same tree covers itself', () => {
+  assert.equal(isDirGranted([MUSIC_TREE], MUSIC_TREE), true)
+})
+
+test('a parent grant covers a subdirectory', () => {
+  assert.equal(isDirGranted([MUSIC_TREE], LX_SUB), true)
+})
+
+test('a child grant does NOT cover the parent', () => {
+  // 拿着 Music/LxMusic 的授权去写 Music，系统会拒；这条判反了就是"选了文件夹还是保存失败"
+  assert.equal(isDirGranted([LX_SUB], MUSIC_TREE), false)
+})
+
+test('a grant from another authority does not count', () => {
+  const other = 'content://com.android.providers.downloads.documents/tree/primary%3AMusic'
+  assert.equal(isDirGranted([other], MUSIC_TREE), false)
+})
+
+test('tree uri without a document segment uses the tree docId', () => {
+  assert.equal(parseSaveDir(MUSIC_TREE).kind, 'tree')
+  assert.equal((parseSaveDir(MUSIC_TREE) as { parentDocId: string }).parentDocId, 'primary:Music')
+})
+
+test('existence probe must be a full document uri', () => {
+  assert.equal(childProbePath(MUSIC_TREE, 'poster.png'),
+    `${MUSIC_TREE}/document/primary%3AMusic%2Fposter.png`)
+})
+
+test('existence probe on a plain directory is a filesystem path', () => {
+  assert.equal(childProbePath('/storage/emulated/0/Music', 'poster.png'), '/storage/emulated/0/Music/poster.png')
+})
+
+test('primary volume maps back to /storage/emulated/0 for the media scan', () => {
+  assert.equal(childRealPath(LX_SUB, 'poster.png'), '/storage/emulated/0/Music/LxMusic/poster.png')
+})
+
+test('removable volume maps to /storage/<volume>', () => {
+  const usb = 'content://com.android.externalstorage.documents/tree/1234-ABCD'
+  assert.equal(childRealPath(usb, 'poster.png'), '/storage/1234-ABCD/poster.png')
+})
+
+test('a private app path cannot be restored, so the media scan is skipped', () => {
+  assert.equal(childRealPath('/data/user/0/cn.toside.music.mobile/files', 'poster.png'), null)
+})
+```
+
+- [ ] **Step 5: 解冻 `copyFile`，再写落盘 glue**
+
+`src/utils/fs.ts` 的 `copyFile` 在 HEAD 里是**注释掉的**（`:46`），本分支之外没有别的地方需要它。把行首的 `// ` 去掉，其余一个字不动：
+
+```ts
+export const copyFile = async(fromPath: string, toPath: string) => FileSystem.cp(fromPath, toPath)
+```
+
 Create `src/utils/shareCard/saveCard.ts`:
 
 ```ts
 import RNFS from 'react-native-fs'
 
 import { updateSetting } from '@/core/common'
-import { childRealPath, childWritePath, isDirGranted } from '@/core/download/safPath'
-import { uniqueChildName } from '@/core/download/target'
 import settingState from '@/store/setting/state'
-import { existsFile, getPersistedUriList, copyFile, selectManagedFolder } from '@/utils/fs'
-import { cardFileName } from './cardFileName'
+import { copyFile, existsFile, getPersistedUriList, selectManagedFolder } from '@/utils/fs'
+import { joinSavePath } from '@/utils/savePath'
+import { childProbePath, childRealPath, isDirGranted } from './saveTarget'
 
 const getDir = () => settingState.setting['shareCard.savePath']
 
@@ -1486,7 +1664,7 @@ const isUsableDir = async(dir: string) => {
   return existsFile(dir).catch(() => false)
 }
 
-/** 弹系统文件夹选择器并持久授权；用户取消返回 null */
+/** 弹系统文件夹选择器并持久授权；用户取消或选的不是文件夹返回 null */
 const pickDir = async() => {
   const dir = await selectManagedFolder(true).catch(() => null)
   if (!dir?.path || !dir.isDirectory) return null
@@ -1497,36 +1675,55 @@ const pickDir = async() => {
   return dir.path
 }
 
+/** 同名不覆盖：探测走 childProbePath（完整 document URI），写走裸拼，两者不能混 */
+const uniqueName = async(dir: string, baseName: string, ext: string) => {
+  let name = `${baseName}.${ext}`
+  let index = 1
+  while (await existsFile(childProbePath(dir, name)).catch(() => false)) {
+    name = `${baseName} (${index}).${ext}`
+    index++
+  }
+  return name
+}
+
 /**
- * 把导出的临时 PNG 落到用户选的目录。与下载共用 SAF 那三件套（安卓 16 真机已验通），
- * 但用独立的 shareCard.savePath —— 海报不该混进下载的音乐文件里（spec §5）。
- * 返回落地的文件名；用户没选位置就返回 null。
+ * 把导出的临时 PNG 落到用户选的目录（spec §5：海报不混进下载的音乐文件，所以是独立的 shareCard.savePath）。
+ * 返回落地的文件名；用户没选位置就返回 null。SAF 写出来的图不会被系统立刻收进媒体库，补一次扫描，扫不到就算了。
  */
 export const saveShareCard = async(tempPath: string, baseName: string): Promise<string | null> => {
   let dir = getDir()
   if (!dir || !await isUsableDir(dir)) dir = (await pickDir()) ?? ''
   if (!dir) return null
-  const name = await uniqueChildName(dir, baseName, 'png')
-  await copyFile(tempPath, childWritePath(dir, name))
+  const name = await uniqueName(dir, baseName, 'png')
+  await copyFile(tempPath, joinSavePath(dir, name))
   const realPath = childRealPath(dir, name)
   if (realPath) void RNFS.scanFile(realPath).catch(() => {})
   return name
 }
 ```
 
-`cardFileName` 导在 `saveCard.ts` 里再转一次是多余的，Task 9/10 一律从 `@/utils/shareCard/cardFileName` 取。
+> **为什么不 import `@/core/download/target`（2026-10-16 控制方预flight裁定二，覆盖上一版裁定）**：上一版让本任务复用
+> 下载会话的 `isSaveDirUsable` / `publishFile` / `scanPublishedFile`，看着最省；但 `src/core/download/` 整个目录
+> **还没进 HEAD**（`git status` 里是 `?? src/core/download/`）。本任务的提交是"HEAD + 本次改动"定向入索引，
+> 引用一个没进版本库的模块，等于这一笔单独 checkout 出来直接编译不过——和 Task 4 当初否掉 `@/core/lyricCopy`
+> 未跟踪版本是同一类问题。所以判据在本任务里重写一份（`saveTarget.ts`），并把同名不覆盖、document URI、
+> docId 反推真实路径这三处最易错的语义各自钉上测试。
+> **代价**：与下载那边形成一段有意的重复，Task 11 的收口清单里有"哪份先落地，另一份就改成 import"的条目；
+> `saveTarget.ts` 文件头上写了这件事，不是无意识的复制。
+> 另一个连带修正：初版 `saveCard.ts` 里 `import { cardFileName }` 一次都没用到（`saveShareCard` 收的是 `baseName`），
+> `no-unused-vars` 会直接报 error，删掉——`cardFileName` 由 Task 9/10 从 `@/utils/shareCard/cardFileName` 直接取。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **Step 6: 跑测试确认通过**
 
 ```bash
-node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/share-card-file-name.mts
+node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types tests/share-card-file-name.mts tests/share-card-save-target.mts
 ```
 
-预期：5 条全 PASS（或按 Step 3 末尾说的拆完再全 PASS）。
+预期：16 条全 PASS（文件名 5 条 + SAF 判据 11 条）。
 
-- [ ] **Step 5: 加设置键**
+- [ ] **Step 7: 加设置键**
 
-Modify `src/types/app_setting.d.ts`，在 `'download.savePathName'` 那段之后加：
+Modify `src/types/app_setting.d.ts`，在 `'download.fileName'` 那段之后、`'sync.enable'` 之前加（HEAD `:362`；**不要**以下一节里 `download.savePath*` 那几行为锚——它们还没进 HEAD，按它们定位在检出树上会插不进去）：
 
 ```ts
     /**
@@ -1540,28 +1737,58 @@ Modify `src/types/app_setting.d.ts`，在 `'download.savePathName'` 那段之后
     'shareCard.savePathName': string
 ```
 
-Modify `src/config/defaultSetting.ts`，在 `'download.savePathName': '',` 之后加：
+Modify `src/config/defaultSetting.ts`，在 `'download.fileName': '歌名 - 歌手',`（HEAD `:72`）之后加：
 
 ```ts
   'shareCard.savePath': '',
   'shareCard.savePathName': '',
 ```
 
-- [ ] **Step 6: 过闸门**
+- [ ] **Step 8: 过闸门**
 
 ```bash
 npx tsc --noEmit
-npx eslint src/utils/shareCard src/types/app_setting.d.ts src/config/defaultSetting.ts tests/share-card-file-name.mts
+npx eslint src/utils/shareCard src/utils/fs.ts src/types/app_setting.d.ts src/config/defaultSetting.ts
 ```
 
-- [ ] **Step 7: 挂进 npm test 清单并提交**
+（`.mts` 不在 eslint 的覆盖范围里，两个测试文件只能靠 `node --test` 自己跑。）
 
-Modify `package.json`：`"test"` 末尾追加 ` tests/share-card-file-name.mts`。
+- [ ] **Step 9: 挂进 npm test 清单并提交**
+
+Modify `package.json`：`"test"` 那串末尾追加 ` tests/share-card-file-name.mts tests/share-card-save-target.mts`（追加在 HEAD 那串的尾巴上，别去动别人加的条目）。
+
+**这一笔不能整文件 `git add`**（Global Constraints 那条）：`package.json`、`src/types/app_setting.d.ts`、`src/config/defaultSetting.ts`、`src/utils/fs.ts` 四个文件在本分支上现在就带着另外两个会话的未提交改动（`download.savePath*` 那几行、几十个别人新加的测试文件名）。注意**编辑工作区和暂存是两件事**：四个文件在**工作区**里照常改（否则 Step 8 的 tsc 过不去），但进索引的那份必须是"HEAD 的内容 + 本任务那几行"。照下面这个顺序走：
 
 ```bash
-git add src/utils/shareCard src/types/app_setting.d.ts src/config/defaultSetting.ts tests/share-card-file-name.mts package.json
+# 0) 索引必须是空的；非空就停下来报 BLOCKED，别往下走
+git diff --cached --name-only
+
+# 1) 只动索引、不动工作区：四个共享文件各做一份"HEAD + 本次插入"
+for f in package.json src/types/app_setting.d.ts src/config/defaultSetting.ts src/utils/fs.ts; do
+  git show HEAD:"$f" > "/tmp/head_$(basename "$f")"
+  # 然后在 /tmp/head_* 那份副本上只做本任务那几行：
+  #   package.json            → test 串尾部两个文件名
+  #   app_setting.d.ts        → shareCard.savePath / shareCard.savePathName 两段
+  #   defaultSetting.ts       → 两行默认值
+  #   fs.ts                   → 只去掉 copyFile 行首的 "// "
+  # 千万别用 git add <整个文件>
+  git hash-object -w "/tmp/head_$(basename "$f")"   # 打印 blob 号
+done
+git update-index --cacheinfo 100644,<blob>,package.json      # 另三个文件同样两步
+
+# 2) 新建的文件照常 add（它们不带别人的改动）
+git add src/utils/shareCard tests/share-card-file-name.mts tests/share-card-save-target.mts
+
+# 3) 两条验收，都过才提交
+git diff --cached --name-only                 # 必须正好是这 9 个路径：上面 4 个 + shareCard 三个新文件 + 两个测试
+git diff --cached -- package.json src/types/app_setting.d.ts src/config/defaultSetting.ts src/utils/fs.ts
+#   ↑ 只允许出现 shareCard.savePath / shareCard.savePathName / 两个新测试名 / copyFile 那一行解冻；
+#     看见 download.*、别人的测试文件名或 fs.ts 的其它 hunk 就是暂存错了，
+#     git reset -- <那几个路径> 重来（reset 只动索引，不动工作区，安全）
 git commit -m "feat(分享图): SAF 保存到相册，独立 shareCard.savePath 设置键"
 ```
+
+提交完再自查一次工作区没被碰坏：`git diff -- package.json src/types/app_setting.d.ts src/config/defaultSetting.ts src/utils/fs.ts` 剩下的应当**全是别人的** hunk（我们那几行已经进 HEAD 了，所以不再显示为改动）。`copyFile` 那一行是下载那边也需要的解冻，现在由这一笔先进库——他们后续提交 `fs.ts` 时这一行不再是 diff，属正常，不会丢东西。
 
 ---
 
@@ -1965,6 +2192,12 @@ cd android && ./gradlew assembleDebug && adb -s <serial> install -r app/build/ou
 
 Modify `docs/superpowers/specs/2026-10-16-share-card-image-design.md`：状态行从"已定稿，待实现"改成实际，并把真机清单里不通过的条目、以及实现中偏离 spec 的地方逐条写进 §8/§5 对应位置（本仓库既有 spec 都这么做）。
 
+**同时收掉本分支刻意留下的两份重复**（都是为了"提交单独 checkout 也编译得过"，见 Task 4 / Task 8 的裁定；谁先合进主干就把另一份删掉）：
+
+1. `averageArgbOfPixels`（`src/utils/monet/sourceColor.ts`，Task 4 加的）↔ 动态背景 WIP 的 `measureArgbPixels`：同一件事（全图平均色），后者落地后把 `getCoverAverageArgb` 的调用换过去、删掉前者。
+2. `src/utils/shareCard/saveTarget.ts`（Task 8 加的）↔ 下载 WIP 的 `src/core/download/safPath.ts`：tree URI 的四条判据（授权覆盖、document URI 探测、docId 反推真实路径）。`src/core/download/` 进 HEAD 后，`saveCard.ts` 改成从那边 import、删掉 `saveTarget.ts` 与 `tests/share-card-save-target.mts`（那边的 `tests/download-save-path.mts` 覆盖同样语义）。
+3. 连带项：`copyFile` 这行解冻由 Task 8 那笔先进库，下载那支后续提交 `fs.ts` 时它不再出现在 diff 里，属正常。
+
 - [ ] **Step 5: 提交**
 
 ```bash
@@ -1980,7 +2213,7 @@ git commit -m "docs(分享图): 真机验收结论与实现偏离回写"
 2. **占位符**：0 处。每段代码都是要落下去的最终形态，包括 `BrandLine`（真 `<Image source={require(...)}>`）和 Task 8 的第 2 条测试（期望串已按非法字符表算准）。
 3. **类型一致性**：`LyricBlockLine`（Task 2 定义，Task 6/9/10 消费，与 `@/core/lyricCopy` 的 `LyricCopyLine` 结构同形）、`CardTheme`（Task 3 定义，Task 6 消费）、`ShareCardData`（Task 6 定义，Task 9/10 消费）、`CapturedCard`（Task 7 定义，Task 9 消费）。
    就绪链只有一条：`CoverImage.onReady` → `MusicCard/LyricCard.onCoverReady` → `ShareCard.onReadyChange` → `ShareCardModal.handleReady` → 两枚按钮的 `disabled`。中间任何一层都不许再存一份 state。
-   `cardFileName` 住在 `src/utils/shareCard/cardFileName.ts`（零 import），Task 9 与单测都从那里取；`saveCard.ts` 也只从那里 import，不再二次导出。
+   `cardFileName` 住在 `src/utils/shareCard/cardFileName.ts`（零 import），Task 9 与单测都从那里取；`saveCard.ts` 不 import 它（`saveShareCard` 收的是已经算好的 `baseName`），只做落盘。SAF 路径判据另住 `saveTarget.ts`（只 import `savePath.ts`）。
 4. **这轮自查里真跑过、不是推断的**：
    - HCT tone 50 的灰阶翻转点 = **119**（118 判暗、119 判亮，`Hct.fromInt` 实测），所以 Task 3 断言写死这两个值。
    - `comment` / `share` / `download-2` 三枚字形在 `src/resources/fonts/selection.json`（全站 53 枚）里都有。
