@@ -6,7 +6,7 @@
 
 **Architecture:** 卡片写成普通 RN 组件，`react-native-view-shot` 的 `captureRef` 把预览容器拍成 PNG —— 预览与导出共用同一个组件，只有一份排版。模糊底、封面取色、tone 明暗判定全部复用已有的 monet 链路；文件落地走已在真机验通的 SAF 三件套。
 
-**Tech Stack:** React Native 0.73.11（Hermes，Paper 老架构）、TypeScript、`react-native-view-shot@4.0.3`、`@material/material-color-utilities@0.4.0`、Android Java 原生模块、`node --test`。
+**Tech Stack:** React Native 0.73.11（Hermes，Paper 老架构）、TypeScript、`react-native-view-shot@3.8.0`、`@material/material-color-utilities@0.4.0`、Android Java 原生模块、`node --test`。
 
 **Spec:** `docs/superpowers/specs/2026-10-16-share-card-image-design.md`（本计划逐条实现它，执行时两份一起读）
 
@@ -14,14 +14,15 @@
 
 每个任务的隐含要求，值从 spec 逐字抄来：
 
-- **依赖版本锁死 `react-native-view-shot@4.0.3`**。`5.x` peer 要 `react-native >= 0.76`、`6.x` 要 `>= 0.80`，本项目 RN 0.73.11 装不上；`4.0.3` peer 是 `"*"` 且带 `android/src/paper/` 源集。
+- **依赖版本锁死 `react-native-view-shot@3.8.0`**（Task 1 实测改判，原写的是 `4.0.3`）：`4.0.3` 的 `android/src/main/java` 无条件引 `com.facebook.react.fabric.interop.UIBlockViewResolver` 与 `(FabricUIManager) uiManager.addUIBlock(...)`，这两个 API 在 RN 0.73.11 的 ReactAndroid 里不存在（`grep -rl UIBlockViewResolver node_modules/react-native/ReactAndroid/src` 零命中），`:react-native-view-shot:compileDebugJavaWithJavac` 直接 BUILD FAILED；`src/paper/` 里只有 codegen 桩 `NativeRNViewShotSpec.java`，补不上这个洞。`3.8.0` 用的是 `UIManagerModule.addUIBlock`（0.73 有），全包零 `com.facebook.react.fabric` import，peer 是 `"*"`，`captureRef` 与 `result: 'tmpfile'` 都在（`src/index.d.ts:113,47`）。`5.x` 要 RN≥0.76、`6.x` 要 ≥0.80，同样不能选。
 - **不碰 `src/components/common/Image.tsx`**。封面用私有 `CoverImage` 组件包 RN 核心 `<Image>`，只从 `Image.tsx` import 已导出的 `defaultHeaders`。
 - **横屏完全不参与**（AGENTS.md 锁竖屏 + 用户明确要求）。功能只在 `src/screens/PlayDetail/Vertical/` 这条树上。
-- **不改 `UtilsModule.shareText`、不改 `res/xml/file_paths.xml`**（现有 `<cache-path name="cache" path="/" />` 已覆盖 view-shot 的临时目录）。
+- **不改 `UtilsModule.shareText`**；**但 `res/xml/file_paths.xml` 必须加一条 `<external-cache-path>`**（Task 1 实测改判，原写的是"不用改"）：`3.8.0` 的 `createTempFile` 是 `externalCacheDir.getFreeSpace() > internalCacheDir.getFreeSpace() ? external : internal`（`RNViewShotModule.java:172-189`）——真机上外置缓存几乎总是更大，文件会落在外置缓存，而现有配置只有 `<cache-path name="cache" path="/" />`，`FileProvider.getUriForFile` 会对那个路径抛 IllegalArgumentException → 分享必挂。
 - **其它分享入口本轮保持纯文本**：`OnlineList/listAction.ts:31`、`Mylist/MusicList/listAction.ts:71`、`Recommend/index.tsx:430`、`MusicRecognition/ResultSections.tsx:79`、`SonglistDetail/Header.tsx:102`。
 - **纯判据模块必须零 `react-native` import**（沿用 `src/core/lyricCopy.ts` 的规矩：`node --test` 要能直接载）。
 - **`npm test` 用的是 package.json 里写死的文件清单**，新增测试文件必须追加到 `"test"` 脚本末尾，否则不会被跑到。
-- **验证闸门**：`npx tsc --noEmit`（唯一能查未定义标识符的闸门）+ `npx eslint <自己改过的文件>`；`npm test` 的总数会随别人未提交的 WIP 漂移，判据只用"grep 自己改过的文件没有新增 fail"。
+- **验证闸门**：`npx tsc --noEmit`（唯一能查未定义标识符的闸门，本机基线 **137** 条，判据是"条数不变且 grep 不到自己的文件名"）+ `npx eslint <自己改过的 .ts/.tsx 源文件>`；`npm test` 的总数会随别人未提交的 WIP 漂移，判据只用"grep 自己改过的文件没有新增 fail"。
+- **`tests/*.mts` 不在 eslint 范围内**（Task 2 实测）：`npm run lint` 是 `eslint . --ext .js,.jsx,.ts,.tsx`（`package.json:12`），不含 `.mts`；`.eslintrc.cjs:39` 的 TS override 也只匹配 `*.ts`/`*.tsx`，所以 `.mts` 落回 `@babel/eslint-parser`，里面的 `as` 断言必然报 parse error —— 既有 40+ 个 `.mts` 测试同此状态。判据：`.mts` 只过 `node --test` 与 tsc，**不要**为了让 eslint 变绿去改共享配置或把测试写成纯 JS。
 - **改 Java 用 `cd android && ./gradlew :app:compileDebugJavaWithJavac` 验编译**，不要为了验一行 Java 跑整包。
 - **落款**：`app-icon-glyph.png` + 紧跟 `Music` 两个字母，不带 App 名。
 - **透明度初值**（真机观感调参项，不是判据）：底层 scrim `rgba(0,0,0,0.20)`；深卡卡底 `rgba(28,28,30,0.72)`；亮卡卡底 `#FFFFFF` 不透明。
@@ -43,24 +44,29 @@ spec §8 的三条探针任何一条挂了就回到 spec 改设计，不要绕�
 
 **Interfaces:**
 - Consumes: 无
-- Produces: 三条探针的真机结论（写进 spec §8 下面），以及一个已验证能编译、能 autolink、能拍出文件的 `react-native-view-shot@4.0.3`
+- Produces: 三条探针的真机结论（写进 spec §8 下面），以及一个已验证能编译、能 autolink、能拍出文件的 `react-native-view-shot@3.8.0`
 
 - [ ] **Step 1: 装依赖**
 
 ```bash
-npm i --save-exact react-native-view-shot@4.0.3
+npm i --save-exact react-native-view-shot@3.8.0
 ```
 
-预期：`package.json` 的 `dependencies` 里出现 `"react-native-view-shot": "4.0.3"`（**不能是 `^4.0.3`**）。postinstall 会跑 `dependencies-patch.js`，输出里不应有 patch 失败。
+预期：`package.json` 的 `dependencies` 里出现 `"react-native-view-shot": "3.8.0"`（**不能是 `^3.8.0`**）。postinstall 会跑 `dependencies-patch.js`，输出里不应有 patch 失败。
 
-- [ ] **Step 2: 确认没有嵌套 node_modules 冲突**
+> **为什么不是 `4.0.3`（原计划写的）**：`4.0.3` 在这台机器上 `:react-native-view-shot:compileDebugJavaWithJavac` 直接红，5 条错误全在 Fabric 那一边（`ViewShot.java:29/61/191/197` 引 `UIBlockViewResolver`、`RNViewShotModule.java:101` 强转 `FabricUIManager`），而 RN 0.73.11 没有这两个类。这条就是 Task 1 存在的意义——探针 0：能不能编译。
+
+- [ ] **Step 2: 确认装上的是"老架构可用"的那一份**
 
 ```bash
 node -e "console.log(require('react-native-view-shot/package.json').version)"
-ls node_modules/react-native-view-shot/android/src/paper/java/fr/greweb/reactnativeviewshot/
+grep -rn "com.facebook.react.fabric" node_modules/react-native-view-shot/android/src/ || echo "OK: 零 Fabric 引用"
+grep -n "UIManagerModule\b" node_modules/react-native-view-shot/android/src/main/java/fr/greweb/reactnativeviewshot/RNViewShotModule.java
+ls node_modules/react-native-view-shot/node_modules 2>/dev/null || echo "OK: 没有嵌套 node_modules（装平了）"
 ```
 
-预期：`4.0.3`；列出 `NativeRNViewShotSpec.java`。少了 paper 目录说明装错版本。
+预期：`3.8.0`；"零 Fabric 引用"；能看到 `import com.facebook.react.uimanager.UIManagerModule;` 与
+`reactContext.getNativeModule(UIManagerModule.class)`；没有嵌套 `node_modules`（有的话说明 npm 为了凑 peer 又塞了一份 RN，会把 RN 版本搞乱）。
 
 - [ ] **Step 3: 写探针卡片**
 
@@ -90,7 +96,7 @@ export default ({ onClose }: { onClose: () => void }) => {
   const { width, height } = useWindowSize()
   const musicInfo = usePlayMusicInfo()?.musicInfo
 
-  const cover = musicInfo && 'progress' in musicInfo ? musicInfo.metadata.musicInfo.pic : musicInfo?.pic
+  const cover = musicInfo && 'progress' in musicInfo ? musicInfo.metadata.musicInfo.meta.picUrl : musicInfo?.meta.picUrl
   const uri = typeof cover == 'string' && cover.startsWith('/') ? `file://${cover}` : cover
 
   const shoot = async() => {
@@ -169,7 +175,7 @@ Modify `src/screens/PlayDetail/Vertical/Lyric.tsx`：文件顶部加 `import Blu
 npx tsc --noEmit
 ```
 
-预期：报错条数与改动前一致（本机基线 137 条，全是既有 WIP 带来的）。**只要没出现 `ShareCard/probe` 或 `react-native-view-shot` 的新增行就算过。** 若出现 `Cannot find module 'react-native-view-shot'`，说明 4.0.3 的 `types: src/index.d.ts` 里那个 `declare module` 没被认下来 —— 记下报错原文，这是要回写 spec 的偏离。
+预期：报错条数与改动前一致（本机基线 137 条，全是既有 WIP 带来的）。**只要没出现 `ShareCard/probe` 或 `react-native-view-shot` 的新增行就算过。** 若出现 `Cannot find module 'react-native-view-shot'`，说明 3.8.0 的 `types: src/index.d.ts` 里那个 `declare module` 没被认下来 —— 记下报错原文，这是要回写 spec 的偏离。
 
 - [ ] **Step 6: [真机] 构建装机**
 
@@ -177,7 +183,7 @@ npx tsc --noEmit
 
 ```bash
 cd android && ./gradlew assembleDebug
-adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s <serial> install -r app/build/outputs/apk/debug/xunyin-v1.1.0-arm64-v8a.apk
 ```
 
 预期：BUILD SUCCESSFUL。若 Metro 报解析不到 `./specs/NativeRNViewShot`，就是 node_modules 里的 `.ts` 没被 transform —— 退路是在 `metro.config.js` 的 `resolver` 里加 `sourceExts` 含 `'ts'`（RN 0.73 默认已含，先确认再动）。
@@ -193,7 +199,8 @@ adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk
 3. **状态栏在不在**：屏幕上预览是全屏的，但**报告里的 bytes 与 uri 只能证明拍到了**；要判状态栏得把图拉出来看：
 
 ```bash
-adb -s <serial> shell "run-as cn.toside.music.mobile cat /data/data/cn.toside.music.mobile/cache/$(adb -s <serial> shell 'ls /data/data/cn.toside.music.mobile/cache | grep lxprobe' | tr -d '\r')" > /tmp/probe.png 2>/dev/null || echo "run-as 拿不到，改用分享按钮"
+adb -s <serial> shell "ls /storage/emulated/0/Android/data/cn.toside.music.mobile/cache/ | grep lxprobe"
+adb -s <serial> pull "/storage/emulated/0/Android/data/cn.toside.music.mobile/cache/<上面打出的文件名>" /tmp/probe.png
 ```
 
 拿不到文件就退一步：让用户点系统里任意方式把 `uri` 那个文件发出来看。**判据是图本身，不是 `exists=true`。**
@@ -206,7 +213,7 @@ Modify `docs/superpowers/specs/2026-10-16-share-card-image-design.md`，在 §8 
 
 ```bash
 git add package.json package-lock.json src/components/ShareCard/probe src/screens/PlayDetail/Vertical/Lyric.tsx docs/superpowers/specs/2026-10-16-share-card-image-design.md
-git commit -m "spike(分享图): 装上 view-shot 4.0.3 并跑通三条导出探针"
+git commit -m "spike(分享图): 装上 view-shot 3.8.0（4.0.3 在 0.73 编不过）"
 ```
 
 **若探针 1 不通过**：改用 monet 已有的像素 + `src/utils/monet/png.ts` 自己编码一张模糊小图当底（spec §8 已写明这条退路仍零新依赖），然后回到本计划 Task 6 重排。
@@ -1124,6 +1131,7 @@ git commit -m "feat(分享图): ShareCard 两层结构与两种内容"
 **Files:**
 - Create: `src/utils/shareCard/exportCard.ts`
 - Modify: `android/app/src/main/java/cn/toside/music/mobile/utils/UtilsModule.java`（在 `shareText` 之后插入）
+- Modify: `android/app/src/main/res/xml/file_paths.xml`（加一条 `external-cache-path`）
 - Modify: `src/utils/nativeModules/utils.ts`
 
 **Interfaces:**
@@ -1132,6 +1140,20 @@ git commit -m "feat(分享图): ShareCard 两层结构与两种内容"
   - `interface CapturedCard { uri: string, path: string }`
   - `const captureShareCard: (ref: RefObject<View | null>, fileName: string) => Promise<CapturedCard>`
   - `const shareCapturedCard: (path: string, shareTitle: string, title: string, text: string) => Promise<void>`
+
+- [ ] **Step 0: 让 FileProvider 认得 3.8.0 的落盘点**
+
+`3.8.0` 的 `createTempFile` 在内外置缓存都可用时挑 **剩余空间大的那个**（`RNViewShotModule.java:172-189`），真机上几乎总是外置缓存：
+`/storage/emulated/0/Android/data/cn.toside.music.mobile/cache/`。现有 `file_paths.xml` 只声明了 `<cache-path name="cache" path="/" />`，
+`FileProvider.getUriForFile` 遇到外置缓存路径会抛 `IllegalArgumentException` —— 表现是"分享按钮点了没反应/报错"，而且换一台机器就可能换一条路。
+所以先补这一条（`res/xml/file_paths.xml`，紧跟现有的 `cache-path` 之后）：
+
+```xml
+  <!-- view-shot 3.8.0 的 createTempFile 会挑剩余空间大的缓存目录，真机上通常是外置缓存 -->
+  <external-cache-path name="external-cache" path="/" />
+```
+
+这条只放开**本应用自己的外置缓存目录**，且只有我们主动 `FLAG_GRANT_READ_URI_PERMISSION` 授权的那一个 URI 可读，不涉及其它目录。
 
 - [ ] **Step 1: Java 侧加 `shareImage`**
 
@@ -1244,7 +1266,7 @@ npx eslint src/utils/shareCard/exportCard.ts src/utils/nativeModules/utils.ts
 - [ ] **Step 6: 提交**
 
 ```bash
-git add android/app/src/main/java/cn/toside/music/mobile/utils/UtilsModule.java src/utils/nativeModules/utils.ts src/utils/shareCard/exportCard.ts
+git add android/app/src/main/java/cn/toside/music/mobile/utils/UtilsModule.java android/app/src/main/res/xml/file_paths.xml src/utils/nativeModules/utils.ts src/utils/shareCard/exportCard.ts
 git commit -m "feat(分享图): captureRef 导出与 FileProvider 图片分享"
 ```
 
@@ -1606,6 +1628,8 @@ const rawMusic = playMusicInfo.musicInfo
 const cardMusic = rawMusic ? ('progress' in rawMusic ? rawMusic.metadata.musicInfo : rawMusic) : null
 ```
 
+> **封面不在顶层**：`LX.Music.MusicInfo` 上没有 `pic`，字段是 `meta.picUrl`（`src/types/music.d.ts:24`，仓库用法见 `src/components/OnlineList/ListItem.tsx:85`）。Task 1 的探针照抄 `musicInfo.pic` 时 tsc 直接从 137 涨到 139（`TS2339: Property 'pic' does not exist on type 'MusicInfoOnline'`）。Header 那处同理。
+
 这里只读 hook 那一份，**不要**照抄 Header 里 `playerState.playMusicInfo.musicInfo ?? playMusicInfo.musicInfo` 的写法 —— 那个是给"点击那一刻取最新值"用的，渲染里必须跟着 hook 走，否则换歌后卡上的字不更新。
 
 把 `:501` 那枚 disabled 按钮换成：
@@ -1636,7 +1660,7 @@ const handleOpenPoster = useCallback(() => {
     <ShareCardModal
       visible
       mode="lyric"
-      musicInfo={{ name: cardMusic.name, singer: cardMusic.singer, pic: cardMusic.pic }}
+      musicInfo={{ name: cardMusic.name, singer: cardMusic.singer, pic: cardMusic.meta.picUrl }}
       lyricLines={pickLyricLinesForCopy(lyricLinesRef.current, selectedLinesRef.current)}
       onClose={() => setPosterOpen(false)}
     />
@@ -1704,7 +1728,7 @@ const handleShareMode = (mode: ShareMode) => {
     shareMusic(shareType, downloadFileName, musicInfo)
     return
   }
-  setShareCardData({ name: musicInfo.name, singer: musicInfo.singer, pic: musicInfo.pic })
+  setShareCardData({ name: musicInfo.name, singer: musicInfo.singer, pic: musicInfo.meta.picUrl })
 }
 ```
 
@@ -1808,7 +1832,7 @@ npx eslint . --ext .js,.jsx,.ts,.tsx
 ETA 6–8 分钟（Task 1 起过 Java 改动后首次）。
 
 ```bash
-cd android && ./gradlew assembleDebug && adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk
+cd android && ./gradlew assembleDebug && adb -s <serial> install -r app/build/outputs/apk/debug/xunyin-v1.1.0-arm64-v8a.apk
 ```
 
 - [ ] **Step 3: [真机] 十条验收清单**

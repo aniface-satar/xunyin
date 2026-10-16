@@ -36,9 +36,10 @@
 
 `npm pack` 扒源码实测到的事实（不是看博客摘要）：
 
-- **版本必须锁 `4.0.3`**：`5.x` peer 要 `react-native >= 0.76`、`6.x` 要 `>= 0.80`，本项目 RN 0.73.11 装不上；`4.0.3` peer 是 `"*"`，且 Android 侧有 `src/paper/` 源集（`NativeRNViewShotSpec.java`）→ 老架构可用。
+- **版本必须锁 `3.8.0`**（原写 `4.0.3`，2026-10-16 真机编译否证）。`4.0.3` 的 `android/src/main/java` 无条件引 Fabric：`ViewShot.java:29/61/191/197` 用 `com.facebook.react.fabric.interop.UIBlockViewResolver`、`RNViewShotModule.java:101` 强转 `FabricUIManager`，而 RN 0.73.11 的 ReactAndroid 里没有这两个类 → `:react-native-view-shot:compileDebugJavaWithJavac` BUILD FAILED（5 条错误，55s）。`src/paper/` 里只有一份 codegen 桩 `NativeRNViewShotSpec.java`，**补不上 main 源集**——"带 paper 源集所以老架构可用"这条推断是错的。
+  `3.8.0` 走 `reactContext.getNativeModule(UIManagerModule.class).addUIBlock(...)`（0.73 有这个方法，见 `UIManagerModule.java`），全包零 `com.facebook.react.fabric` 引用，peer `"*"`，`captureRef`/`result: 'tmpfile'` 都在（`src/index.d.ts:113,47`）。`5.x` 要 RN≥0.76、`6.x` 要 ≥0.80，也不可选。
 - 捕获方式是 `view.draw(canvas)`（`ViewShot.java:382`），不是截图。
-- 默认 `result: 'tmpfile'` 落在 `context.getCacheDir()`（`RNViewShotModule.java:171,189`），而 `AndroidManifest.xml:107-117` 已声明 FileProvider 且 `res/xml/file_paths.xml` 里有 `<cache-path name="cache" path="/" />` → **导出文件天然已在可共享目录内，`file_paths.xml` 不用改**。
+- 默认 `result: 'tmpfile'` 落在**内外置缓存里剩余空间大的那个**（`3.8.0`：`RNViewShotModule.java:172-189`，`externalCacheDir.getFreeSpace() > internalCacheDir.getFreeSpace()` 就用外置），真机上通常是 `/storage/emulated/0/Android/data/<pkg>/cache/`。`AndroidManifest.xml:107-117` 已声明 FileProvider，但 `res/xml/file_paths.xml` 只有 `<cache-path name="cache" path="/" />` → **`file_paths.xml` 必须补一条 `<external-cache-path name="external-cache" path="/" />`**（原写"不用改"，错）。不补的表现：`FileProvider.getUriForFile` 对外置缓存路径抛 `IllegalArgumentException`，分享按钮点了报错，而且换一台存储布局不同的机器结果就变了。
 - `html2canvas` 只出现在 `src/RNViewShot.web.js`，Metro 走 `.js` 分支，**不进包**。
 
 ## 3. 卡的两层结构
@@ -142,6 +143,9 @@ fitLyricBlock(lines, { maxHeight, tiers: [24, 22, 20, 18, 16], lineHeightRatio: 
 
 ## 8. 三条生死探针（先跑通，再写正式代码）
 
+0. **能不能编译**（这条排最先，2026-10-16 已跑，**结论：`4.0.3` 不通过，改锁 `3.8.0`**）。
+   详见 §2。`3.8.0` 的编译与 autolink 结论见实施计划 Task 1 的报告；三条真机探针因设备未连暂缺，跑完再往下面逐条补。
+
 1. **`blurRadius` 会不会被 `view.draw()` 拍到。** Fresco 的模糊是烘进位图的，理论上能；但这条不验我不敢往下写。
    退路：用 monet 已有的像素 + `png.ts` 自己编码一张模糊小图当底 —— 仍然零新依赖。
 2. **远程封面（需要 UA header）是否真的加载完才拍。** 靠 `CoverImage` 的 `onLoad` 门控。不通过的话会拍到空图/占位图。
@@ -167,4 +171,4 @@ fitLyricBlock(lines, { maxHeight, tiers: [24, 22, 20, 18, 16], lineHeightRatio: 
 - 不改 `shareText` 的现有文本分享行为。
 - **其它分享入口本轮一律不动**，保持纯文本：`OnlineList/listAction.ts:31`、`Mylist/MusicList/listAction.ts:71`、`Recommend/index.tsx:430`、`MusicRecognition/ResultSections.tsx:79`、`SonglistDetail/Header.tsx:102`。分享图只做播放页头部 + 歌词海报这两个入口。
 - 不做二维码、不做多模板/配色自选、不做海报历史。
-- 不改 `file_paths.xml`（现有 `cache-path` 已覆盖）。
+- ~~不改 `file_paths.xml`~~ → **要改**：加一条 `external-cache-path`（见 §2 的 2026-10-16 更正），`3.8.0` 会把临时图写进外置缓存。
