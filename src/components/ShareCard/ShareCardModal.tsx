@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { Modal, TouchableOpacity, View } from 'react-native'
+import { Modal, StyleSheet, TouchableOpacity, View } from 'react-native'
 
 import { Icon } from '@/components/common/Icon'
 import ShareCard, { type ShareCardData } from '@/components/ShareCard'
@@ -9,10 +9,10 @@ import { useWindowSize } from '@/utils/hooks'
 import { cardFileName } from '@/utils/shareCard/cardFileName'
 import { captureShareCard, shareCapturedCard } from '@/utils/shareCard/exportCard'
 import { saveShareCard } from '@/utils/shareCard/saveCard'
-import { createStyle, toast } from '@/utils/tools'
+import { toast } from '@/utils/tools'
 import { type LyricBlockLine } from './fitLyricBlock'
 
-interface Props {
+export interface ShareCardModalProps {
   visible: boolean
   mode: 'music' | 'lyric'
   musicInfo: ShareCardData
@@ -20,7 +20,7 @@ interface Props {
   onClose: () => void
 }
 
-export default ({ visible, mode, musicInfo, lyricLines, onClose }: Props) => {
+const ShareCardModal = ({ visible, mode, musicInfo, lyricLines, onClose }: ShareCardModalProps) => {
   const t = useI18n()
   const { width, height } = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
@@ -42,7 +42,8 @@ export default ({ visible, mode, musicInfo, lyricLines, onClose }: Props) => {
         t('share_card_title_music', { name: musicInfo.name }),
         t('share_title_music'),
         `${musicInfo.name} - ${musicInfo.singer}`)
-    } catch {
+    } catch (e) {
+      console.error('[share_card] capture_failed', e)
       toast(t('share_card_capture_failed'))
     } finally {
       setBusy(false)
@@ -57,7 +58,8 @@ export default ({ visible, mode, musicInfo, lyricLines, onClose }: Props) => {
       // null = 用户在文件夹选择器里取消了，那不叫失败，也不该说"已保存"
       if (name) toast(t('share_card_saved', { name }))
       else toast(t('share_card_save_canceled'))
-    } catch {
+    } catch (e) {
+      console.error('[share_card] save_failed', e)
       toast(t('share_card_save_failed'))
     } finally {
       setBusy(false)
@@ -90,7 +92,11 @@ export default ({ visible, mode, musicInfo, lyricLines, onClose }: Props) => {
   )
 }
 
-const styles = createStyle({
+// 这一层的数字全部是原始 dp，不走 createStyle：
+// trasformeStyle（src/utils/tools.ts:494）只缩放 width/height/margin*/padding*（经 scaleSizeW/H 乘
+// global.lx.fontSize），borderRadius 落到 default 分支不动。字号设置 >1 时 44×44 的按钮会胀大、
+// 22 的圆角不变，圆就变成方角。与同目录 index.tsx / LyricCard.tsx 的选择一致。
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
   actions: { position: 'absolute', top: 0, right: 0, flexDirection: 'row', paddingRight: 12 },
   actionBtn: {
@@ -103,3 +109,5 @@ const styles = createStyle({
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
 })
+
+export default ShareCardModal
