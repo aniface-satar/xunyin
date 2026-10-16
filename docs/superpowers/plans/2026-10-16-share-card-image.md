@@ -743,6 +743,7 @@ git commit -m "feat(monet): 加 getCoverAverageArgb 出口，与配色层共用�
 - Produces:
   - `interface CoverImageProps { url: string | null | undefined, style: StyleProp<ImageStyle>, resizeMode?: 'cover' | 'contain' | 'stretch', onReady?: (ready: boolean) => void }`
   - `default CoverImage`
+  - `const normalizeCoverUri: (url: string | null | undefined) => string | null`（`'/'` 开头的本地路径补成 `file://`）—— Task 6 的铺底层与 `MusicCard` 都 import 它，必须导出。
   - Task 6 用 `onReady(true)` 才放行拍摄；无封面 / 加载失败也算 ready（否则导出永远卡住）。
 
 - [ ] **Step 1: 写实现**
@@ -1130,7 +1131,7 @@ git commit -m "feat(分享图): ShareCard 两层结构与两种内容"
 - Produces:
   - `interface CapturedCard { uri: string, path: string }`
   - `const captureShareCard: (ref: RefObject<View | null>, fileName: string) => Promise<CapturedCard>`
-  - `const shareCardImage: (path: string, shareTitle: string, title: string, text: string) => Promise<void>`
+  - `const shareCapturedCard: (path: string, shareTitle: string, title: string, text: string) => Promise<void>`
 
 - [ ] **Step 1: Java 侧加 `shareImage`**
 
