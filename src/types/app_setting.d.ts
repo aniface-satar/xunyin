@@ -362,6 +362,16 @@ declare global {
     'download.fileName': '歌名 - 歌手' | '歌手 - 歌名' | '歌名'
 
     /**
+     * 分享图/歌词海报的保存位置（系统文件夹选择器返回的位置）
+     */
+    'shareCard.savePath': string
+
+    /**
+     * 分享图保存位置的展示名称
+     */
+    'shareCard.savePathName': string
+
+    /**
        * 是否启用同步
        */
     'sync.enable': boolean

@@ -43,7 +43,7 @@ export const hash = async(path: string, algorithm: HashAlgorithm) => FileSystem.
 export const readFile = async(path: string, encoding?: Encoding) => FileSystem.readFile(path, encoding)
 
 
-// export const copyFile = async(fromPath: string, toPath: string) => FileSystem.cp(fromPath, toPath)
+export const copyFile = async(fromPath: string, toPath: string) => FileSystem.cp(fromPath, toPath)
 
 export const moveFile = async(fromPath: string, toPath: string) => FileSystem.mv(fromPath, toPath)
 export const gzipFile = async(fromPath: string, toPath: string) => FileSystem.gzipFile(fromPath, toPath)

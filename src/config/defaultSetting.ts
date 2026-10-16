@@ -71,6 +71,9 @@ const defaultSetting: LX.AppSetting = {
 
   'download.fileName': '歌名 - 歌手',
 
+  'shareCard.savePath': '',
+  'shareCard.savePathName': '',
+
   'sync.enable': false,
 
   'list.isClickPlayList': false,
