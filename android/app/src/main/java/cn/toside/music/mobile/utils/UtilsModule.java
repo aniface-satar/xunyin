@@ -270,9 +270,10 @@ public class UtilsModule extends ReactContextBaseJavaModule {
     Objects.requireNonNull(reactContext.getCurrentActivity()).startActivity(Intent.createChooser(shareIntent, shareTitle));
   }
 
-  // 分享一张导出的图。故意不复用 shareText 的 Uri.fromFile 写法：
-  // 那条在 API 24+ 会让收端抛 FileUriExposedException，而 view-shot 的临时文件在
-  // getCacheDir() 里，manifest 的 <cache-path name="cache" path="/" /> 已经覆盖得到。
+  // 分享一张导出的图。file:// 直接放进 EXTRA_STREAM 在 API 24+ 会让收端抛 FileUriExposedException，
+  // 所以过一道 FileProvider。view-shot 3.8.0 的 createTempFile 挑"剩余空间大的那个缓存"
+  // （RNViewShotModule.java:186-188），真机上通常是外置缓存，所以下面 cache-path 与 external-cache-path
+  // 两条声明都得在 —— 缺一条的表现就是"分享按钮点了没反应"，而且换一台机器可能换一条路。
   @ReactMethod
   public void shareImage(String filePath, String authority, String shareTitle, String title, String text, Promise promise) {
     File file = new File(filePath);
@@ -284,7 +285,7 @@ public class UtilsModule extends ReactContextBaseJavaModule {
     try {
       contentUri = FileProvider.getUriForFile(getReactApplicationContext(), authority, file);
     } catch (Exception e) {
-      promise.reject("SHARE_IMAGE_FAILED", "FileProvider rejected " + filePath + ": " + e.getMessage());
+      promise.reject("SHARE_IMAGE_FAILED", "FileProvider rejected " + filePath + ": " + e);
       return;
     }
     Intent shareIntent = new Intent(Intent.ACTION_SEND);
@@ -298,7 +299,9 @@ public class UtilsModule extends ReactContextBaseJavaModule {
         .startActivity(Intent.createChooser(shareIntent, shareTitle));
       promise.resolve(null);
     } catch (Exception e) {
-      promise.reject("SHARE_IMAGE_FAILED", e.getMessage());
+      // 用 e 不用 e.getMessage()：requireNonNull 抛的 NPE 没有 message，null 到了 RN 那边只剩
+      // "Unexpected error has occurred"，真实原因（哪个 activity、什么异常）就丢了
+      promise.reject("SHARE_IMAGE_FAILED", "share failed: " + e);
     }
   }
 
