@@ -1031,7 +1031,7 @@ import { createStyle } from '@/utils/tools'
 import { BrandLine } from './BrandLine'
 import CoverImage from './CoverImage'
 import { type CardTheme } from './cardTheme'
-import { type LyricBlockLine, fitLyricBlock } from './fitLyricBlock'
+import { type LyricBlockLine, fitLyricBlock, LYRIC_LINE_HEIGHT_RATIO } from './fitLyricBlock'
 
 interface Props {
   lines: readonly LyricBlockLine[]
@@ -1052,16 +1052,16 @@ export default ({ lines, name, singer, pic, lyricMaxHeight, theme, onCoverReady 
         {
           shown.map((line, index) => (
             <View key={`${index}-${line.text}`}>
-              { line.text?.trim() ? <Text style={{ fontSize: fit.fontSize, lineHeight: fit.fontSize * 1.5, color: theme.lyricColor }}>{line.text}</Text> : null }
+              { line.text?.trim() ? <Text style={{ fontSize: fit.fontSize, lineHeight: fit.fontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.lyricColor }}>{line.text}</Text> : null }
               {
                 (line.extendedLyrics ?? []).map((text, i) => text?.trim()
-                  ? <Text key={i} style={{ fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * 1.5, color: theme.subtitleColor }}>{text}</Text>
+                  ? <Text key={i} style={{ fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.subtitleColor }}>{text}</Text>
                   : null)
               }
             </View>
           ))
         }
-        { fit.truncated ? <Text style={{ fontSize: fit.extendedFontSize, color: theme.subtitleColor }}>…</Text> : null }
+        { fit.truncated ? <Text style={{ fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.subtitleColor }}>…</Text> : null }
       </View>
       <View style={[styles.separator, { backgroundColor: theme.subtitleColor }]} />
       <View style={styles.footer}>
@@ -1084,7 +1084,7 @@ const styles = createStyle({
 })
 ```
 
-歌词块本身不写高度：整块能多高由 `fitLyricBlock` 保证，卡自己再受 `maxHeight: cardMaxHeight` 约束，两处不要都设死。
+歌词块本身不写高度：整块能多高由 `fitLyricBlock` 保证，卡自己再受 `maxHeight: cardMaxHeight` 约束，两处不要都设死。行高倍数一律用 `fitLyricBlock` 导出的 `LYRIC_LINE_HEIGHT_RATIO`，不要在卡里写死 `1.5`——那个模块的单测就是按这个倍数算高度的，写死之后调参数的人改了模块、卡还是旧的，测过的预算和拍出来的成品就分叉了。
 
 - [ ] **Step 5: 组装两层**
 
@@ -1113,8 +1113,11 @@ export const CARD_PADDING = 20
 // 这一支整屏铺满、那条边正好落在导出图的屏幕上沿。Task 11 真机清单要看这一条，别看漏就照着播放页加外扩。
 export const BLUR_RADIUS = 90
 
-// 歌词卡底部那一坨：分隔线 + 小封面行（含落款）+ 上下卡内边距
-const LYRIC_FOOTER_RESERVE = 140
+// 歌词卡底部那一坨，最坏情况：省略号一行 22×1.5=33 + 分隔线（14+1+14=29）+ 小封面行（歌名两行 2×~19 + 歌手 2+~17 + 落款 16+20 ≈ 93）≈ 155。
+// 卡内上下边距不在这里，由下面 CARD_PADDING * 2 单独扣。
+const LYRIC_FOOTER_RESERVE = 160
+// 音乐卡里封面之外的那几行：标题 18+3×30=108、歌手 6+2×~25=56、落款 16+20=36 ≈ 200
+const MUSIC_CARD_TEXT_RESERVE = 200
 
 export interface ShareCardData {
   name: string
@@ -1141,17 +1144,22 @@ const ShareCard = forwardRef<View, Props>(({ mode, musicInfo, lyricLines, width,
   useEffect(() => {
     let cancelled = false
     setAverageArgb(null)
-    if (!musicInfo.pic) return
+    // 歌词卡的配色写死在 LYRIC_CARD_THEME，这个平均色取到也不用 —— 别为一趟没人读的取色去敲原生
+    if (!musicInfo.pic || mode === 'lyric') return
     void getCoverAverageArgb(musicInfo.pic).then(value => {
       if (!cancelled) setAverageArgb(value)
     })
     return () => { cancelled = true }
-  }, [musicInfo.pic])
+  }, [musicInfo.pic, mode])
 
   const theme: CardTheme = mode === 'lyric' ? LYRIC_CARD_THEME : pickMusicCardTheme(averageArgb)
   const cardWidth = width * CARD_WIDTH_RATIO
-  const coverSize = cardWidth - CARD_PADDING * 2
   const cardMaxHeight = height * CARD_MAX_HEIGHT_RATIO
+  // 封面同时受两条边管：只按宽算，长歌名在矮窗口上会把标题/落款顶到卡底外面（RN 默认不缩不裁）。
+  const coverSize = Math.max(0, Math.min(
+    cardWidth - CARD_PADDING * 2,
+    cardMaxHeight - CARD_PADDING * 2 - MUSIC_CARD_TEXT_RESERVE,
+  ))
   const lyricMaxHeight = Math.max(0, cardMaxHeight - CARD_PADDING * 2 - LYRIC_FOOTER_RESERVE)
 
   return (
@@ -1185,6 +1193,11 @@ export default ShareCard
 ```
 
 `averageArgb` 初值是 `null` → 取色还没回来（或失败）时 `pickMusicCardTheme(null)` 给深卡，这与 spec §3「取不到色就不赌」一致；色回来后组件重渲染，卡从深翻成亮，预览页里看得见这一次翻转，不用额外提示。
+
+> **两处高度预算的修正（2026-10-16 任务评审裁定，覆盖本节原先的写法）**：初版把 `coverSize` 只按宽算（`cardWidth - CARD_PADDING * 2`），又把省略号留在歌词预算之外。RN 的 `maxHeight` 既不会收缩子节点也不会裁（默认 `flexShrink: 0`、`overflow: 'visible'`），所以内容一旦超过 `cardMaxHeight`，歌名/歌手/落款就渲染到卡片圆角背景**外面**——糊底上飘着几行白字，而且这是在导出的成品图里。
+> - `MUSIC_CARD_TEXT_RESERVE = 200`：封面之外那三行的最坏高度（标题 `marginTop 18` + 3 行 × 行高 30；歌手 `marginTop 6` + 2 行 ≈ 25/行；落款 `marginTop 16` + 字形 20）。`coverSize` 取宽度上限与高度上限的较小者，封面自己缩，文字就不会被顶出去。
+> - `LYRIC_FOOTER_RESERVE` 从 140 提到 160：原注释把 `CARD_PADDING * 2` 也算进了 140，而代码是另外单独扣的，所以 140 实际只剩 18～37 dp 余量，正好被省略号那一行吃穿。新值按"省略号 33 + 分隔线 29 + 小封面行最坏 93 ≈ 155"取整，边距明确交给 `CARD_PADDING * 2`。
+> 两条都是**最坏情况预留**：歌名短、歌词没截断时看不出来，所以真机清单里要专门找一首长歌名的歌看音乐卡（Task 11）。
 
 - [ ] **Step 6: 过闸门**
 
