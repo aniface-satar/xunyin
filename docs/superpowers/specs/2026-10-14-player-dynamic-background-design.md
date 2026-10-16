@@ -306,100 +306,88 @@ getCoverSurface(url, fontColor, algo)
 
 ---
 
-## 10. 五次迭代：删掉莫奈，第二档改成「重度模糊封面固定铺底」（2026-10-16）
+## 10. 五次迭代：删掉「安卓原生取色」，第二档改为「动态取色＝重度模糊封面固定铺底」（2026-10-16）
 
-用户要求原文：**把莫奈取色的相关逻辑代码全部删除，设置里的第二个选项改成"动态取色＝重度模糊封面固定铺底"**。
-§7（云纹纹理）、§8（原生种子那条 seam 的莫奈半支）、§9（把量化挪出展开动画）里被这次删除作废的部分**保留原文不回改**，
-只在下面声明作废范围——那三段记录的是"当时为什么那样做"，删代码不等于删结论。
+（本节初稿把要删的那一档写反了，已按用户更正重写：莫奈留、原生删。）
 
-四条留白的决定按用户给的三把尺子裁定：**资源占用最少 / 切换加载时间最短 / 显示结果最优**。
+用户要求原文：**保留莫奈取色，去掉「安卓原生取色」这一整条；设置里的第二个选项改为"动态取色＝重度模糊封面固定铺底"**。
+四条留白仍按用户给的三把尺子裁定：**资源占用最少 / 切换加载时间最短 / 显示结果最优**。
 
 ### 10.1 两档的新形状
 
-| 档 | setting 值 | 背景是什么 | 默认 |
-| --- | --- | --- | --- |
-| 安卓原生取色 | `'native'` | androidx.palette 给的种子色，压暗成一块**纯色**铺底；不画模糊封面 | 否 |
-| 动态取色 | `'blur'` | **重度模糊的封面图本身固定铺底**，上面压一层由封面平均色压暗得到的蒙版 | **是** |
+| 档 | setting 值 | 背景是什么 | 前景墨 | 默认 |
+| --- | --- | --- | --- | --- |
+| 莫奈取色 | `'monet'` | 官方 `QuantizerCelebi + Score` 挑出的源色 → 一块染色底 + 少量封面透出（§7 的形状，一字不改） | 白 + 灰 + **带封面色相的强调色** | 否 |
+| 动态取色 | `'blur'` | **重度模糊的封面图本身固定铺底**，蒙版是"封面整体色相压到暗锚点"的一支，透出量只受白字闸门管 | 只有白 + 灰（`tint.chroma = 0`） | **是** |
 
-- `'monet'` 这个值从域里消失；`normalizeCoverAlgo` 把老用户存的 `'monet'`（以及任何不认识的串）归一到 `'blur'`。
-  归到 `'blur'` 而不是 `'native'`：①是"这次才真正做对"的那一档，②是新默认，老设置里那半吊子的莫奈色没有任何理由继续留着。
-- **①彻底不透封面**（`scrimAlpha` 恒为 1，糊封面那一支整支不渲染）。这是 §8.8 那个"两档看起来一模一样"的直接修法：
-  色相是种子色唯一还活着的通道，光换种子换不出区分度，那就把差异放到"看不看得到封面"这条通道上。
-- ② 的取色种子失败（原生没给 swatch、老 APK 没这个键）→ **退到②的形态而不是"没有背景"**：
-  ② 本来就不依赖种子，只需要封面平均色（JS 算）与那张图。① 拿不到种子时同样退到 ②。
-- ② 的前景只做**白 + 灰**，不再有带封面色相的强调色，也不会中途翻色相。
-  理由：色彩由糊封面自己提供（那才是用户要的"显示结果最优"），再叠一层取色来的色相就是两套语言；
-  而且删掉 HCT 之后没有可靠的"同色相摆明度"工具，用 sRGB 缩放自己造会得到发灰的强调色——那是造色，不是跟色。
+- `'native'` 这个值从域里消失；`normalizeCoverAlgo` 把存的 `'native'`（以及任何不认识的串）归一到 `'monet'`。
+  归到 `'monet'` 而不是 `'blur'`：②是新加的、还没被任何人在真机上验过，一个原本选了"另一条取色路"的老用户
+  被换到一个新界面上是不公平的；①这边他熟悉的行为原样在。默认值这条反过来：新装用户走 ②（§10.2）。
+- **不删莫奈的任何数学**：源色、tone 锚点、彩度三段 `min`、蒙版与白字闸门、§9 的 idle 调度、§7 的纹理支
+  全部保持原样。纹理支仍然"不接线、不删除"。
+- ② 只借用 ① 已有的两块地基：`measureArgbPixels`（average/highlight，不跑量化）与同一条 sRGB 混法闸门。
+  **闸门只许有一个定义**，所以两支共用 `surface.ts` 里那一个 `fieldToneOf`，不写第二份。
 
 ### 10.2 三把尺子怎么裁的
 
-- **资源最少**：删掉 `@material/material-color-utilities` 的全部引用（源码里只有 4 个文件用它）、整条量化、
-  纹理支（`texture.ts`/`png.ts`/`pako.d.ts`）和 §9 那套 idle 调度（`analysisGate.ts` + `InteractionManager` 接线）。
-  取色耗时从实测 143ms 降到 2ms 级别，于是"颜色要排在交互空档"这个问题连它的答案一起消失。
-  **不新增任何 npm 依赖**：RN 安卓的 `blurRadius` 本来就是成熟链路
+- **资源最少**：② 跳过官方量化（实测 143ms 里那 123ms 整段不跑），只跑逐像素均值 + 每块一次 HCT。
+  不新增任何 npm 依赖：RN 安卓的 `blurRadius` 本来就是成熟链路
   （`ReactImageView.java:222-228` 把它交给 Fresco 的 `IterativeBoxBlurPostProcessor(2, r/2)`，解码期后处理 + 结果进缓存，不是每帧的活）。
   解包看过的 `@react-native-community/blur`、`expo-blur`、`react-native-blurhash`、Skia 系都是"给实时内容糊一块玻璃"，
-  不是"把一张图糊了当墙"——那些解决的是另一个问题。
-- **切换加载最短**：② 一决定铺这张封面就**立刻发布一支保守的背景**（`base` 用中性深灰、`scrimAlpha = 1`，
-  等于先铺一块不透明的深色），原生像素桥回来后再把蒙版放松到封面真能透出来。
-  保守那一档不是偷懒：糊完的最亮块可能接近纯白，白字要对它过 4.5，唯一数学上稳的起点就是全遮。
-  观感顺序因此是"深色底瞬间到位 → 封面浮现"，而那张图走的还是 Fresco 磁盘缓存（播放页卡片刚用过它），不额外下载。
-- **显示结果最优**：糊底保留封面自己的色相与轮廓（这是莫奈纯色底永远给不了的），蒙版色由**封面平均色在线性光里压暗**得到，
-  所以暗下来的是同一支颜色，不是一块灰纱。压暗倍数与蒙版透明度都按 0.01 的格点搜，证书核的是合成之后那一层。
+  不是"把一张图糊了当墙"，那些解决的是另一个问题。删掉的反而是 §8 那条：androidx.palette 依赖 + `seedArgb()` + 桥上的 `seed` 键。
+- **切换加载最短**：② 一决定铺这张封面就**先发布一支保守的背景**（`provisional: true`，不透明中性深色），
+  像素桥回来后再换成测量得到的那支。保守那一档不是偷懒：糊完的最亮块可能接近纯白，白字要对它过 4.5，
+  唯一数学上稳的起点就是全遮。观感顺序因此是"深色底瞬间到位 → 封面浮现"，
+  而那张图走的是 Fresco 磁盘缓存（播放页卡片刚用过它），不额外下载。
+  这一支存在的代价写在 §10.3 最后一条：层的身份不能再只用封面 url 当 key。
+- **显示结果最优**：② 的底色锚点比 ① 更低（`BLUR_ANCHOR_TONE` 20 对 `DARK_ANCHOR_TONE` 32），
+  因为照片自己会贡献亮度；蒙版从 `BLUR_SCRIM_MIN`（0.40）起搜，不像 ① 那样被 `TONE_DRIFT_LIMIT` 提前顶上去，
+  所以中暗封面在 ② 里是真能看出轮廓的。两档的区分度落在三处：透出量、强调色有没有色相、糊图的边缘（overscan）。
 
-### 10.3 删除清单与新的模块边界
+### 10.3 改动清单
 
-删除（连同各自的用例）：`texture.ts`、`png.ts`、`pako.d.ts`、`analysisGate.ts`、`sourceColor.ts` 里的
-`analyzeArgbPixels`/`QUANTIZE_COLORS`/`CoverAnalysis` 与那层 `withSeededRandom`（§7.6 的确定性包裹只为量化而存在，
-它随之失效——`monet-tone-band`/`monet-png`/`monet-texture`/`monet-analysis-gate` 四条测试文件一起消失，
-**那条故意红的用例没了，`npm test` 的 fail 从 1 变 0**，§7.7 的记录同时作废）。
+删除（安卓原生那一条，全部是 §8 引入的）：
 
-`npm` 包 `pako` **留着**：Backup/Sync/Other 几处界面和 musicSdk 的解码器在用，与纹理支无关。
+- `android/app/build.gradle` 的 `androidx.palette:palette:1.0.0`
+- `PaletteModule.java` 的 `seed` 键与 `seedArgb()`（连同 import 与那两条 `Log.w`）
+- `CoverPixels.seed`、`coverPalette.ts` 的 `seedArgbOf` 与 native 分支
+- 设置项 `'native'` 值、那一行 UI、i18n 三语的 `..._algorithm_native`、`tests/monet-native-seed.mts`
+- 留在 `sourceColor.ts` 的 `measureArgbPixels`/`collectOpaque` 不回退：它们改天就是 ② 的测量入口，只是注释里"为了原生支"的说法要换成 ②。
 
-新的边界（每个文件只做一件事）：
+新增/改动：
 
-- `lstar.ts`（新增，纯数学、不许 import 任何东西）：sRGB↔线性、`lstarOf(argb)`、`contrastRatio(a, b)`、
-  `lstarToChannel`、`shadeArgb(argb, factor)`（线性光按倍数压暗，色相逐通道保持）、`cssRgb`/`parseCssColor`。
-  这是原来由 `Contrast` + `Hct` 承担的那一小块，约 20 行。
-- `sourceColor.ts`（缩到测量）：`CoverPixels`（含 `seed?`）、`CoverFields{average, highlight}`、`measureArgbPixels`、`BLOCK_GRID`。
-- `surface.ts`（两块 builder，不再有 HCT/色阶带/`tint`）：
-  - `CoverSurface = { mode: 'native'|'blur', base: string, scrimAlpha: number, fieldLstar: number }`
-    （`fieldTone` 改名 `fieldLstar`：HCT 的 tone 本来就是 L\*，换了实现就换个诚实的名字）
-  - `buildNativeSurface(seedArgb, fontArgb)`：`factor` 从 1 往下按 0.01 搜，第一个让白字过 `MIN_CONTRAST` 的就交；
-    搜穿到 0 仍不过 → null。`scrimAlpha` 恒 1、`fieldLstar` 就是 base 自己的 L\*。
-  - `buildBlurSurface(measure | null, fontArgb)`：`measure == null` 交保守那支；有测量时
-    `base = shadeArgb(average, BLUR_BASE_SHADE)`（起步 `0.15`：中等亮度的封面平均色压到 L\*20 上下，
-    蒙版自己就先是一块够暗的色而不是黑，具体深浅留作真机调的观感参数），`scrimAlpha` 从 `BLUR_SCRIM_MIN`（起步 `0.55`，沿用 §4 那个"最少透出量"）
-    起按 0.01 往上顶到 `contrastRatio(white, field) >= MIN_CONTRAST` 为止（`field` 按 sRGB 通道混，理由仍见 §7.4：RN 的 alpha 混合就在编码值上做）。
-- `coverPalette.ts`：`CoverAlgo = 'native' | 'blur'`，缓存键仍是 `url|fontArgb|algo`；① 的产物不需要 `measure`，
-  ② 需要；两种子都只要一次像素请求。
-- `backdropGate.ts` / `coverBackdropStore.ts` / `useCoverSurface.ts`：状态里**带上模式**。
-  这是接口变更，不是加字段凑合：② 必须能在"还没有色"的时候就发布铺底（那张图不需要色就能画），
-  所以表要多知道一件事——这一档到底需不需要等取色。
-- `CoverBackdrop/index.tsx`：糊封面那一支加 **overscan**（`transform: [{ scale: 1.25 }]`）。
-  Fresco 的框糊在边缘读到图外，会留一圈发暗/半透的边；`StyleSheet.absoluteFill` 摆着就把那条边贴在屏幕内缘，
-  正是 §2 里当年"重度模糊"翻车的原因。用 GPU 变换放大而不是把 View 撑大：不重排、多出的只是采样。
-  `scrimAlpha >= 1` 时那一支整体不渲染（① 的省法）。
-- `onCoverTheme.ts`：`pickInkArgb(hue, role, chromaCap, backing)` 换成 `pickGreyLstar(targetLstar, backingLstar, min)`
-  —— 从角色目标 L\* 出发朝远离依托面的方向逐整数格走，直到过 `min + INK_HEADROOM`；灰的对比度与同侧纯白/纯黑同档，
-  所以依托面只要过了白字那道闸，这里最坏也只是层次塌成全白，不会返回失败。角色表的数值（92/77/74/78/62/56 与面板 -6）一个不改。
+- `surface.ts`：新增 `CoverBackdropMode = 'monet' | 'blur'`（定义在 surface.ts，`coverPalette.ts` 的 `CoverAlgo` 从这里取，
+  反过来会让 surface 依赖配色层形成环）；`CoverSurface` 多两个字段 `mode` 与 `provisional: boolean`；
+  `buildBlurSurface(measure, fontArgb)` 走 `Hct.from(coverAvg.hue, min(coverAvg.chroma, CHROMA_CAP), BLUR_ANCHOR_TONE)`，
+  蒙版在百分格上从 `BLUR_SCRIM_MIN` 往上顶到 `Contrast.ratioOfTones(fieldTone, fontTone) >= MIN_CONTRAST`，顶到 1 还不过就 null（同 §7.4 的处置）；
+  `tint` 交 `{ hue: coverAvg.hue, chroma: 0 }`、`band` 交 null —— 于是 `onCoverTheme.ts` 一字不用改就自动退成白+灰。
+  `PROVISIONAL_BLUR_SURFACE` 是**同一个对象引用**：`isSame` 按引用比 surface，每帧造一份会让订阅子树白刷。
+- `coverPalette.ts`：`CoverAlgo = 'monet' | 'blur'`；`load()` 里 blur 支只调 `measureArgbPixels`，仍在 `scheduleIdle` 之后跑
+  （省掉量化不等于省掉逐像素遍历，主线程那条规矩不改）。
+- `backdropGate.ts` / `coverBackdropStore.ts` / `useCoverSurface.ts`：决策表多一个输入 `algo`。
+  这是接口变更而不是加字段凑合：② 要能在"还没有色"的时候就发布铺底，表必须知道这一档需不需要等取色。
+  翻算法仍然走现成的那条 `clearCoverPaletteCache() + resetCoverBackdrop()`。
+- `CoverBackdrop/index.tsx`：层的身份从 `key = picUrl` 改成 `Layer { key, picUrl, surface }`，
+  `key = picUrl + '|p'`（保守支）/ `picUrl`（测量支）。不这么做的话保守支先占住那个槽，测量色到了只会把一个
+  已经淡完的旧层重新标记为 show，屏幕上永远停在灰底。改完之后保守→测量走的就是本来那套"先叠后撤"，颜色是淡进来的。
+  糊封面那一支再加 **overscan**（`transform: [{ scale: 1.25 }]`）：Fresco 的框糊在边缘读到图外会留一圈发暗的边，
+  `absoluteFill` 摆着就把那条边贴在屏幕内缘，正是 §2 里当年"重度模糊"翻车的原因；用 GPU 变换而不是把 View 撑大。
 
 ### 10.4 真机清单（这次要判的）
 
-1. 设置里两行读作「安卓原生取色 / 动态取色」，默认打在**动态取色**上；老安装升级后第一次进播放页就是动态取色。
-2. 动态取色：深色底瞬间到位，随后封面轮廓浮现；全程白字可读（亮封面尤其要看歌词非当前行那两档）。
-3. 安卓原生取色：整屏是一块纯色，**看不到封面的轮廓**（这是两档的区分度，回退就是没做成）。
-4. 两档来回切：不许出现"整屏主题底闪一下"，也不许卡在上一首的底上。
-5. 全屏↔播放栏展开收起：糊封面那一圈边缘不许露出来（overscan 的判据；重点看横竖比例异常的封面）。
-6. 切歌、快速连播：糊底的图不走第二次网络请求（同一张封面卡片刚用过）。
-7. 展开动画里没有卡顿感——这次是"根本没有 143ms 那段活"，不是"把它排到了空档"。
-8. 关掉「动态背景」：与改动前逐像素一致。
-9. 没有封面的歌：不该有背景层（不是铺一块保守深灰）。
-10. 长条/极扁的畸形封面图：不崩、不整屏黑（`measureArgbPixels` 的空块回落仍在）。
+1. 设置里两行读作「莫奈取色 / 动态取色」，默认打在**动态取色**；老安装里存着"安卓原生取色"的人升级后看到莫奈。
+2. 动态取色：深色底瞬间到位，随后封面轮廓与颜色浮现；亮封面上白字、次级灰、歌词非当前行都不许糊。
+3. 莫奈取色：与 §9 验收时逐像素一致（这条是"我没动你留下的东西"的凭证，重点看进度条那支强调色还在不在）。
+4. 两档来回切：不许出现整屏主题底闪一下，也不许卡在上一首的底上。
+5. 展开/收起：糊封面那一圈边缘不许露出来（overscan 的判据，重点看非正方形封面）。
+6. 动态取色那一档的展开动画应当比莫奈更不卡（量化整段没跑）；莫奈那一档保持 §9 的"颜色在卡片落定后浮现"。
+7. 没有封面的歌：两档都不该有背景层。
+8. 设置里关掉「动态背景」：与改动前逐像素一致。
+9. logcat 里不该再有 `PaletteModule` 的 seed 相关警告（那条 native 路没了）。
+10. 切歌/快速连播：模糊层复用 Fresco 缓存，不该看到封面重新下载的白闪。
 
-### 10.5 留给真机之后的第二条路
+### 10.5 留作下一步
 
-若真机上内置 `blurRadius` 糊出来有色带/断层（8bit 图糊 90 半径是有可能出的），升级办法是**原生出图**：
-`PaletteModule` 已经握着那张 ≤128px 的 ARGB_8888 位图，行业做法是"先降采样→再糊→放大贴回去"，
-把它糊完写成 cacheDir 里的一张 JPEG、走 `file://` 交给同一个 `<Image>`。这条不改任何判据与状态形状，
-只换图片来源，所以不预先做——它属于"内置糊不行"之后的一步，不是这次的一部分。
+`androidx.palette` 删掉之后，原生桥只剩"像素 + 尺寸"这一件事。若真机上内置 `blurRadius` 糊出来有色带（8bit 图糊 90 半径有可能出），
+升级办法是原生出图：`PaletteModule` 已经握着那张 ≤128px 的 ARGB_8888 位图，行业做法是"先降采样→再糊→放大贴回去"，
+糊完写进 cacheDir 的一张 JPEG 走 `file://` 交给同一个 `<Image>`。这不改任何判据与状态形状，只换图片来源，所以不预先做。
