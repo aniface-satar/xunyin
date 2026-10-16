@@ -819,13 +819,13 @@ export const normalizeCoverUri = (url: string | null | undefined): string | null
   return url.startsWith('/') ? 'file://' + url : url
 }
 
+interface LoadState { uri: string | null, loaded: boolean, failed: boolean }
+
 /**
  * 分享卡专用的封面。故意不复用 src/components/common/Image：那层没有 onLoad，
  * 而拍摄前必须真的等到图解出来（spec §8 探针 2）。共享组件一行都不改，横屏零风险。
  * 不收 ref —— 被拍的是 ShareCard 最外那一层，这一层只是"报就绪"。
  */
-interface LoadState { uri: string | null, loaded: boolean, failed: boolean }
-
 const CoverImage = ({ url, style, resizeMode = 'cover', onReady }: CoverImageProps) => {
   const uri = normalizeCoverUri(url)
   // 加载结果和"它属于哪一张封面"绑在同一个 state 里。换封面时 ready 必须在**渲染那一刻**就变 false：
@@ -863,10 +863,14 @@ const CoverImage = ({ url, style, resizeMode = 'cover', onReady }: CoverImagePro
   if (!uri) return <View style={style} collapsable={false} />
   return (
     <Image
+      key={uri}
       style={style}
       source={{ uri, headers: defaultHeaders }}
       resizeMode={resizeMode}
-      // 带 uri 判据：上一首的图晚到（在途请求不会因换源而取消）也不能把这一首判成已就绪
+      // key={uri} 是这条判据成立的前提：RN 的原生事件只认"当前挂着的视图"，换源不重挂的话
+      // 上一首那张贴图晚到的 onLoad 会打到这一首的回调上，s.uri 与 uri 都是新的、判据照样放行，
+      // 于是把没解完的封面报成就绪。按 uri 重挂之后旧请求的事件落在已卸载的视图上（被静默丢弃），
+      // 顺带也让 Fresco 不再把上一张 drawable 留在原位。setState 那层判据留着，管 A→B→C 的连换。
       onLoad={() => { setState(s => s.uri === uri ? { ...s, loaded: true } : s) }}
       onError={() => { setState(s => s.uri === uri ? { ...s, failed: true } : s) }}
     />
