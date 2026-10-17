@@ -1855,7 +1855,7 @@ Create `src/components/ShareCard/ShareCardModal.tsx`:
 
 ```tsx
 import { useCallback, useRef, useState } from 'react'
-import { Modal, TouchableOpacity, View } from 'react-native'
+import { Modal, StyleSheet, TouchableOpacity, View } from 'react-native'
 
 import { Icon } from '@/components/common/Icon'
 import ShareCard, { type ShareCardData } from '@/components/ShareCard'
@@ -1865,10 +1865,10 @@ import { useWindowSize } from '@/utils/hooks'
 import { cardFileName } from '@/utils/shareCard/cardFileName'
 import { captureShareCard, shareCapturedCard } from '@/utils/shareCard/exportCard'
 import { saveShareCard } from '@/utils/shareCard/saveCard'
-import { createStyle, toast } from '@/utils/tools'
+import { toast } from '@/utils/tools'
 import { type LyricBlockLine } from './fitLyricBlock'
 
-interface Props {
+export interface ShareCardModalProps {
   visible: boolean
   mode: 'music' | 'lyric'
   musicInfo: ShareCardData
@@ -1876,7 +1876,7 @@ interface Props {
   onClose: () => void
 }
 
-export default ({ visible, mode, musicInfo, lyricLines, onClose }: Props) => {
+const ShareCardModal = ({ visible, mode, musicInfo, lyricLines, onClose }: ShareCardModalProps) => {
   const t = useI18n()
   const { width, height } = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
@@ -1884,9 +1884,9 @@ export default ({ visible, mode, musicInfo, lyricLines, onClose }: Props) => {
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  const handleReady = useCallback((value: boolean) => setReady(value), [])
+  const handleReady = useCallback((value: boolean) => { setReady(value) }, [])
 
-  const shoot = () => captureShareCard(shotRef, cardFileName(musicInfo.name, musicInfo.singer))
+  const shoot = async() => captureShareCard(shotRef, cardFileName(musicInfo.name, musicInfo.singer))
 
   const handleShare = async() => {
     setBusy(true)
@@ -1898,7 +1898,8 @@ export default ({ visible, mode, musicInfo, lyricLines, onClose }: Props) => {
         t('share_card_title_music', { name: musicInfo.name }),
         t('share_title_music'),
         `${musicInfo.name} - ${musicInfo.singer}`)
-    } catch {
+    } catch (e) {
+      console.error('[share_card] capture_failed', e)
       toast(t('share_card_capture_failed'))
     } finally {
       setBusy(false)
@@ -1913,7 +1914,8 @@ export default ({ visible, mode, musicInfo, lyricLines, onClose }: Props) => {
       // null = 用户在文件夹选择器里取消了，那不叫失败，也不该说"已保存"
       if (name) toast(t('share_card_saved', { name }))
       else toast(t('share_card_save_canceled'))
-    } catch {
+    } catch (e) {
+      console.error('[share_card] save_failed', e)
       toast(t('share_card_save_failed'))
     } finally {
       setBusy(false)
@@ -1946,7 +1948,11 @@ export default ({ visible, mode, musicInfo, lyricLines, onClose }: Props) => {
   )
 }
 
-const styles = createStyle({
+// 这一层的数字全部是原始 dp，不走 createStyle：
+// trasformeStyle（src/utils/tools.ts:494）只缩放 width/height/margin*/padding*（经 scaleSizeW/H 乘
+// global.lx.fontSize），borderRadius 落到 default 分支不动。字号设置 >1 时 44×44 的按钮会胀大、
+// 22 的圆角不变，圆就变成方角。与同目录 index.tsx / LyricCard.tsx 的选择一致。
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
   actions: { position: 'absolute', top: 0, right: 0, flexDirection: 'row', paddingRight: 12 },
   actionBtn: {
@@ -1959,7 +1965,23 @@ const styles = createStyle({
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
 })
+
+export default ShareCardModal
 ```
+
+**这一处不走 `createStyle`，与 Task 6 Step 0 的理由不同但结论相同。** Task 6 那条禁的是"卡片是产物、必须与字号无关"；
+这里禁的是 `createStyle` 自身的两套坐标系：`trasformeStyle`（`src/utils/tools.ts:494-543`）只把 `width`/`height`/`margin*`/`padding*`
+过 `scaleSizeW/H`（`src/utils/pixelRatio.ts:62-81`，最后乘 `global.lx.fontSize`），而 `borderRadius` 落进 `default:` 分支不动 ——
+字号调到 1 以上时 44 的按钮胀大、22 的圆角不胀，圆变方。两枚按钮里放的是 `Icon size={22}`（不是文字，本来也不该被字号缩放），
+所以整层用原始 dp 反而自洽；同一层的另一半内缩 `paddingTop: statusBarHeight + 6` 一直是原始 dp，若只缩放 `paddingRight: 12`
+会让两个 inset 各走一套。副作用是好的那一头：老路径还乘了 375×667 的设计稿比例，在 ~393dp 宽的机器上把 44 压成约 42，
+现在正好是 44，更接近平台最小可点尺寸。
+
+另外两处是 eslint 逼出来的（本仓库 `.eslintrc.cjs` 生效的两条规则，控制方已复现）：`handleReady` 的箭头简写返回 `void` 会撞
+`@typescript-eslint/no-confusing-void-expression`，所以写成块体；`shoot` 返回 Promise 而不带 `async` 会撞
+`@typescript-eslint/promise-function-async`。两个 catch 保留原始错误对象（`console.error('[share_card] …', e)`）是 Task 9 评审
+补的：真机验收要靠 logcat 分辨 view-shot / FileProvider / SAF 哪一段炸的，而本仓库的 release 构建并不剥 `console`。
+**后面任务的代码块同样适用这两条** —— 写箭头函数时别返回 `void` 表达式，返回 Promise 的辅助函数一律标 `async`。
 
 `statusBarTranslucent` + 按钮层 `paddingTop: statusBarHeight` 是探针 3 的处置。要说清一件事：**`useWindowSize().height` 到底含不含状态栏，取决于走哪条分支**（`src/utils/windowSizeTools.ts:42-53` 实测读过的两条路）：
 
@@ -2005,7 +2027,7 @@ git commit -m "feat(分享图): 全屏预览 Modal，下载与分享按钮在被
 
 **Files:**
 - Create: `src/screens/PlayDetail/Vertical/components/ShareModeSheet.tsx`
-- Modify: `src/screens/PlayDetail/Vertical/components/Header.tsx:51-59,103-105`
+- Modify: `src/screens/PlayDetail/Vertical/components/Header.tsx:49-57,101,113`（**行号以 `git show HEAD:` 为准**，实测 HEAD 那版：`share()` 在 49-57、分享按钮那枚 `TouchableOpacity` 在 101、`<LyricSettingSheet ref={settingSheetRef} />` 在 113；工作区那版被别人加过 a11y 属性，行号整体往后挪，别拿它当锚）
 - Modify: `src/lang/zh-cn.json`、`src/lang/zh-tw.json`、`src/lang/en-us.json`
 
 **Interfaces:**
@@ -2123,7 +2145,7 @@ const shareSheetRef = useRef<ShareModeSheetType>(null)
 const [shareCardData, setShareCardData] = useState<ShareCardData | null>(null)
 ```
 
-- `share()`（`:51`）整个换成只开面板：
+- `share()`（HEAD `:49-57`）整个换成只开面板：
 
 ```ts
 const share = () => {
