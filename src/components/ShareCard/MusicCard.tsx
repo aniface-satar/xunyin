@@ -40,7 +40,7 @@ const noShadow: TextStyle = {
 // Step 0：与 BrandLine 同一判据 —— 原始 dp，不走 createStyle；字号一律经 style.fontSize 传给 common/Text
 // （它的 size prop 走 setSpText，会被用户的字号设置缩放）。
 const styles: { cover: ImageStyle, title: TextStyle, singer: TextStyle } = {
-  cover: { borderRadius: 18 },
+  cover: { borderRadius: 12 },
   title: { ...noShadow, marginTop: 18, fontSize: 24, lineHeight: 30 },
   singer: { ...noShadow, marginTop: 6, fontSize: 18 },
 }

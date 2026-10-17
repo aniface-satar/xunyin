@@ -123,7 +123,7 @@ const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLine
         <View style={[styles.fill, { backgroundColor: theme.scrimColor }]} />
       </ImageBackground>
       <View style={styles.center}>
-        <View style={{ width: cardWidth, maxHeight: cardMaxHeight, backgroundColor: theme.cardBackground, borderRadius: 28, padding: CARD_PADDING }}>
+        <View style={{ width: cardWidth, maxHeight: cardMaxHeight, backgroundColor: theme.cardBackground, borderRadius: 20, padding: CARD_PADDING }}>
           {
             mode === 'music'
               ? <MusicCard {...musicInfo} coverSize={coverSize} theme={theme} onCoverReady={setCoverReady} />
