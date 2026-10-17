@@ -1,4 +1,4 @@
-import { Fragment, memo, useRef } from 'react'
+import { Fragment, memo, useRef, useState } from 'react'
 import { TouchableOpacity, View } from 'react-native'
 
 import { pop } from '@/navigation'
@@ -16,6 +16,9 @@ import { useTheme } from '@/store/theme/hook'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { createStyle, shareMusic } from '@/utils/tools'
 import LyricSettingSheet, { type LyricSettingSheetType } from './LyricSettingSheet'
+import ShareCardModal from '@/components/ShareCard/ShareCardModal'
+import ShareModeSheet, { type ShareMode, type ShareModeSheetType } from './ShareModeSheet'
+import type { ShareCardData } from '@/components/ShareCard'
 
 export const HEADER_HEIGHT = scaleSizeH(_HEADER_HEIGHT)
 
@@ -34,6 +37,8 @@ export default memo(({ onBack, pageIndex = 0, onPageSelected }: HeaderProps) => 
   const glassColors = useGlassColors()
   const playMusicInfo = usePlayMusicInfo()
   const settingSheetRef = useRef<LyricSettingSheetType>(null)
+  const shareSheetRef = useRef<ShareModeSheetType>(null)
+  const [shareCardData, setShareCardData] = useState<ShareCardData | null>(null)
   const shareType = useSettingValue('common.shareType')
   const downloadFileName = useSettingValue('download.fileName')
   const isLyricPage = pageIndex == LYRIC_PAGE
@@ -47,13 +52,18 @@ export default memo(({ onBack, pageIndex = 0, onPageSelected }: HeaderProps) => 
   }
 
   const share = () => {
+    shareSheetRef.current?.show()
+  }
+
+  const handleShareMode = (mode: ShareMode) => {
     const currentMusic = playerState.playMusicInfo.musicInfo ?? playMusicInfo.musicInfo
     if (!currentMusic) return
-    shareMusic(
-      shareType,
-      downloadFileName,
-      'progress' in currentMusic ? currentMusic.metadata.musicInfo : currentMusic,
-    )
+    const musicInfo = 'progress' in currentMusic ? currentMusic.metadata.musicInfo : currentMusic
+    if (mode === 'text') {
+      shareMusic(shareType, downloadFileName, musicInfo)
+      return
+    }
+    setShareCardData({ name: musicInfo.name, singer: musicInfo.singer, pic: musicInfo.meta.picUrl })
   }
 
   const showSetting = () => {
@@ -111,6 +121,19 @@ export default memo(({ onBack, pageIndex = 0, onPageSelected }: HeaderProps) => 
         </TouchableOpacity>
       </View>
       <LyricSettingSheet ref={settingSheetRef} />
+      <ShareModeSheet ref={shareSheetRef} onSelect={handleShareMode} />
+      {
+        shareCardData ? (
+          <ShareCardModal
+            visible
+            mode="music"
+            musicInfo={shareCardData}
+            onClose={() => {
+              setShareCardData(null)
+            }}
+          />
+        ) : null
+      }
     </View>
   )
 })
