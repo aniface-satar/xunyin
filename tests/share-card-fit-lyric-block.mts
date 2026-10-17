@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { EXTENDED_TIER_FLOOR, LYRIC_LINE_HEIGHT_RATIO, LYRIC_TIERS, fitLyricBlock } from '../src/components/ShareCard/fitLyricBlock.ts'
+import { cardTextSizes } from '../src/components/ShareCard/cardTypography.ts'
 
 const line = (text: string, extendedLyrics: string[] = []) => ({ text, extendedLyrics })
 
@@ -110,3 +111,38 @@ for (const file of CARD_TEXT_FILES) {
     assert.match(src, /textShadowRadius:\s*0/)
   })
 }
+
+// §11.11 的字号判据：一行最多容纳 26 个平均英文字母（字宽 0.5em 是 arial.ttf 量出来的，见 cardTypography.ts）。
+// 这一档是纯函数，node 直接载得动，所以判据按数字钉住而不是按源码扫。
+
+test('26 letters fill the line on a 360dp screen', () => {
+  // 360 × CARD_WIDTH_RATIO 0.78 = 280.8，减掉两侧 CARD_PADDING 20 ⇒ 文字列 240.8dp
+  const sizes = cardTextSizes(240.8)
+  assert.equal(sizes.title, 18.5)
+  assert.equal(sizes.singer, 13.9)
+  assert.equal(sizes.titleLineHeight, 23.1)
+  // 判据本体：26 个字母 × 0.5em × 字号 ≈ 列宽（四舍五入到 0.1 之后仍应在 1dp 内）
+  assert.ok(Math.abs(26 * 0.5 * sizes.title - 240.8) < 1)
+})
+
+test('the rule is capped at the old hand-written 24dp and floored at 14dp', () => {
+  assert.equal(cardTextSizes(1000).title, 24) // 卡再宽也不把字放回去
+  assert.equal(cardTextSizes(100).title, 14) // 小屏上按判据会算到读不动，宁可一行装下更多字母
+})
+
+test('a width that cannot be measured falls back to the cap, not NaN', () => {
+  // Math.min/Math.max 会把 NaN 一路传到 fontSize（同 §11.6 记的 fitLyricBlock 那一类漏子）
+  for (const w of [NaN, Infinity, -Infinity]) {
+    const sizes = cardTextSizes(w)
+    assert.equal(sizes.title, 24)
+    assert.ok(Number.isFinite(sizes.singer) && Number.isFinite(sizes.titleLineHeight))
+  }
+})
+
+test('MusicCard takes its font sizes from the rule instead of hard-coded numbers', () => {
+  const src = stripComments(readFileSync(path.join(CARD_DIR, 'MusicCard.tsx'), 'utf8'))
+  assert.match(src, /fontSize:\s*sizes\.title/)
+  assert.match(src, /lineHeight:\s*sizes\.titleLineHeight/)
+  assert.match(src, /fontSize:\s*sizes\.singer/)
+  assert.doesNotMatch(src, /fontSize:\s*\d/)
+})

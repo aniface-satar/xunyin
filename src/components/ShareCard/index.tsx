@@ -109,6 +109,8 @@ const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLine
     cardMaxHeight - CARD_PADDING * 2 - MUSIC_CARD_TEXT_RESERVE,
   ))
   const lyricMaxHeight = Math.max(0, cardMaxHeight - CARD_PADDING * 2 - LYRIC_FOOTER_RESERVE)
+  // 文字那一列的宽度只受卡宽管（padding 是卡自己的），封面才受两条边管。
+  const cardTextWidth = Math.max(0, cardWidth - CARD_PADDING * 2)
 
   return (
     <View ref={ref} collapsable={false} style={{ width, height }}>
@@ -126,7 +128,7 @@ const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLine
         <View style={{ width: cardWidth, maxHeight: cardMaxHeight, backgroundColor: theme.cardBackground, borderRadius: 20, padding: CARD_PADDING }}>
           {
             mode === 'music'
-              ? <MusicCard {...musicInfo} coverSize={coverSize} theme={theme} onCoverReady={setCoverReady} />
+              ? <MusicCard {...musicInfo} coverSize={coverSize} textWidth={cardTextWidth} theme={theme} onCoverReady={setCoverReady} />
               : <LyricCard lines={lyricLines ?? []} {...musicInfo} lyricMaxHeight={lyricMaxHeight} theme={theme} onCoverReady={setCoverReady} />
           }
         </View>

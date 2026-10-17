@@ -3,18 +3,19 @@ import { Image, View, type ImageStyle, type TextStyle, type ViewStyle } from 're
 import Text from '@/components/common/Text'
 
 // 与 src/components/common/LocateButton.tsx:7 同一写法：require + @/resources 别名，Metro 认。
-// 不加 tintColor —— 这个字形自带品牌青，染色就不是 App 图标了。
-// 这张 PNG 是抠过底的字形本体（218×204，只剩青色墨迹，唱片上的白色刻线/音符是透明）：
+// 这张 PNG 是抠过底的字形本体（218×204，只剩墨迹，唱片上的白色刻线/音符是透明）：
 // 直接拿 ic_launcher_foreground 会在深色卡上露出一块白色圆角方片 —— 前景图的四角确实透明，
 // 但墨迹外面那圈白方片是不透明的，spec §1 当年只量了画布四角，量不出这个问题。
+// 染色是**跟着走**的（spec §11.11）：安卓那侧 tintColor 落到 setColorFilter(color, SRC_IN)
+// （ReactImageManager.java:219-224），SRC_IN 只换 RGB、原图的 alpha 通道整个留着 ⇒ 墨迹渐变边缘和透明刻线都不丢。
 // eslint-disable-next-line @typescript-eslint/no-var-requires -- tsc 这一侧只认 require：仓库里没有 `declare module '*.png'`，静态 import 会报"找不到模块"。
 const glyph = require('@/resources/images/app-icon-glyph.png')
 
 export const BrandLine = ({ color }: { color: string }) => {
   return (
     <View style={styles.row}>
-      {/* 只剩青色墨迹的字形本体（唱片上的白色刻线是透明的，透出卡片底色），深卡亮卡共用同一张图 */}
-      <Image source={glyph} style={styles.glyph} resizeMode="contain" />
+      {/* 字形本体 + tintColor：与右边 "Music" 同色（唱片上的刻线是透明的，透出卡片底色），深卡亮卡共用同一张图 */}
+      <Image source={glyph} style={styles.glyph} resizeMode="contain" tintColor={color} />
       <Text allowFontScaling={false} style={[styles.word, { color }]}>Music</Text>
     </View>
   )

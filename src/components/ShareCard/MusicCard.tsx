@@ -4,23 +4,27 @@ import Text from '@/components/common/Text'
 import { BrandLine } from './BrandLine'
 import CoverImage from './CoverImage'
 import { type CardTheme } from './cardTheme'
+import { cardTextSizes } from './cardTypography'
 
 interface Props {
   name: string
   singer: string
   pic: string | null | undefined
   coverSize: number
+  /** 卡内文字那一列的可用宽度（原始 dp）：字号按"一行最多 26 个英文字母"从它算出来，见 cardTypography.ts */
+  textWidth: number
   theme: CardTheme
   /** 原样透传给 CoverImage：图没解出来时预览页那两枚按钮该禁用（spec §8 探针 2） */
   onCoverReady?: (ready: boolean) => void
 }
 
-export default ({ name, singer, pic, coverSize, theme, onCoverReady }: Props) => {
+export default ({ name, singer, pic, coverSize, textWidth, theme, onCoverReady }: Props) => {
+  const sizes = cardTextSizes(textWidth)
   return (
     <>
       <CoverImage url={pic} onReady={onCoverReady} style={{ ...styles.cover, width: coverSize, height: coverSize }} />
-      <Text numberOfLines={3} allowFontScaling={false} style={{ ...styles.title, color: theme.titleColor }}>{name}</Text>
-      <Text numberOfLines={2} allowFontScaling={false} style={{ ...styles.singer, color: theme.subtitleColor }}>{singer}</Text>
+      <Text numberOfLines={3} allowFontScaling={false} style={{ ...styles.title, fontSize: sizes.title, lineHeight: sizes.titleLineHeight, color: theme.titleColor }}>{name}</Text>
+      <Text numberOfLines={2} allowFontScaling={false} style={{ ...styles.singer, fontSize: sizes.singer, color: theme.subtitleColor }}>{singer}</Text>
       <BrandLine color={theme.subtitleColor} />
     </>
   )
@@ -39,8 +43,9 @@ const noShadow: TextStyle = {
 
 // Step 0：与 BrandLine 同一判据 —— 原始 dp，不走 createStyle；字号一律经 style.fontSize 传给 common/Text
 // （它的 size prop 走 setSpText，会被用户的字号设置缩放）。
+// fontSize/lineHeight 不在这里：那两个数按"一行最多 26 个英文字母"从卡内文字宽度算（cardTypography.ts）。
 const styles: { cover: ImageStyle, title: TextStyle, singer: TextStyle } = {
   cover: { borderRadius: 12 },
-  title: { ...noShadow, marginTop: 18, fontSize: 24, lineHeight: 30 },
-  singer: { ...noShadow, marginTop: 6, fontSize: 18 },
+  title: { ...noShadow, marginTop: 18 },
+  singer: { ...noShadow, marginTop: 6 },
 }
