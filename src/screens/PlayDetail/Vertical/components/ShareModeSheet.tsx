@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useState } from 'react'
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { Animated, Modal, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native'
 
 import GlassBackdrop from '@/components/common/GlassBackdrop'
@@ -31,8 +31,14 @@ const ShareModeSheet = forwardRef<ShareModeSheetType, ShareModeSheetProps>(({ on
   const [visible, setVisible] = useState(false)
   const slide = useSheetSlideAnimation()
 
+  // 退场那 200ms 里面板还挂在屏上、还能被命中：slide.hide 自己有闸（useSheetSlideAnimation.ts:51），
+  // handleSelect 没有 —— 不挡就是第二次 shareMusic，或者再叠一个 Modal 窗口。
+  // 只在 hide 的回调真正落定时擦掉；show 也擦一次，免得上一轮的 true 漏到这一轮。
+  const exitingRef = useRef(false)
+
   useImperativeHandle(ref, () => ({
     show() {
+      exitingRef.current = false
       setMounted(true)
       slide.show()
       requestAnimationFrame(() => {
@@ -41,15 +47,29 @@ const ShareModeSheet = forwardRef<ShareModeSheetType, ShareModeSheetProps>(({ on
     },
   }))
 
-  const hide = () => {
+  const hide = (onHidden?: () => void) => {
+    exitingRef.current = true
     slide.hide(() => {
+      exitingRef.current = false
       setVisible(false)
+      onHidden?.()
     })
   }
 
   const handleSelect = (mode: ShareMode) => {
-    hide()
-    onSelect(mode)
+    if (exitingRef.current) return
+    if (mode === 'text') {
+      // 文字这条路不叠第二个 Modal 窗口，时序保持今天的形状：立即触发，不等退场动画
+      hide()
+      onSelect(mode)
+      return
+    }
+    // 图片这条路要挂一个全屏 Modal：两个 RN Modal 就是两个 Android Dialog 窗口，
+    // 面板还在退场（EXIT_DURATION=200ms，useSheetSlideAnimation.ts:5）就叠上去正是黑屏闪一下的来源。
+    // 照 MusicMoreSheet.tsx:128-148 那条现成的路：等 exit 动画落定、再下一帧挂。
+    hide(() => {
+      requestAnimationFrame(() => { onSelect(mode) })
+    })
   }
 
   if (!mounted) return null
@@ -155,6 +175,7 @@ const styles = createStyle({
     width: 30,
   },
   actionText: {
+    flex: 1,
     marginLeft: 10,
   },
 })
