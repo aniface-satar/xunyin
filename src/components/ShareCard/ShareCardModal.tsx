@@ -28,6 +28,8 @@ const ShareCardModal = ({ visible, mode, musicInfo, lyricLines, onClose }: Share
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)
 
+  // 就绪只有这一个布尔：卡封面、整屏糊底、配色三路各自落在 ShareCard 那一层，由它聚合成一次上报。
+  // 这一层不另存自己的 ready —— 各存一份就会有人漏掉某一路（漏掉配色就是白封面拍成黑卡）。
   const handleReady = useCallback((value: boolean) => { setReady(value) }, [])
 
   const shoot = async() => captureShareCard(shotRef, cardFileName(musicInfo.name, musicInfo.singer))
@@ -81,10 +83,10 @@ const ShareCardModal = ({ visible, mode, musicInfo, lyricLines, onClose }: Share
         />
         <View style={[styles.actions, { paddingTop: statusBarHeight + 6 }]}>
           <TouchableOpacity style={styles.actionBtn} onPress={handleSave} disabled={busy || !ready} accessibilityRole="button" accessibilityLabel={t('share_card_save')}>
-            <Icon name="download-2" size={22} color="#FFFFFF" />
+            <Icon name="download-2" rawSize={22} color="#FFFFFF" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn} onPress={handleShare} disabled={busy || !ready} accessibilityRole="button" accessibilityLabel={t('share_title_music')}>
-            <Icon name="share" size={22} color="#FFFFFF" />
+            <Icon name="share" rawSize={22} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       </View>
@@ -96,6 +98,8 @@ const ShareCardModal = ({ visible, mode, musicInfo, lyricLines, onClose }: Share
 // trasformeStyle（src/utils/tools.ts:494）只缩放 width/height/margin*/padding*（经 scaleSizeW/H 乘
 // global.lx.fontSize），borderRadius 落到 default 分支不动。字号设置 >1 时 44×44 的按钮会胀大、
 // 22 的圆角不变，圆就变成方角。与同目录 index.tsx / LyricCard.tsx 的选择一致。
+// 图标那一侧走 Icon 的 rawSize 而不是 size：size 会经 scaleSizeW 乘字号（common/Icon.tsx:55），
+// 字号 >1 时 22 的字形会从 44 的药丸里溢出去 —— 现在图标和药丸同一套缩放，这条注释才描述的是代码。
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
   actions: { position: 'absolute', top: 0, right: 0, flexDirection: 'row', paddingRight: 12 },
