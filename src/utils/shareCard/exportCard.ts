@@ -11,10 +11,14 @@ export interface CapturedCard {
   path: string
 }
 
-/** view-shot 的 fileName 在安卓上要求至少 3 个字符 */
+// 这不是装饰性名字，是 view-shot 清理缓存的过滤键：accept() 只认 startsWith(TEMP_FILE_PREFIX) 且不看修改时间（RNViewShotModule.java:151），
+// 而 fileName 被当 createTempFile 的**前缀**用（:191-192）——对不上就没人扫，按歌名命名的 PNG 会永远堆在 cache 目录里。
+const SWEEP_PREFIX = 'ReactNative-snapshot-image'
+
+/** view-shot 的 fileName 在安卓上要求至少 3 个字符；前缀之外仍保留原来那条 ≥3 的规则 */
 const safeFileName = (name: string) => {
   const cleaned = name.replace(/[^A-Za-z0-9_.-]/g, '_')
-  return cleaned.length >= 3 ? cleaned : `lx_${cleaned}`
+  return `${SWEEP_PREFIX}_${cleaned.length >= 3 ? cleaned : `lx_${cleaned}`}`
 }
 
 export const captureShareCard = async(ref: RefObject<View | null>, fileName: string): Promise<CapturedCard> => {
