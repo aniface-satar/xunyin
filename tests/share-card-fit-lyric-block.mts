@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 
 import { EXTENDED_TIER_FLOOR, LYRIC_LINE_HEIGHT_RATIO, LYRIC_TIERS, fitLyricBlock } from '../src/components/ShareCard/fitLyricBlock.ts'
 
@@ -82,3 +84,29 @@ test('default ratio is 1.5 and is overridable', () => {
   // 1.5 档下逐档：24→144 超、22→132 超、20→120 **恰好等于**上限（判据是 >，等于算装得下）
   assert.equal(fitLyricBlock(lines, { maxHeight: 120 }).fontSize, 20)
 })
+
+// 上面每一档、每一个 `fontSize × 1.5` 的行模型都是**原始 dp**。它们对得上真实行高，只在两个前提成立时：
+// ① 安卓的**系统**字号没有乘上去（allowFontScaling 默认 true，1.3 档就是 +30%，文字块顶穿
+//    index.tsx 的 MUSIC_CARD_TEXT_RESERVE / 这里的 lyricMaxHeight，溢出发生在导出的成品图里）；
+// ② App 的 theme.fontShadow 没有跟着 common/Text 铺进产物图（spec §3：分享图不跟 App 设置走）。
+// 这两条都是渲染层的事，node --test 载不动组件，所以按源码数一遍（读源码判据同 tests/feature-icons-font.mts）：
+// 剥掉注释后 ① `<Text` 的个数 == `allowFontScaling={false}` 的个数，
+// ② `noShadow` 出现 textCount + 1 次（一处定义 + 每枚字铺一次）—— 只声明不铺用也算漏。
+const CARD_TEXT_FILES = ['MusicCard.tsx', 'LyricCard.tsx', 'BrandLine.tsx']
+const CARD_DIR = path.join(import.meta.dirname, '../src/components/ShareCard')
+const stripComments = (src: string) => src
+  .split('\n')
+  .filter(l => !/^\s*(\/\/|\/?\*)/.test(l))
+  .join('\n')
+
+for (const file of CARD_TEXT_FILES) {
+  test(`${file} keeps card text out of both font settings`, () => {
+    const src = stripComments(readFileSync(path.join(CARD_DIR, file), 'utf8'))
+    const texts = src.match(/<Text\b/g) ?? []
+    assert.ok(texts.length > 0, `${file} 里一个 <Text> 都没有：这条判据该重看了`)
+    assert.equal((src.match(/allowFontScaling=\{false\}/g) ?? []).length, texts.length)
+    assert.equal((src.match(/\bnoShadow\b/g) ?? []).length, texts.length + 1)
+    assert.match(src, /textShadowColor:\s*'transparent'/)
+    assert.match(src, /textShadowRadius:\s*0/)
+  })
+}

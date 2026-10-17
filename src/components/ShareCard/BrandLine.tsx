@@ -12,9 +12,17 @@ export const BrandLine = ({ color }: { color: string }) => {
     <View style={styles.row}>
       {/* 透明底的青色字形（spec §1 实测四角 alpha=0），深卡亮卡共用同一张图 */}
       <Image source={glyph} style={styles.glyph} resizeMode="contain" />
-      <Text style={[styles.word, { color }]}>Music</Text>
+      <Text allowFontScaling={false} style={[styles.word, { color }]}>Music</Text>
     </View>
   )
+}
+
+// 与 MusicCard / LyricCard 同一对补丁：allowFontScaling={false} 挡住系统字号（这一行按 16+20 记账，
+// 胀 30% 就把落款顶出圆角卡），noShadow 挡住 common/Text 从 theme.fontShadow 铺上来的文字阴影。
+const noShadow: TextStyle = {
+  textShadowColor: 'transparent',
+  textShadowRadius: 0,
+  textShadowOffset: { width: 0, height: 0 },
 }
 
 // Step 0：分享图是产物，字号与用户在设置里调的 global.lx.fontSize 无关，所以这一层刻意不走 createStyle
@@ -23,5 +31,5 @@ export const BrandLine = ({ color }: { color: string }) => {
 const styles: { row: ViewStyle, glyph: ImageStyle, word: TextStyle } = {
   row: { flexDirection: 'row', alignItems: 'center', marginTop: 16 },
   glyph: { width: 20, height: 20, marginRight: 4 },
-  word: { fontSize: 17, letterSpacing: 0.2 },
+  word: { ...noShadow, fontSize: 17, letterSpacing: 0.2 },
 }

@@ -1,4 +1,4 @@
-import { StyleSheet, View, type ImageStyle, type ViewStyle } from 'react-native'
+import { StyleSheet, View, type ImageStyle, type TextStyle, type ViewStyle } from 'react-native'
 
 import Text from '@/components/common/Text'
 import { BrandLine } from './BrandLine'
@@ -16,6 +16,16 @@ interface Props {
   onCoverReady?: (ready: boolean) => void
 }
 
+// 与 MusicCard 同一对补丁：allowFontScaling={false} 挡住**系统**字号（fitLyricBlock 那套 fontSize×1.5
+// 的行模型只有在不乘字号时才对得上真实行高，否则歌词块顶穿 lyricMaxHeight、落款溢出圆角卡），
+// noShadow 挡住 common/Text 从 theme.fontShadow 铺上来的文字阴影（Text.tsx:35-46）—— 导出的是产物图，
+// 不该跟着 App 的界面设置走（spec §3）。两处都只在卡自己的文件里解决，共享组件不动。
+const noShadow: TextStyle = {
+  textShadowColor: 'transparent',
+  textShadowRadius: 0,
+  textShadowOffset: { width: 0, height: 0 },
+}
+
 export default ({ lines, name, singer, pic, lyricMaxHeight, theme, onCoverReady }: Props) => {
   const fit = fitLyricBlock(lines, { maxHeight: lyricMaxHeight })
   const shown = lines.slice(0, fit.visibleCount)
@@ -25,23 +35,23 @@ export default ({ lines, name, singer, pic, lyricMaxHeight, theme, onCoverReady 
         {
           shown.map((line, index) => (
             <View key={`${index}-${line.text}`}>
-              { line.text?.trim() ? <Text style={{ fontSize: fit.fontSize, lineHeight: fit.fontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.lyricColor }}>{line.text}</Text> : null }
+              { line.text?.trim() ? <Text allowFontScaling={false} style={{ ...noShadow, fontSize: fit.fontSize, lineHeight: fit.fontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.lyricColor }}>{line.text}</Text> : null }
               {
                 (line.extendedLyrics ?? []).map((text, i) => text?.trim()
-                  ? <Text key={i} style={{ fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.subtitleColor }}>{text}</Text>
+                  ? <Text key={i} allowFontScaling={false} style={{ ...noShadow, fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.subtitleColor }}>{text}</Text>
                   : null)
               }
             </View>
           ))
         }
-        { fit.truncated ? <Text style={{ fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.subtitleColor }}>…</Text> : null }
+        { fit.truncated ? <Text allowFontScaling={false} style={{ ...noShadow, fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.subtitleColor }}>…</Text> : null }
       </View>
       <View style={[styles.separator, { backgroundColor: theme.subtitleColor }]} />
       <View style={styles.footer}>
         <CoverImage url={pic} onReady={onCoverReady} style={styles.miniCover} />
         <View style={styles.footerText}>
-          <Text numberOfLines={2} style={{ fontSize: 16, color: theme.titleColor }}>{name}</Text>
-          <Text numberOfLines={1} style={{ fontSize: 14, color: theme.subtitleColor, marginTop: 2 }}>{singer}</Text>
+          <Text numberOfLines={2} allowFontScaling={false} style={{ ...noShadow, fontSize: 16, color: theme.titleColor }}>{name}</Text>
+          <Text numberOfLines={1} allowFontScaling={false} style={{ ...noShadow, fontSize: 14, color: theme.subtitleColor, marginTop: 2 }}>{singer}</Text>
           <BrandLine color={theme.subtitleColor} />
         </View>
       </View>
