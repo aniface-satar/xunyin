@@ -14,26 +14,18 @@ import settingState from '@/store/setting/state'
 import { addItem, load, updateItem } from '@/store/download/action'
 import { state } from '@/store/download/state'
 import { buildDownloadBaseName } from './name'
+import { transferErrorKey, type DownloadErrorKey } from './errorKey'
 import { MIN_HEAD_BYTES, sniffAudioFormat } from './format'
 import { canPause, canResume, ownsTask, pausePatch, restartPatch } from './pausePlan'
 import { inFlightProgress, transferDone } from './progress'
 import { assignQualities, type QualityChoice } from './quality'
 import { childWritePath } from './safPath'
 import { withStageTimeout, type GuardStage, type TimerDriver } from './stageGuard'
-import { TransferStalledError, withTransferWatchdog, type TransferWatchdog } from './transferGuard'
+import { withTransferWatchdog, type TransferWatchdog } from './transferGuard'
 import { publishFile, resolveSaveDir, scanPublishedFile } from './target'
 import { applyFileTags } from './tags'
 
 const PROGRESS_INTERVAL = 500
-
-type DownloadErrorKey =
-  | 'download_not_audio'
-  | 'download_not_audio_encrypted'
-  | 'download_url_failed'
-  | 'download_temp_failed'
-  | 'download_transfer_stalled'
-  | 'download_publish_failed'
-  | 'download_save_path_unauthorized'
 
 interface ProgressEvent {
   contentLength: number
@@ -226,9 +218,9 @@ const runTask = async(item: LX.Download.ListItem, round: number) => {
     await removeTempFile(tempPath)
     // 请求是暂停按钮自己停掉的，或者用户已经改了主意——这不是下载失败
     if (!isCurrentRun()) return
-    // 盯了整整一分钟没有任何字节在动，就别再让 native 线程自己拖着：
-    // 它可能永远不回来，用户等到的只会是一张停在「排队中」的列表
-    errorUpdate(err instanceof TransferStalledError ? 'download_transfer_stalled' : 'download_temp_failed')
+    // 屏幕上那句是给人看的结论，日志里这条是原生层的原话；只留前者查不动真凶
+    log.error(`download transfer: ${musicInfo.name} - ${err?.message ?? err}`)
+    errorUpdate(transferErrorKey(err))
     return
   } finally {
     // 只亲手摘掉这一轮自己登记的那张牌：中途被暂停/继续顶替过的话，
@@ -318,27 +310,13 @@ const runTask = async(item: LX.Download.ListItem, round: number) => {
   notifyTask(global.i18n.t('download_task_completed', { name: musicInfo.name }))
 }
 
-// ===== 临时诊断（DLDBG）：定位「点击下载后停在排队中」，验完删除 =====
-const dldbgTrace: string[] = []
-const dldbg = (msg: string) => {
-  dldbgTrace.push(msg)
-  try { log.info(`DLDBG ${msg}`) } catch {}
-}
-const dldbgFlush = (label: string) => {
-  const text = `DLDBG[${label}] ${dldbgTrace.splice(0).join(' | ')}`
-  try { toast(text, 'long', 'center') } catch {}
-  try { log.info(text) } catch {}
-}
-// ===== 临时诊断结束 =====
-
 const runQueue = async(epoch: number) => {
   for (;;) {
     // 被抢占/作废的那一轮只许收摊，不许再认领新任务
-    if (epoch !== queueEpoch) { dldbg('EXIT(stale)'); return }
+    if (epoch !== queueEpoch) return
     const waitingItem = state.list.find(item => item.status === 'waiting')
-    if (!isDownloadTask(waitingItem)) { dldbg('EXIT(empty)'); return }
+    if (!isDownloadTask(waitingItem)) return
 
-    dldbg(`CLAIM ${waitingItem.id}`)
     lastClaimAt = Date.now()
     const round = ++roundSeq
     taskRounds.set(waitingItem.id, round)
@@ -414,7 +392,7 @@ const startQueue = () => {
 }
 
 const reportEnqueue = (added: string[], retried: string[], completed: string[], paused: string[], running: string[]) => {
-  const t = global.i18n.t
+  const t = global.i18n.t.bind(global.i18n)
   const parts: string[] = []
   if (added.length) {
     parts.push(added.length == 1
@@ -436,7 +414,6 @@ export const enqueueDownloads = (
   musicInfos: LX.Music.MusicInfoOnline[],
   choice: QualityChoice,
 ) => {
-  dldbg(`ENQ n=${musicInfos.length} q=${choice} qrun=${isQueueRunning}`)
   const added: string[] = []
   const retried: string[] = []
   const completed: string[] = []
@@ -452,7 +429,6 @@ export const enqueueDownloads = (
       if (!exist) {
         added.push(musicInfo.name)
         addItem(createItem(musicInfo, quality))
-        dldbg(`ADDED ${musicInfo.id ?? 'undefined-id'}`)
         return
       }
       // 失败过的歌重新点就是要再试一次：换个音质、换个时间都可能成，旧的地址和错误不能留着
@@ -480,11 +456,8 @@ export const enqueueDownloads = (
 
     // 队列先踢起来，再报告：报告只是给用户看一眼的 toast，
     // 它万一出问题（比如系统禁了 toast）不许把「点击后开始下载」这件事一起带走
-    dldbg(`PRE qrun=${isQueueRunning} top=${state.list[0]?.status}`)
     startQueue()
-    dldbg(`POST qrun=${isQueueRunning} top=${state.list[0]?.status}`)
   } catch (err: any) {
-    dldbg(`THREW ${err?.message ?? err}`)
     log.error(`download enqueue failed: ${err?.message ?? err}`)
     // 入队本身出问题也不能让已经加进列表的歌停在排队中
     startQueue()
@@ -495,13 +468,6 @@ export const enqueueDownloads = (
   } catch (err: any) {
     log.error(`download enqueue report failed: ${err?.message ?? err}`)
   }
-
-  setTimeout(() => {
-    const runs = state.list.filter(item => item.status === 'run').length
-    const waits = state.list.filter(item => item.status === 'waiting').length
-    dldbg(`T4 top=${state.list[0]?.status} runs=${runs} waits=${waits} qrun=${isQueueRunning}`)
-    dldbgFlush('click')
-  }, 4_000)
 }
 
 /** 暂停一首在跑或排队的歌：先改状态再停请求，反过来会把这次暂停报成下载失败 */
@@ -542,7 +508,6 @@ export const initDownload = async() => {
       updateItem(item.id, { status: 'waiting', statusText: '' })
     }
   })
-  dldbg(`INIT items=${state.list.length} waits=${state.list.filter(i => i.status === 'waiting').length} runs=${state.list.filter(i => i.status === 'run').length}`)
   startQueue()
   if (isAppStateBound) return
   isAppStateBound = true

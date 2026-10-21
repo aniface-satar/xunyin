@@ -115,7 +115,7 @@ test('传输阶段挂在静默看门狗上，而不是直接把原生 promise �
   assert.match(body, /transfer\?\.bump\(\)/, 'progress events must push the stall deadline back')
   assert.match(body, /onStall: \(\) => \{ stopJob\(id, startedJobId\) \}/, 'a stalled transfer must stop the native job instead of leaving it running')
   assert.match(body, /mayAbort: isActive/, 'a frozen app (screen off) must not be reported as a stalled transfer')
-  assert.match(body, /err instanceof TransferStalledError \? 'download_transfer_stalled'/, 'a stall needs its own message: it is retryable, not a disk problem')
+  assert.match(body, /errorUpdate\(transferErrorKey\(err\)\)/, 'the transfer error must go through the classifier: a stall is retryable, not a disk problem')
 })
 
 test('队列收尾时只要还有等着的任务就再拉一轮：错过一次唤醒也不再停在排队中', () => {
@@ -145,7 +145,7 @@ test('点击下载的队列踢动在 toast 之前：报告失败不许把下载�
   const report = body.indexOf('reportEnqueue(added')
   assert.ok(kick >= 0 && report >= 0)
   assert.ok(kick < report, 'a throwing toast would otherwise leave the task parked at 排队中')
-  assert.match(body, /catch \(err: any\) \{\s*dldbg|catch \(err: any\) \{\s*log\.error\('download enqueue failed/, 'the enqueue body must not let an unexpected error skip the queue kick')
+  assert.match(body, /catch \(err: any\) \{\s*log\.error\(`download enqueue failed/, 'the enqueue body must not let an unexpected error skip the queue kick')
 })
 
 test('被顶替的那一轮看门狗不许停掉用户刚点的新任务', () => {
