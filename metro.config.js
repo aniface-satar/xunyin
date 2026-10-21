@@ -1,4 +1,5 @@
 const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config')
+const exclusionList = require('metro-config/src/defaults/exclusionList')
 
 /**
  * Metro configuration
@@ -8,6 +9,12 @@ const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config')
  */
 const config = {
   resolver: {
+    // Exclude nested reference copies / sync-server checkouts (they contain
+    // their own node_modules) so Metro's crawler doesn't traverse them.
+    blockList: exclusionList([
+      /[/\\]lx-music-mobile[/\\].*/,
+      /[/\\]lx-music-sync-server[/\\].*/,
+    ]),
     extraNodeModules: {
       // crypto: require.resolve('react-native-quick-crypto'),
       // stream: require.resolve('stream-browserify'),
