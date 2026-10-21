@@ -28,8 +28,8 @@ export default forwardRef<OpenListType, {}>((props, ref) => {
     },
   }))
 
-  const handleOpenSonglist = (id: string) => {
-    // console.log(id, songlistInfoRef.current.source)
+  const handleOpenSonglist = (id: string, source: Source) => {
+    songlistInfoRef.current.source = source
     homeDetailActions.push({
       type: 'songlist',
       info: {
@@ -39,14 +39,10 @@ export default forwardRef<OpenListType, {}>((props, ref) => {
         name: '',
         img: undefined,
         desc: undefined,
-        source: songlistInfoRef.current.source,
+        source,
       },
     })
   }
-
-  // const handleSourceChange: ModalProps['onSourceChange'] = (source) => {
-  //   songlistInfoRef.current.source = source
-  // }
 
 
   return (

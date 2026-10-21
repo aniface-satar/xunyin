@@ -4,8 +4,6 @@ import { View } from 'react-native'
 import BoardsList, { type BoardsListType, type BoardsListProps } from '../BoardsList'
 import { BorderWidths } from '@/theme'
 import { createStyle } from '@/utils/tools'
-import { handleCollect, handlePlay } from '../listAction'
-import boardState from '@/store/leaderboard/state'
 import { useTheme } from '@/store/theme/hook'
 import { getBoardsList } from '@/core/leaderboard'
 
@@ -46,22 +44,12 @@ export default forwardRef<LeftBarType, LeftBarProps>(({ onChangeList }, ref) => 
     boundInfo.current.id = id
     onChangeList(boundInfo.current.source, id)
   }
-  const onPlay: BoardsListProps['onPlay'] = (id) => {
-    boundInfo.current.id = id
-    void handlePlay(id, boardState.listDetailInfo.list)
-  }
-  const onCollect: BoardsListProps['onCollect'] = (id, name) => {
-    boundInfo.current.id = id
-    void handleCollect(id, name, boundInfo.current.source)
-  }
 
   return (
     <View style={{ ...styles.container, borderRightColor: theme['c-list-header-border-bottom'] }}>
       <BoardsList
         ref={boardsListRef}
         onBoundChange={onBoundChange}
-        onPlay={onPlay}
-        onCollect={onCollect}
       />
     </View>
   )

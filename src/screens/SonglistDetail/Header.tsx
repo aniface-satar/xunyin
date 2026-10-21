@@ -75,7 +75,7 @@ export interface DetailInfo {
   imgUrl?: string
 }
 
-export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onBack, isMultiSelectMode = false, onToggleMultiSelect }: { componentId: string, embedded?: boolean, onBack?: () => void, isMultiSelectMode?: boolean, onToggleMultiSelect?: () => void }, ref) => {
+export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onBack, isMultiSelectMode = false, onToggleMultiSelect }: HeaderProps, ref) => {
   const fullStatusBarHeight = useStatusbarHeight()
   const theme = useTheme()
   const t = useI18n()
@@ -118,6 +118,9 @@ export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onB
       <View style={styles.topRow}>
         <TouchableOpacity
           style={styles.backBtn}
+          hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+          accessibilityRole="button"
+          accessibilityLabel={global.i18n.t('back')}
           activeOpacity={0.7}
           onPress={back}
         >
@@ -126,6 +129,7 @@ export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onB
         <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.actionBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
             activeOpacity={0.7}
             onPress={share}
             accessibilityRole="button"
@@ -135,6 +139,7 @@ export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onB
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
             activeOpacity={0.7}
             onPress={collect}
             accessibilityRole="button"
@@ -147,6 +152,7 @@ export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onB
               ? (
                 <TouchableOpacity
                   style={styles.multiSelectBtn}
+                  hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
                   activeOpacity={0.7}
                   onPress={onToggleMultiSelect}
                 >
@@ -166,7 +172,7 @@ export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onB
           </View>
         </View>
       </View>
-      <ActionBar />
+      <ActionBar name={detailInfo.name || info.name} />
       {/* <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View style={{ flexGrow: 0, flexShrink: 1, paddingTop: 5, paddingRight: 5 }}>
               <Text style={{ fontSize: 12, color: AppColors.normal20 }} numberOfLines={ 1 }>{playCount || '-'}</Text>

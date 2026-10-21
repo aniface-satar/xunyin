@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { View } from 'react-native'
 import Text from '@/components/common/Text'
 import { useTheme } from '@/store/theme/hook'
-import Button, { type BtnType } from '@/components/common/Button'
+import Button from '@/components/common/Button'
 import { createStyle } from '@/utils/tools'
 import { type BoardItem } from '@/store/leaderboard/state'
 import { Icon } from '@/components/common/Icon'
@@ -14,34 +14,16 @@ interface BoardTrack {
   singer: string
 }
 
-// index={index}
-// longPressIndex={longPressIndex}
-// activeId={activeId}
-// showMenu={showMenu}
-// onBoundChange={handleBoundChange}
 export interface ListItemProps {
   item: BoardItem
-  index: number
-  longPressIndex: number
   activeId: string
   matrix?: boolean
-  onShowMenu: (id: string, name: string, index: number, position: { x: number, y: number, w: number, h: number }) => void
   onBoundChange: (item: BoardItem) => void
 }
 
-export default ({ item, activeId, index, longPressIndex, matrix = false, onBoundChange, onShowMenu }: ListItemProps) => {
+export default ({ item, activeId, matrix = false, onBoundChange }: ListItemProps) => {
   const theme = useTheme()
-  const buttonRef = useRef<BtnType>(null)
   const [topTracks, setTopTracks] = useState<BoardTrack[]>([])
-
-  const setPosition = useCallback(() => {
-    if (buttonRef.current?.measure) {
-      buttonRef.current.measure((fx, fy, width, height, px, py) => {
-        // console.log(fx, fy, width, height, px, py)
-        onShowMenu(item.id, item.name, index, { x: Math.ceil(px), y: Math.ceil(py), w: Math.ceil(width), h: Math.ceil(height) })
-      })
-    }
-  }, [index, item, onShowMenu])
 
   const active = activeId == item.id
 
@@ -63,23 +45,17 @@ export default ({ item, activeId, index, longPressIndex, matrix = false, onBound
 
   return (
     <Button
-      ref={buttonRef}
       style={matrix
         ? {
             ...styles.button,
             ...styles.matrixButton,
-            backgroundColor: index == longPressIndex
-              ? theme['c-button-background-active']
-              : active
-                ? theme['c-primary-background-active']
-                : theme['c-content-background'],
+            backgroundColor: active
+              ? theme['c-primary-background-active']
+              : theme['c-content-background'],
             borderColor: theme['c-border-background'],
           }
-        : {
-            ...styles.button,
-            ...(index == longPressIndex ? { backgroundColor: theme['c-button-background-active'] } : null),
-          }}
-      key={item.id} onLongPress={setPosition}
+        : styles.button}
+      key={item.id}
       onPress={() => { onBoundChange(item) }}
     >
       {
@@ -170,7 +146,7 @@ const styles = createStyle({
   matrixBoardName: {
     textAlign: 'center',
     lineHeight: 22,
-    fontWeight: '700',
+    fontWeight: 'bold',
   },
   topTracks: {
     marginTop: 6,

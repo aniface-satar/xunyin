@@ -5,13 +5,13 @@ import Text from '@/components/common/Text'
 import Button from '@/components/common/Button'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
-import { createStyle } from '@/utils/tools'
+import { assertApiSupport, createStyle } from '@/utils/tools'
 import { BorderWidths, BorderRadius } from '@/theme'
 import { hasDislike } from '@/core/dislikeList'
 import { existsFile } from '@/utils/fs'
 import { hasMusicUrlByMusic } from '@/utils/data'
 
-export type MultipleAction = 'play' | 'playLater' | 'add' | 'move' | 'changePosition'
+export type MultipleAction = 'play' | 'playLater' | 'add' | 'move' | 'download' | 'changePosition'
 | 'toggleSource' | 'editMetadata' | 'copyName' | 'musicSourceDetail'
 | 'removeCache' | 'dislike' | 'remove'
 
@@ -48,11 +48,13 @@ export default ({ selectedList, onAction }: MultipleActionsProps) => {
 
   const actions = useMemo(() => {
     const isLocal = musicInfo?.source == 'local'
+    const canDownload = selectedList.some(m => m.source != 'local' && assertApiSupport(m.source))
     const menus: Array<{ action: MultipleAction, label: string, disabled?: boolean }> = [
       { action: 'play', label: t('play'), disabled: !musicInfo },
       { action: 'playLater', label: t('play_later'), disabled: !selectedList.length },
       { action: 'add', label: t('add_to'), disabled: !selectedList.length },
       { action: 'move', label: t('move_to'), disabled: !selectedList.length },
+      { action: 'download', label: t('download_menu'), disabled: !canDownload },
       { action: 'changePosition', label: t('change_position'), disabled: !selectedList.length },
     ]
     if (isLocal) {
@@ -67,7 +69,7 @@ export default ({ selectedList, onAction }: MultipleActionsProps) => {
       { action: 'remove', label: t('delete'), disabled: !selectedList.length },
     )
     return menus
-  }, [canEditMetadata, hasUrlCache, musicInfo, selectedList.length, t])
+  }, [canEditMetadata, hasUrlCache, musicInfo, selectedList, t])
 
   return (
     <ScrollView

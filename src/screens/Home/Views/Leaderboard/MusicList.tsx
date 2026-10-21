@@ -103,5 +103,6 @@ export default forwardRef<MusicListType, MusicListProps>(({ checkHomePagerIdle: 
     rowType='medium'
     multiSelectStyle={multiSelectStyle}
     onMultiSelectModeChange={onMultiSelectModeChange}
+    showLocateButton
    />
 })

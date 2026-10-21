@@ -5,8 +5,6 @@ import { getLeaderboardSetting, saveLeaderboardSetting } from '@/utils/data'
 import BoardsList, { type BoardsListType, type BoardsListProps } from '../BoardsList'
 import { createStyle } from '@/utils/tools'
 import { getBoardsList } from '@/core/leaderboard'
-import { handleCollect, handlePlay } from '../listAction'
-import boardState from '@/store/leaderboard/state'
 import homeDetailActions from '@/store/homeDetail/action'
 
 export interface VerticalType {
@@ -33,16 +31,6 @@ export default forwardRef<VerticalType, {}>((props, ref) => {
       source: boundInfo.current.source,
       board: item,
     })
-  }
-
-  const onPlay: BoardsListProps['onPlay'] = (id) => {
-    boundInfo.current.id = id
-    void handlePlay(id, boardState.listDetailInfo.list)
-  }
-
-  const onCollect: BoardsListProps['onCollect'] = (id, name) => {
-    boundInfo.current.id = id
-    void handleCollect(id, name, boundInfo.current.source)
   }
 
   const setSource = useCallback((source: LX.OnlineSource) => {
@@ -85,8 +73,6 @@ export default forwardRef<VerticalType, {}>((props, ref) => {
           ref={boardsListRef}
           matrix
           onBoardChange={onBoardChange}
-          onPlay={onPlay}
-          onCollect={onCollect}
         />
       </View>
     </View>

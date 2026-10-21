@@ -6,7 +6,8 @@ import { createStyle } from '@/utils/tools'
 import { useI18n } from '@/lang'
 import CheckBox from '@/components/common/CheckBox'
 import { getListMusics, setFetchingListStatus, updateListMusicPosition } from '@/core/list'
-import { sortListMusicInfo } from './utils'
+import { getMusicAddTimes, getMusicPlayCounts } from '@/utils/data'
+import { sortListMusicInfo, type ListSortId } from './utils'
 
 const Title = ({ title }: {
   title: string
@@ -18,83 +19,36 @@ const Title = ({ title }: {
   )
 }
 
-export interface FormType {
-  reset: () => void
-  getForm: () => ([FieldName | undefined, FieldType | undefined])
-}
-const fieldNames = ['name', 'singer', 'album', 'time', 'source'] as const
-const fieldTypes = ['up', 'down', 'random'] as const
-type FieldName = typeof fieldNames[number]
-type FieldType = typeof fieldTypes[number]
-const CheckBoxItem = <T extends FieldName | FieldType>({ id, isActive, disabled, change }: {
-  id: T
-  isActive: boolean
-  disabled?: boolean
-  change: (id: T) => void
-}) => {
-  const t = useI18n()
-  return (
-    <CheckBox
-      marginBottom={3}
-      disabled={disabled}
-      check={isActive}
-      label={t(`list_sort_modal_by_${id}`)}
-      onChange={() => { change(id) }} need />
-  )
-}
-const Form = forwardRef<FormType, {}>((props, ref) => {
-  const t = useI18n()
-  const [name, setName] = useState<FieldName>()
-  const [type, setType] = useState<FieldType>()
-  useImperativeHandle(ref, () => ({
-    reset() {
-      setName(undefined)
-      setType(undefined)
-    },
-    getForm() {
-      return [name, type]
-    },
-  }))
-
-  return (
-    <View>
-      <View style={styles.formSection}>
-        <Text>{t('list_sort_modal_by_field')}</Text>
-        <View style={styles.formList}>
-          {fieldNames.map(n => <CheckBoxItem key={n} id={n} isActive={name == n} change={setName} disabled={type == 'random'} />)}
-        </View>
-      </View>
-      <View style={styles.formSection}>
-        <Text>{t('list_sort_modal_by_type')}</Text>
-        <View style={styles.formList}>
-          {fieldTypes.map(n => <CheckBoxItem key={n} id={n} isActive={type == n} change={setType} />)}
-        </View>
-      </View>
-    </View>
-  )
-})
+const sortOptions = [
+  { id: 'name', label: 'list_sort_option_title' },
+  { id: 'album', label: 'list_sort_option_album' },
+  { id: 'duration_up', label: 'list_sort_option_duration_up' },
+  { id: 'duration_down', label: 'list_sort_option_duration_down' },
+  { id: 'add_time_up', label: 'list_sort_option_add_time_up' },
+  { id: 'add_time_down', label: 'list_sort_option_add_time_down' },
+  { id: 'singer', label: 'list_sort_option_singer' },
+  { id: 'year', label: 'list_sort_option_year' },
+  { id: 'play_count', label: 'list_sort_option_play_count' },
+] as const
 
 export interface ListMusicSortType {
   show: (listInfo: LX.List.MyListInfo) => void
 }
+export interface ListMusicSortProps {
+  onCustomSort?: () => void
+}
+type ListSortSelection = ListSortId | 'custom'
 const initSelectInfo = {}
 
-// const getName = (id: string, name: string) => {
-//   switch (id) {
-//     case LIST_IDS.DEFAULT:
-//       return global.i18n.t(name)
-//     case LIST_IDS.LOVE:
-//       return global.i18n.t(name)
-//     default:
-//       return name
-//   }
-// }
+// 记住上次使用的排序方式，下次打开时默认选中
+let lastSelectedSortId: ListSortId | undefined
 
-export default forwardRef<ListMusicSortType, {}>((props, ref) => {
+export default forwardRef<ListMusicSortType, ListMusicSortProps>(({ onCustomSort }, ref) => {
+  const t = useI18n()
   const alertRef = useRef<ConfirmAlertType>(null)
   const [title, setTitle] = useState('')
   const selectedListInfo = useRef<LX.List.MyListInfo>(initSelectInfo as LX.List.MyListInfo)
-  const formTypeRef = useRef<FormType>(null)
+  const [sortId, setSortId] = useState<ListSortSelection | undefined>(lastSelectedSortId)
   const [visible, setVisible] = useState(false)
 
   const handleShow = () => {
@@ -104,6 +58,7 @@ export default forwardRef<ListMusicSortType, {}>((props, ref) => {
     show(listInfo) {
       setTitle(listInfo.name)
       selectedListInfo.current = listInfo
+      setSortId(lastSelectedSortId)
       if (visible) handleShow()
       else {
         setVisible(true)
@@ -115,16 +70,26 @@ export default forwardRef<ListMusicSortType, {}>((props, ref) => {
   }))
 
   const handleSort = async() => {
-    const [name, type] = formTypeRef.current!.getForm()
-    // console.log(type, name)
-    if (!type || (!name && type != 'random')) return
+    if (!sortId) return
+    if (sortId == 'custom') {
+      if (!onCustomSort) return
+      alertRef.current?.setVisible(false)
+      onCustomSort()
+      return
+    }
+    lastSelectedSortId = sortId
     const id = selectedListInfo.current.id
     let list = [...(await getListMusics(id))]
     setFetchingListStatus(id, true)
     requestAnimationFrame(() => {
-      void InteractionManager.runAfterInteractions(() => {
-        list = sortListMusicInfo(list, type, name!, global.i18n.locale)
-        void updateListMusicPosition(id, 0, list.map(m => m.id))
+      void InteractionManager.runAfterInteractions(async() => {
+        const [addTimes, playCounts] = await Promise.all([getMusicAddTimes(), getMusicPlayCounts()])
+        const addTimePrefix = `${id}/`
+        list = sortListMusicInfo(list, sortId, global.i18n.locale, {
+          getAddTime: musicId => addTimes[addTimePrefix + musicId] ?? 0,
+          getPlayCount: musicId => playCounts[musicId] ?? 0,
+        })
+        await updateListMusicPosition(id, 0, list.map(m => m.id))
         setFetchingListStatus(id, false)
       })
     })
@@ -140,7 +105,29 @@ export default forwardRef<ListMusicSortType, {}>((props, ref) => {
         >
           <View style={styles.renameContent}>
             <Title title={title} />
-            <Form ref={formTypeRef} />
+            <View style={styles.optionList}>
+              {
+                sortOptions.map(option => (
+                  <CheckBox
+                    key={option.id}
+                    marginBottom={8}
+                    check={sortId == option.id}
+                    label={t(option.label)}
+                    onChange={() => { setSortId(option.id) }}
+                  />
+                ))
+              }
+              {
+                onCustomSort
+                  ? <CheckBox
+                      marginBottom={8}
+                      check={sortId == 'custom'}
+                      label={t('list_sort_option_custom')}
+                      onChange={() => { setSortId('custom') }}
+                    />
+                  : null
+              }
+            </View>
           </View>
         </ConfirmAlert>
       : null
@@ -157,15 +144,9 @@ const styles = createStyle({
   title: {
     textAlign: 'center',
     // paddingTop: 15,
-    paddingBottom: 25,
+    paddingBottom: 15,
   },
-  formSection: {
-    marginBottom: 15,
-  },
-  formList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  optionList: {
+    flexDirection: 'column',
   },
 })
-
-

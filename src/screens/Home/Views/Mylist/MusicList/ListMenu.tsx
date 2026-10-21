@@ -4,6 +4,7 @@ import Menu, { type Menus, type MenuType, type Position } from '@/components/com
 import { hasDislike } from '@/core/dislikeList'
 import { existsFile } from '@/utils/fs'
 import { hasMusicUrlByMusic } from '@/utils/data'
+import { assertApiSupport } from '@/utils/tools'
 
 export interface SelectInfo {
   musicInfo: LX.Music.MusicInfo
@@ -19,6 +20,7 @@ export interface ListMenuProps {
   onPlayLater: (selectInfo: SelectInfo) => void
   onAdd: (selectInfo: SelectInfo) => void
   onMove: (selectInfo: SelectInfo) => void
+  onDownload: (selectInfo: SelectInfo) => void
   onEditMetadata: (selectInfo: SelectInfo) => void
   onCopyName: (selectInfo: SelectInfo) => void
   onChangePosition: (selectInfo: SelectInfo) => void
@@ -71,9 +73,9 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
     const menu = [
       { action: 'play', label: t('play') },
       { action: 'playLater', label: t('play_later') },
-      // { action: 'download', label: '下载' },
       { action: 'add', label: t('add_to') },
       { action: 'move', label: t('move_to') },
+      { action: 'download', label: t('download_menu'), disabled: isLocal || !assertApiSupport(musicInfo.source) },
       { action: 'changePosition', label: t('change_position') },
       { action: 'toggleSource', label: t('toggle_source') },
       { action: 'copyName', label: t('copy_name') },
@@ -83,7 +85,7 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
       { action: 'dislike', disabled: hasDislike(musicInfo), label: t('dislike') },
       { action: 'remove', label: t('delete') },
     ]
-    if (isLocal) menu.splice(5, 0, { action: 'editMetadata', disabled: !edit_metadata, label: t('edit_metadata') })
+    if (isLocal) menu.splice(menu.findIndex(m => m.action == 'changePosition') + 1, 0, { action: 'editMetadata', disabled: !edit_metadata, label: t('edit_metadata') })
     setMenus(menu)
     void Promise.all([isLocal ? hasEditMetadata(musicInfo) : Promise.resolve(false), hasUrlCache(musicInfo)]).then(([_edit_metadata, _has_url_cache]) => {
       // console.log(_edit_metadata)
@@ -126,6 +128,9 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
         // selectedListRef.current.length
         //   ? setVisibleMusicMultiAddModal(true)
         //   : setVisibleMusicAddModal(true)
+        break
+      case 'download':
+        props.onDownload(selectInfo)
         break
       case 'editMetadata':
         props.onEditMetadata(selectInfo)

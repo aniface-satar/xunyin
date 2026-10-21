@@ -10,7 +10,6 @@ import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
 import { BorderRadius, BorderWidths } from '@/theme'
-import { scaleSizeH, scaleSizeW } from '@/utils/pixelRatio'
 
 type FlatListType = FlatListProps<LX.Player.PlaylistHistoryItem>
 
@@ -119,29 +118,27 @@ export default ({ keyword = '' }: { keyword?: string }) => {
   )
 }
 
-const ITEM_HEIGHT = scaleSizeH(68)
-
 const styles = createStyle({
   container: {
     flex: 1,
   },
   list: {
     flex: 1,
-    paddingLeft: scaleSizeW(16),
-    paddingRight: scaleSizeW(16),
+    paddingLeft: 16,
+    paddingRight: 16,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: ITEM_HEIGHT,
+    height: 68,
     borderBottomWidth: BorderWidths.normal,
   },
   cover: {
-    width: scaleSizeH(52),
-    height: scaleSizeH(52),
+    width: 52,
+    height: 52,
     borderRadius: BorderRadius.normal,
     overflow: 'hidden',
-    marginRight: scaleSizeW(12),
+    marginRight: 12,
   },
   coverImage: {
     width: '100%',
@@ -156,6 +153,6 @@ const styles = createStyle({
   },
   emptyText: {
     textAlign: 'center',
-    paddingTop: scaleSizeH(24),
+    paddingTop: 24,
   },
 })

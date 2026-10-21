@@ -74,7 +74,8 @@ const styles = createStyle({
     top: 0,
     right: 0,
     borderBottomLeftRadius: 3,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    // 封面不可控，遮罩太浅时 9px 白字在亮色封面上读不出
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
   },
   listItemTitle: {
     fontSize: 12,

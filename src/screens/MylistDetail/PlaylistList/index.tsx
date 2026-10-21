@@ -12,7 +12,6 @@ import { type ListInfoItem } from '@/store/songlist/state'
 import homeDetailActions from '@/store/homeDetail/action'
 import { createStyle, toast } from '@/utils/tools'
 import { useI18n } from '@/lang'
-import { scaleSizeH, scaleSizeW } from '@/utils/pixelRatio'
 import { BorderRadius, BorderWidths } from '@/theme'
 
 type FlatListType = FlatListProps<LX.List.UserListInfo>
@@ -172,29 +171,27 @@ export default ({ keyword = '' }: { keyword?: string }) => {
   )
 }
 
-const ITEM_HEIGHT = scaleSizeH(68)
-
 const styles = createStyle({
   container: {
     flex: 1,
   },
   list: {
     flex: 1,
-    paddingLeft: scaleSizeW(16),
-    paddingRight: scaleSizeW(16),
+    paddingLeft: 16,
+    paddingRight: 16,
   },
   playlistRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: ITEM_HEIGHT,
+    height: 68,
     borderBottomWidth: BorderWidths.normal,
   },
   playlistCover: {
-    width: scaleSizeH(52),
-    height: scaleSizeH(52),
+    width: 52,
+    height: 52,
     borderRadius: BorderRadius.normal,
     overflow: 'hidden',
-    marginRight: scaleSizeW(12),
+    marginRight: 12,
   },
   playlistCoverImage: {
     width: '100%',
@@ -212,11 +209,11 @@ const styles = createStyle({
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    width: scaleSizeW(34),
-    height: ITEM_HEIGHT,
+    width: 34,
+    height: 68,
   },
   emptyText: {
     textAlign: 'center',
-    paddingTop: scaleSizeH(24),
+    paddingTop: 24,
   },
 })

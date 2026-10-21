@@ -1,8 +1,12 @@
-import { useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react'
+import { useMemo, useRef, useState, useEffect, useContext, forwardRef, useImperativeHandle, type ReactElement } from 'react'
 import { FlatList, type FlatListProps, RefreshControl, View } from 'react-native'
+
+import { DetailPageActiveContext } from '@/store/homeDetail/state'
 
 // import { useMusicList } from '@/store/list/hook'
 import ListItem, { ITEM_HEIGHT } from './ListItem'
+import LocateButton from '@/components/common/LocateButton'
+import { usePlayMusicInfo } from '@/store/player/hook'
 import { createStyle, getRowInfo, type RowInfoType } from '@/utils/tools'
 import type { Position } from './ListMenu'
 import type { SelectMode } from './MultipleModeBar'
@@ -32,6 +36,7 @@ export interface ListProps {
   checkHomePagerIdle: boolean
   rowType?: RowInfoType
   onSelectedListChange?: (list: LX.Music.MusicInfoOnline[]) => void
+  showLocateButton?: boolean
 }
 export interface ListType {
   setList: (list: LX.Music.MusicInfoOnline[], isAppend: boolean, showSource: boolean) => void
@@ -57,6 +62,7 @@ const List = forwardRef<ListType, ListProps>(({
   checkHomePagerIdle,
   rowType,
   onSelectedListChange,
+  showLocateButton,
 }, ref) => {
   // const t = useI18n()
   const theme = useTheme()
@@ -81,7 +87,11 @@ const List = forwardRef<ListType, ListProps>(({
     setList(list, isAppend, showSource) {
       setList(list)
       setShowSource(showSource)
-      if (!isAppend && selectedListRef.current.length) setSelectedList(selectedListRef.current = [])
+      if (!isAppend) {
+        if (selectedListRef.current.length) setSelectedList(selectedListRef.current = [])
+        // 换一份歌曲列表（歌单、榜单、搜索结果）就从顶部看起，不继承上一份列表的滚动位置
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: false })
+      }
     },
     setIsMultiSelectMode(isMultiSelectMode) {
       isMultiSelectModeRef.current = isMultiSelectMode
@@ -116,6 +126,14 @@ const List = forwardRef<ListType, ListProps>(({
       setStatus(val)
     },
   }))
+
+  const detailPageActive = useContext(DetailPageActiveContext)
+  const wasPageActiveRef = useRef(false)
+  useEffect(() => {
+    const becameActive = detailPageActive && !wasPageActiveRef.current
+    wasPageActiveRef.current = detailPageActive
+    if (becameActive) flatListRef.current?.scrollToOffset({ offset: 0, animated: false })
+  }, [detailPageActive])
 
 
   const handleUpdateSelectedList = (newList: LX.Music.MusicInfoOnline[]) => {
@@ -186,6 +204,31 @@ const List = forwardRef<ListType, ListProps>(({
     onLoadMore()
   }
 
+  const playMusicInfo = usePlayMusicInfo()
+  const activeIndex = useMemo(() => {
+    const id = playMusicInfo.musicInfo?.id
+    if (!id) return -1
+    return currentList.findIndex(m => m.id == id)
+  }, [currentList, playMusicInfo.musicInfo?.id])
+  const headerHeightRef = useRef(0)
+  const viewportHeightRef = useRef(0)
+  const handleLocate = () => {
+    if (activeIndex < 0) return
+    const row = Math.floor(activeIndex / (rowInfo.current.rowNum ?? 1))
+    const offset = Math.max(0, headerHeightRef.current + row * ITEM_HEIGHT - viewportHeightRef.current * 0.3)
+    flatListRef.current?.scrollToOffset({ offset, animated: true })
+  }
+
+  const locateHeaderComponent = useMemo(() => (
+    ListHeaderComponent
+      ? (
+          <View onLayout={e => { headerHeightRef.current = e.nativeEvent.layout.height }}>
+            {ListHeaderComponent as ReactElement}
+          </View>
+        )
+      : null
+  ), [ListHeaderComponent])
+
 
   const renderItem: FlatListType['renderItem'] = ({ item, index }) => (
     <ListItem
@@ -200,6 +243,7 @@ const List = forwardRef<ListType, ListProps>(({
       isShowAlbumName={isShowAlbumName}
       isShowInterval={isShowInterval}
       isMultiSelectMode={isMultiSelectMode}
+      activeIndex={activeIndex}
     />
   )
   const getkey: FlatListType['keyExtractor'] = item => item.id
@@ -238,29 +282,36 @@ const List = forwardRef<ListType, ListProps>(({
   }, [onLoadMore, status, visibleMultiSelect])
 
   return (
-    <FlatList
-      ref={flatListRef}
-      style={styles.list}
-      data={currentList}
-      numColumns={rowInfo.current.rowNum}
-      horizontal={false}
-      maxToRenderPerBatch={4}
-      // updateCellsBatchingPeriod={80}
-      windowSize={8}
-      removeClippedSubviews={true}
-      initialNumToRender={12}
-      renderItem={renderItem}
-      keyExtractor={getkey}
-      getItemLayout={getItemLayout}
-      // onRefresh={onRefresh}
-      // refreshing={refreshing}
-      onEndReachedThreshold={0.5}
-      onEndReached={handleLoadMore}
-      progressViewOffset={progressViewOffset}
-      ListHeaderComponent={ListHeaderComponent}
-      refreshControl={refreshControl}
-      ListFooterComponent={footerComponent}
-    />
+    <View style={styles.container} onLayout={e => { viewportHeightRef.current = e.nativeEvent.layout.height }}>
+      <FlatList
+        ref={flatListRef}
+        style={styles.list}
+        data={currentList}
+        numColumns={rowInfo.current.rowNum}
+        horizontal={false}
+        maxToRenderPerBatch={4}
+        // updateCellsBatchingPeriod={80}
+        windowSize={8}
+        removeClippedSubviews={true}
+        initialNumToRender={12}
+        renderItem={renderItem}
+        keyExtractor={getkey}
+        getItemLayout={getItemLayout}
+        // onRefresh={onRefresh}
+        // refreshing={refreshing}
+        onEndReachedThreshold={0.5}
+        onEndReached={handleLoadMore}
+        progressViewOffset={progressViewOffset}
+        ListHeaderComponent={showLocateButton ? locateHeaderComponent : ListHeaderComponent}
+        refreshControl={refreshControl}
+        ListFooterComponent={footerComponent}
+      />
+      {
+        showLocateButton && activeIndex > -1 && !isMultiSelectMode
+          ? <LocateButton onPress={handleLocate} />
+          : null
+      }
+    </View>
   )
 })
 

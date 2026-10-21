@@ -7,11 +7,13 @@ import Text from '@/components/common/Text'
 import { useStatusbarHeight } from '@/store/common/hook'
 import { useLeaderboardInfo } from './state'
 import { createStyle } from '@/utils/tools'
+import { useI18n } from '@/lang'
 import { BorderWidths } from '@/theme'
 
 export default ({ componentId, onBack, isMultiSelectMode, onToggleMultiSelect }: { componentId: string, onBack?: () => void, isMultiSelectMode: boolean, onToggleMultiSelect: () => void }) => {
   const statusBarHeight = useStatusbarHeight()
   const theme = useTheme()
+  const t = useI18n()
   const { board } = useLeaderboardInfo()
 
   return (
@@ -20,6 +22,8 @@ export default ({ componentId, onBack, isMultiSelectMode, onToggleMultiSelect }:
         <TouchableOpacity
           style={styles.backBtn}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={global.i18n.t('back')}
           onPress={() => {
             if (onBack) {
               onBack()
@@ -40,7 +44,7 @@ export default ({ componentId, onBack, isMultiSelectMode, onToggleMultiSelect }:
           activeOpacity={0.8}
           onPress={onToggleMultiSelect}
         >
-          <Text size={14} color={theme['c-primary-font']}>{isMultiSelectMode ? '取消' : '多选'}</Text>
+          <Text size={14} color={theme['c-primary-font']}>{t(isMultiSelectMode ? 'list_select_cancel' : 'mylist_multi_select')}</Text>
         </TouchableOpacity>
       </View>
     </View>

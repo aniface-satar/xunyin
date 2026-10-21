@@ -32,7 +32,7 @@ const HeaderSearchInput = ({ placeholder, onSearch }: HeaderSearchInputProps) =>
   }, [])
 
   return (
-    <View style={styles.searchContent}>
+    <View style={{ ...styles.searchContent, backgroundColor: theme['c-primary-input-background'] }}>
       <Icon name="search-2" size={16} color={theme['c-font-label']} />
       <Input
         ref={inputRef}
@@ -81,6 +81,8 @@ export default ({
         <TouchableOpacity
           style={styles.backBtn}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={global.i18n.t('back')}
           onPress={() => {
             if (searchMode) {
               onExitSearch?.()
@@ -116,7 +118,7 @@ export default ({
         {
           showSearch && !searchMode
             ? (
-              <TouchableOpacity style={styles.actionBtn} activeOpacity={0.8} onPress={() => { notifyKeyboardWillShow(); onShowSearch() }}>
+              <TouchableOpacity style={styles.actionBtn} activeOpacity={0.8} onPress={() => { notifyKeyboardWillShow(); onShowSearch() }} accessibilityRole="button" accessibilityLabel={global.i18n.t('nav_search')}>
                 <Icon name="search-2" size={20} color={theme['c-font']} />
               </TouchableOpacity>
               )
@@ -161,7 +163,6 @@ const styles = createStyle({
     paddingLeft: 8,
     paddingRight: 4,
     borderRadius: 6,
-    backgroundColor: 'rgba(128,128,128,0.14)',
   },
   searchInput: {
     flex: 1,

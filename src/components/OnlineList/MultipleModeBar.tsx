@@ -5,11 +5,13 @@ import Text from '@/components/common/Text'
 import Button from '@/components/common/Button'
 import { useTheme } from '@/store/theme/hook'
 import { createStyle } from '@/utils/tools'
+import { scaleSizeH } from '@/utils/pixelRatio'
 import { BorderWidths } from '@/theme'
 
 export type SelectMode = 'single' | 'range'
 
-export const MULTI_SELECT_BAR_HEIGHT = 36
+// 内联动画样式不会被 createStyle 换算，这里手动换算一次，与 Mylist 侧的选择栏保持同高
+export const MULTI_SELECT_BAR_HEIGHT = scaleSizeH(36)
 
 export interface MultipleModeBarProps {
   onSwitchMode?: (mode: SelectMode) => void

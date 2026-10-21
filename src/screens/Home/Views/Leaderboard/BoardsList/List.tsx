@@ -2,33 +2,26 @@ import { forwardRef, useImperativeHandle, useState } from 'react'
 import { FlatList } from 'react-native'
 
 import { createStyle } from '@/utils/tools'
-import { type Position } from './ListMenu'
-import ListItem, { type ListItemProps } from './ListItem'
+import ListItem from './ListItem'
 import { type BoardItem } from '@/store/leaderboard/state'
 
 export interface ListProps {
   matrix?: boolean
   onBoundChange?: (listId: string) => void
   onBoardChange?: (item: BoardItem) => void
-  onShowMenu: (info: { listId: string, name: string, index: number }, position: Position) => void
 }
 export interface ListType {
   setList: (list: BoardItem[], activeId: string) => void
-  hideMenu: () => void
 }
 
-export default forwardRef<ListType, ListProps>(({ matrix = false, onBoundChange, onBoardChange, onShowMenu }, ref) => {
+export default forwardRef<ListType, ListProps>(({ matrix = false, onBoundChange, onBoardChange }, ref) => {
   const [activeId, setActiveId] = useState('')
-  const [longPressIndex, setLongPressIndex] = useState(-1)
   const [list, setList] = useState<BoardItem[]>([])
 
   useImperativeHandle(ref, () => ({
     setList(list, activeId) {
       setList(list)
       setActiveId(matrix ? '' : activeId)
-    },
-    hideMenu() {
-      setLongPressIndex(-1)
     },
   }), [matrix])
 
@@ -41,11 +34,6 @@ export default forwardRef<ListType, ListProps>(({ matrix = false, onBoundChange,
     onBoundChange?.(item.id)
   }
 
-  const handleShowMenu: ListItemProps['onShowMenu'] = (listId, name, index, position: Position) => {
-    setLongPressIndex(index)
-    onShowMenu({ listId, name, index }, position)
-  }
-
   return (
     <FlatList
       key={matrix ? 'matrix' : 'list'}
@@ -56,14 +44,11 @@ export default forwardRef<ListType, ListProps>(({ matrix = false, onBoundChange,
       style={styles.scrollView}
       keyboardShouldPersistTaps={'always'}
       keyExtractor={item => item.id}
-      renderItem={({ item, index }) => (
+      renderItem={({ item }) => (
         <ListItem
           item={item}
-          index={index}
-          longPressIndex={longPressIndex}
           activeId={activeId}
           matrix={matrix}
-          onShowMenu={handleShowMenu}
           onBoundChange={handleBoundChange}
         />
       )}

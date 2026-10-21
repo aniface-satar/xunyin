@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { ScrollView, TouchableOpacity, View } from 'react-native'
 import { BorderWidths } from '@/theme'
 
@@ -7,6 +7,7 @@ import PageContent from '@/components/PageContent'
 import StatusBar from '@/components/common/StatusBar'
 import { setComponentId } from '@/core/common'
 import { setActiveList } from '@/core/list'
+import { DetailPageActiveContext } from '@/store/homeDetail/state'
 import { COMPONENT_IDS, LIST_IDS, NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
 import PlayerBar from '@/components/player/PlayerBar'
 import { PlayerOverlayProvider } from '@/components/player/PlayerOverlay'
@@ -50,9 +51,20 @@ export default ({ componentId, info, embedded = false, onBack }: {
   const [searchMode, setSearchMode] = useState(false)
   const [searchKeyword, setSearchKeyword] = useState('')
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
+  const [isCustomSortMode, setIsCustomSortMode] = useState(false)
+  const detailPageActive = useContext(DetailPageActiveContext)
+  const wasPageActiveRef = useRef(false)
 
   const handleMultiSelectModeChange = useCallback((value: boolean) => {
     setIsMultiSelectMode(value)
+  }, [])
+
+  const handleCustomSortModeChange = useCallback((value: boolean) => {
+    setIsCustomSortMode(value)
+  }, [])
+
+  const handleCustomSort = useCallback(() => {
+    musicListRef.current?.enterCustomSort()
   }, [])
 
   const handleToggleMultiSelect = useCallback(() => {
@@ -61,11 +73,15 @@ export default ({ componentId, info, embedded = false, onBack }: {
   }, [isMultiSelectMode])
 
   const handleShowSort = useCallback(() => {
+    if (isCustomSortMode) {
+      musicListRef.current?.exitCustomSort()
+      return
+    }
     listMusicSortRef.current?.show({
       id: isLove ? LIST_IDS.LOVE : info.id,
       name: info.name,
     })
-  }, [t, info.id, info.name, isLove])
+  }, [info.id, info.name, isLove, isCustomSortMode])
 
   useEffect(() => {
     setSearchMode(false)
@@ -74,10 +90,11 @@ export default ({ componentId, info, embedded = false, onBack }: {
   }, [info.id, activeTab])
 
   const handleShowSearch = useCallback(() => {
+    if (isCustomSortMode) musicListRef.current?.exitCustomSort()
     setSearchMode(true)
     setSearchKeyword('')
     musicListRef.current?.showSearch()
-  }, [])
+  }, [isCustomSortMode])
 
   const handleSearch = useCallback((keyword: string) => {
     setSearchKeyword(keyword)
@@ -98,11 +115,23 @@ export default ({ componentId, info, embedded = false, onBack }: {
     infoIdRef.current = info.id
     activeTabCache.set(componentId, 'music')
     setActiveTab('music')
+    setIsCustomSortMode(false)
+    musicListRef.current?.exitCustomSort()
   }, [componentId, info.id])
+
+  useEffect(() => {
+    if (wasPageActiveRef.current && !detailPageActive) {
+      setIsCustomSortMode(false)
+      musicListRef.current?.exitCustomSort()
+    }
+    wasPageActiveRef.current = detailPageActive
+  }, [detailPageActive])
 
   const handleTabChange = useCallback((tab: MylistDetailTab) => {
     activeTabCache.set(componentId, tab)
     setActiveTab(tab)
+    setIsCustomSortMode(false)
+    musicListRef.current?.exitCustomSort()
   }, [componentId])
 
   useEffect(() => {
@@ -131,7 +160,7 @@ export default ({ componentId, info, embedded = false, onBack }: {
           disabled={isMultiSelectMode}
           onPress={handleShowSort}
         >
-          <Text size={14} color={theme['c-primary']}>{t('list_sort')}</Text>
+          <Text size={14} color={theme['c-primary']}>{t(isCustomSortMode ? 'list_custom_sort_done' : 'list_sort')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -177,7 +206,7 @@ export default ({ componentId, info, embedded = false, onBack }: {
                 disabled={isMultiSelectMode}
                 onPress={handleShowSort}
               >
-                <Text size={14} color={theme['c-primary']}>{t('list_sort')}</Text>
+                <Text size={14} color={theme['c-primary']}>{t(isCustomSortMode ? 'list_custom_sort_done' : 'list_sort')}</Text>
               </TouchableOpacity>
             </View>
             )
@@ -192,7 +221,12 @@ export default ({ componentId, info, embedded = false, onBack }: {
       : <HistoryList keyword={searchKeyword} />
     : isLove && activeTab == 'playlist'
       ? <PlaylistList keyword={searchKeyword} />
-      : <MusicList ref={musicListRef} onExitSearch={handleExitSearch} onMultiSelectModeChange={handleMultiSelectModeChange} />
+      : <MusicList
+          ref={musicListRef}
+          onExitSearch={handleExitSearch}
+          onMultiSelectModeChange={handleMultiSelectModeChange}
+          onCustomSortModeChange={handleCustomSortModeChange}
+        />
 
   if (embedded) {
     return (
@@ -211,7 +245,7 @@ export default ({ componentId, info, embedded = false, onBack }: {
         {playlistActionBar}
         {tabBar}
         {content}
-        <ListMusicSort ref={listMusicSortRef} />
+        <ListMusicSort ref={listMusicSortRef} onCustomSort={handleCustomSort} />
       </View>
     )
   }
@@ -234,7 +268,7 @@ export default ({ componentId, info, embedded = false, onBack }: {
           {playlistActionBar}
           {tabBar}
           {content}
-          <ListMusicSort ref={listMusicSortRef} />
+          <ListMusicSort ref={listMusicSortRef} onCustomSort={handleCustomSort} />
         </View>
         <PlayerBar />
         <BottomTabBar onTabPress={() => { void pop(componentId) }} />

@@ -8,7 +8,6 @@ import Search from '../Views/Search'
 import Setting from '../Views/Setting'
 import commonState, { type InitState as CommonState } from '@/store/common/state'
 import { useNavActiveId } from '@/store/common/hook'
-import { useHomeDetailStack } from '@/store/homeDetail/hook'
 import { createStyle } from '@/utils/tools'
 
 
@@ -46,7 +45,6 @@ const viewMap: Partial<Record<CommonState['navActiveId'], number>> = {
 const Main = () => {
   const pagerViewRef = useRef<ComponentRef<typeof PagerView>>(null)
   const activeId = useNavActiveId()
-  const hasDetail = useHomeDetailStack().length > 0
   const activeIndexRef = useRef(viewMap[commonState.navActiveId] ?? 0)
 
   useEffect(() => {
@@ -67,10 +65,8 @@ const Main = () => {
     const index = viewMap[activeId]
     if (index == null) return
     activeIndexRef.current = index
-    // PagerView may restore its first page while hidden behind Settings.
     pagerViewRef.current?.setPageWithoutAnimation(index)
-    // Detail pages also hide Main on Android, so sync the page again when they close.
-  }, [activeId, hasDetail])
+  }, [activeId])
 
   return (
     <View style={styles.container}>

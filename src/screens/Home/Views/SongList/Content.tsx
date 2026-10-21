@@ -1,6 +1,7 @@
 import { getSongListSetting, saveSongListSetting } from '@/utils/data'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { View } from 'react-native'
+import { createStyle } from '@/utils/tools'
 
 // import List from './List/List'
 import HeaderBar, { type HeaderBarProps, type HeaderBarType } from './HeaderBar'
@@ -91,7 +92,7 @@ export default forwardRef<SongListType, SongListProps>(({ initialSource }, ref) 
   )
 })
 
-const styles = StyleSheet.create({
+const styles = createStyle({
   container: {
     position: 'relative',
     flex: 1,

@@ -1,5 +1,3 @@
-import { arrShuffle } from '@/utils'
-
 const getIntv = (musicInfo: LX.Music.MusicInfo) => {
   if (!musicInfo.interval) return 0
   // if (musicInfo._interval) return musicInfo._interval
@@ -13,76 +11,91 @@ const getIntv = (musicInfo: LX.Music.MusicInfo) => {
   return intv
 }
 
+export type ListSortId = 'name' | 'album' | 'duration_up' | 'duration_down' | 'add_time_up' | 'add_time_down' | 'singer' | 'year' | 'play_count'
+
+export interface ListSortContext {
+  /**
+   * 获取歌曲添加到列表的时间戳（秒级毫秒），未记录时返回 0
+   */
+  getAddTime: (musicId: string) => number
+  /**
+   * 获取歌曲播放次数，未记录时返回 0
+   */
+  getPlayCount: (musicId: string) => number
+}
+
+const compareString = (a: string | null | undefined, b: string | null | undefined, localeId: string) => {
+  if (a == null) return b == null ? 0 : -1
+  if (b == null) return 1
+  return a.localeCompare(b, localeId)
+}
+
+const getYear = (musicInfo: LX.Music.MusicInfo) => {
+  const releaseDate = musicInfo.meta.releaseDate
+  if (!releaseDate) return null
+  const year = parseInt(releaseDate.slice(0, 4))
+  return Number.isNaN(year) ? null : year
+}
+
 /**
  * 排序歌曲
  * @param list 歌曲列表
- * @param sortType 排序类型
- * @param fieldName 排序字段
+ * @param sortId 排序选项
  * @param localeId 排序语言
+ * @param context 添加时间/播放次数查询
  * @returns
  */
-export const sortListMusicInfo = (list: LX.Music.MusicInfo[], sortType: 'up' | 'down' | 'random', fieldName: 'name' | 'singer' | 'album' | 'time' | 'source', localeId: string) => {
-  // console.log(sortType, fieldName, localeId)
+export const sortListMusicInfo = (list: LX.Music.MusicInfo[], sortId: ListSortId, localeId: string, context: ListSortContext) => {
   localeId = localeId.replaceAll('_', '-')
-  switch (sortType) {
-    case 'random':
-      arrShuffle(list)
+  switch (sortId) {
+    case 'name':
+      list.sort((a, b) => compareString(a.name, b.name, localeId))
       break
-    case 'up':
-      if (fieldName == 'time') {
-        list.sort((a, b) => {
-          if (a.interval == null) {
-            return b.interval == null ? 0 : -1
-          } else return b.interval == null ? 1 : getIntv(a) - getIntv(b)
-        })
-      } else {
-        switch (fieldName) {
-          case 'name':
-          case 'singer':
-          case 'source':
-            list.sort((a, b) => {
-              if (a[fieldName] == null) {
-                return b[fieldName] == null ? 0 : -1
-              } else return b[fieldName] == null ? 1 : a[fieldName].localeCompare(b[fieldName], localeId)
-            })
-            break
-          case 'album':
-            list.sort((a, b) => {
-              if (a.meta.albumName == null) {
-                return b.meta.albumName == null ? 0 : -1
-              } else return b.meta.albumName == null ? 1 : a.meta.albumName.localeCompare(b.meta.albumName, localeId)
-            })
-            break
-        }
-      }
+    case 'singer':
+      list.sort((a, b) => compareString(a.singer, b.singer, localeId))
       break
-    case 'down':
-      if (fieldName == 'time') {
-        list.sort((a, b) => {
-          if (a.interval == null) {
-            return b.interval == null ? 0 : 1
-          } else return b.interval == null ? -1 : getIntv(b) - getIntv(a)
-        })
-      } else {
-        switch (fieldName) {
-          case 'name':
-          case 'singer':
-          case 'source':
-            list.sort((a, b) => {
-              if (a[fieldName] == null) {
-                return b[fieldName] == null ? 0 : 1
-              } else return b[fieldName] == null ? -1 : b[fieldName].localeCompare(a[fieldName], localeId)
-            })
-            break
-          case 'album':
-            list.sort((a, b) => {
-              if (a.meta.albumName == null) {
-                return b.meta.albumName == null ? 0 : 1
-              } else return b.meta.albumName == null ? -1 : b.meta.albumName.localeCompare(a.meta.albumName, localeId)
-            })
-            break
-        }
-      }
+    case 'album':
+      // 先按专辑名分组，同专辑内按歌曲名排序（数据中无音轨号，以歌名代替）
+      list.sort((a, b) => {
+        const byAlbum = compareString(a.meta.albumName, b.meta.albumName, localeId)
+        return byAlbum != 0 ? byAlbum : compareString(a.name, b.name, localeId)
+      })
+      break
+    case 'duration_up':
+      list.sort((a, b) => {
+        if (a.interval == null) {
+          return b.interval == null ? 0 : -1
+        } else return b.interval == null ? 1 : getIntv(a) - getIntv(b)
+      })
+      break
+    case 'duration_down':
+      list.sort((a, b) => {
+        if (a.interval == null) {
+          return b.interval == null ? 0 : 1
+        } else return b.interval == null ? -1 : getIntv(b) - getIntv(a)
+      })
+      break
+    case 'add_time_up':
+      // 添加时间：早添加在前，未记录时间的歌曲保持原有相对顺序排在最前
+      list.sort((a, b) => context.getAddTime(a.id) - context.getAddTime(b.id))
+      break
+    case 'add_time_down':
+      // 添加时间降序：晚添加在前，未记录时间的歌曲保持原有相对顺序排在最后
+      list.sort((a, b) => context.getAddTime(b.id) - context.getAddTime(a.id))
+      break
+    case 'year':
+      // 发行年份：早年在前，无年份信息的歌曲排最后（保持原有相对顺序）
+      list.sort((a, b) => {
+        const yearA = getYear(a)
+        const yearB = getYear(b)
+        if (yearA == null) return yearB == null ? 0 : 1
+        if (yearB == null) return -1
+        return yearA - yearB
+      })
+      break
+    case 'play_count':
+      // 播放次数：播放多的在前，未播放的排最后（保持原有相对顺序）
+      list.sort((a, b) => context.getPlayCount(b.id) - context.getPlayCount(a.id))
       break
   }
   return list

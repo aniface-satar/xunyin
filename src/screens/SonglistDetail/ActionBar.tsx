@@ -1,33 +1,43 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { View } from 'react-native'
 import Button from '@/components/common/Button'
 
-import { createStyle } from '@/utils/tools'
+import { createStyle, toast } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import Text from '@/components/common/Text'
-import { handlePlay } from './listAction'
-import songlistState from '@/store/songlist/state'
 import { useI18n } from '@/lang'
 import { useListInfo } from './state'
+import { handleImportAsList } from './listAction'
 // import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
 
-export default memo(() => {
+export interface ActionBarProps {
+  name: string
+}
+
+export default memo(({ name }: ActionBarProps) => {
   const theme = useTheme()
   const t = useI18n()
   const info = useListInfo()
+  const [isLoading, setIsLoading] = useState(false)
 
-  const handlePlayAll = () => {
-    void handlePlay(info.id, info.source, songlistState.listDetailInfo.list, 0, {
-      name: info.name,
-      author: info.author,
-      img: info.img,
+  const handleAddToList = () => {
+    if (isLoading) return
+    if (!name) {
+      toast(t('songlist_add_to_mylist_failed'))
+      return
+    }
+    setIsLoading(true)
+    void handleImportAsList(info.source, info.id, name).catch(() => {
+      toast(t('songlist_add_to_mylist_failed'))
+    }).finally(() => {
+      setIsLoading(false)
     })
   }
 
   return (
     <View style={styles.container}>
-      <Button onPress={handlePlayAll} style={{ ...styles.controlBtn, backgroundColor: theme['c-button-background'] }}>
-        <Text style={{ ...styles.controlBtnText, color: theme['c-button-font'] }}>{t('play_all')}</Text>
+      <Button disabled={isLoading} onPress={handleAddToList} style={{ ...styles.controlBtn, backgroundColor: theme['c-button-background'] }}>
+        <Text style={{ ...styles.controlBtnText, color: theme['c-button-font'] }}>{t(isLoading ? 'songlist_add_to_mylist_loading' : 'songlist_add_to_mylist')}</Text>
       </Button>
     </View>
   )

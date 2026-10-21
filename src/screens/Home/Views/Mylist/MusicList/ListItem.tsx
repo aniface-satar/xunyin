@@ -1,22 +1,50 @@
 import { memo, useRef } from 'react'
-import { View, TouchableOpacity } from 'react-native'
+import { PanResponder, View, TouchableOpacity } from 'react-native'
 import { BorderRadius, BorderWidths } from '@/theme'
 import Image from '@/components/common/Image'
 import { Icon } from '@/components/common/Icon'
 import { createStyle, type RowInfo } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import { useAssertApiSupport } from '@/store/common/hook'
-import { scaleSizeH, scaleSizeW } from '@/utils/pixelRatio'
+import { scaleSizeH } from '@/utils/pixelRatio'
 import Text from '@/components/common/Text'
 import Checkbox from '@/components/common/CheckBox/Checkbox'
 
-const ITEM_RAW_HEIGHT = scaleSizeH(68)
-// History rows are scaled again by createStyle; keep virtualization aligned with that final height.
-export const ITEM_HEIGHT = scaleSizeH(ITEM_RAW_HEIGHT)
-const ITEM_COVER_SIZE = scaleSizeH(52)
+// 行高用于内联样式（createStyle 不会换算）与 getItemLayout，这里只换算一次
+export const ITEM_HEIGHT = scaleSizeH(68)
+
+const DragHandle = ({ onGrant, onMove, onRelease }: {
+  onGrant: () => void
+  onMove: (dy: number, moveY: number) => void
+  onRelease: () => void
+}) => {
+  const theme = useTheme()
+  const handlersRef = useRef({ onGrant, onMove, onRelease })
+  handlersRef.current = { onGrant, onMove, onRelease }
+  const panResponder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: () => { handlersRef.current.onGrant() },
+    onPanResponderMove: (_event, gestureState) => { handlersRef.current.onMove(gestureState.dy, gestureState.moveY) },
+    onPanResponderRelease: () => { handlersRef.current.onRelease() },
+    onPanResponderTerminate: () => { handlersRef.current.onRelease() },
+  })).current
+
+  return (
+    <View
+      {...panResponder.panHandlers}
+      style={styles.moreButton}
+      accessibilityRole="button"
+      accessibilityLabel={global.i18n.t('list_custom_sort_drag')}
+    >
+      <Icon name="menu" style={{ color: theme['c-350'] }} size={14} />
+    </View>
+  )
+}
 
 
-export default memo(({ item, index, activeIndex, onPress, onShowMenu, onLongPress, selectedList, rowInfo, isShowAlbumName, isShowInterval, isMultiSelectMode }: {
+export default memo(({ item, index, activeIndex, onPress, onShowMenu, onLongPress, selectedList, rowInfo, isShowAlbumName, isShowInterval, isMultiSelectMode, isCustomSortMode = false, dragOffset = 0, isDragSource = false, isDragGhost = false, onDragStart, onDragMove, onDragEnd }: {
   item: LX.Music.MusicInfo
   index: number
   activeIndex: number
@@ -28,6 +56,13 @@ export default memo(({ item, index, activeIndex, onPress, onShowMenu, onLongPres
   isShowAlbumName: boolean
   isShowInterval: boolean
   isMultiSelectMode: boolean
+  isCustomSortMode?: boolean
+  dragOffset?: number
+  isDragSource?: boolean
+  isDragGhost?: boolean
+  onDragStart?: (item: LX.Music.MusicInfo, index: number) => void
+  onDragMove?: (dy: number, moveY: number) => void
+  onDragEnd?: () => void
 }) => {
   const theme = useTheme()
 
@@ -53,8 +88,9 @@ export default memo(({ item, index, activeIndex, onPress, onShowMenu, onLongPres
       width: rowInfo.rowWidth,
       height: ITEM_HEIGHT,
       borderBottomColor: theme['c-border-background'],
-      backgroundColor: isSelected ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)',
-      opacity: isSupported ? 1 : 0.5,
+      backgroundColor: isDragGhost || isSelected || active ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)',
+      opacity: isDragSource ? 0 : isSupported ? 1 : 0.5,
+      transform: dragOffset ? [{ translateY: dragOffset }] : undefined,
     }}>
       <TouchableOpacity style={[styles.listItemLeft, isMultiSelectMode && styles.listItemLeftMultiSelect]} onPress={() => { onPress(item, index) }} onLongPress={() => { onLongPress(item, index) }}>
         {
@@ -78,9 +114,27 @@ export default memo(({ item, index, activeIndex, onPress, onShowMenu, onLongPres
         }
       </TouchableOpacity>
       {/* <View style={styles.listItemRight}> */}
-      <TouchableOpacity onPress={handleShowMenu} ref={moreButtonRef} style={styles.moreButton}>
-        <Icon name="dots-vertical" style={{ color: theme['c-350'] }} size={12} />
-      </TouchableOpacity>
+      {
+        isDragGhost
+          ? (
+            <View style={styles.moreButton}>
+              <Icon name="menu" style={{ color: theme['c-350'] }} size={14} />
+            </View>
+            )
+          : isCustomSortMode
+            ? (
+              <DragHandle
+                onGrant={() => { onDragStart?.(item, index) }}
+                onMove={(dy, moveY) => { onDragMove?.(dy, moveY) }}
+                onRelease={() => { onDragEnd?.() }}
+              />
+              )
+            : (
+              <TouchableOpacity onPress={handleShowMenu} ref={moreButtonRef} style={styles.moreButton} accessibilityRole="button" accessibilityLabel={global.i18n.t('more_actions')}>
+                <Icon name="dots-vertical" style={{ color: theme['c-350'] }} size={12} />
+              </TouchableOpacity>
+              )
+      }
       {/* </View> */}
     </View>
   )
@@ -90,6 +144,10 @@ export default memo(({ item, index, activeIndex, onPress, onShowMenu, onLongPres
     prevProps.isShowAlbumName === nextProps.isShowAlbumName &&
     prevProps.isShowInterval === nextProps.isShowInterval &&
     prevProps.isMultiSelectMode === nextProps.isMultiSelectMode &&
+    prevProps.isCustomSortMode === nextProps.isCustomSortMode &&
+    prevProps.dragOffset === nextProps.dragOffset &&
+    prevProps.isDragSource === nextProps.isDragSource &&
+    prevProps.isDragGhost === nextProps.isDragGhost &&
     prevProps.activeIndex != nextProps.index &&
     nextProps.activeIndex != nextProps.index &&
     nextProps.selectedList.includes(nextProps.item) == prevProps.selectedList.includes(nextProps.item)
@@ -101,7 +159,7 @@ const styles = createStyle({
   listItem: {
     flexDirection: 'row',
     flexWrap: 'nowrap',
-    paddingLeft: scaleSizeW(16),
+    paddingLeft: 16,
     paddingRight: 2,
     alignItems: 'center',
     borderBottomWidth: BorderWidths.normal,
@@ -117,11 +175,11 @@ const styles = createStyle({
     paddingLeft: 8,
   },
   cover: {
-    width: ITEM_COVER_SIZE,
-    height: ITEM_COVER_SIZE,
+    width: 52,
+    height: 52,
     borderRadius: BorderRadius.normal,
     overflow: 'hidden',
-    marginRight: scaleSizeW(12),
+    marginRight: 12,
   },
   coverImage: {
     width: '100%',

@@ -8,14 +8,12 @@ import { Icon } from '@/components/common/Icon'
 import { useI18n } from '@/lang'
 import { useTheme } from '@/store/theme/hook'
 import { BorderRadius, BorderWidths } from '@/theme'
-import { scaleSizeH, scaleSizeW } from '@/utils/pixelRatio'
+import { scaleSizeH } from '@/utils/pixelRatio'
 import { createStyle, type RowInfo } from '@/utils/tools'
 import Checkbox from '@/components/common/CheckBox/Checkbox'
 
-const ITEM_RAW_HEIGHT = scaleSizeH(68)
-// History rows are scaled again by createStyle; keep virtualization aligned with that final height.
-export const ITEM_HEIGHT = scaleSizeH(ITEM_RAW_HEIGHT)
-const ITEM_COVER_SIZE = scaleSizeH(52)
+// 行高用于内联样式（createStyle 不会换算）与 getItemLayout，这里只换算一次
+export const ITEM_HEIGHT = scaleSizeH(68)
 
 const useQualityTag = (musicInfo: LX.Music.MusicInfoOnline) => {
   const t = useI18n()
@@ -34,29 +32,34 @@ const useQualityTag = (musicInfo: LX.Music.MusicInfoOnline) => {
   return info
 }
 
-export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu, selectedList, rowInfo, isShowAlbumName, isShowInterval, isMultiSelectMode }: {
+export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu, selectedList, rowInfo, isShowAlbumName, isShowInterval, intervalText, isMultiSelectMode, activeIndex }: {
   item: LX.Music.MusicInfoOnline
   index: number
   showSource?: boolean
   onPress: (item: LX.Music.MusicInfoOnline, index: number) => void
-  onLongPress: (item: LX.Music.MusicInfoOnline, index: number) => void
-  onShowMenu: (item: LX.Music.MusicInfoOnline, index: number, position: { x: number, y: number, w: number, h: number }) => void
+  onLongPress?: (item: LX.Music.MusicInfoOnline, index: number) => void
+  onShowMenu?: (item: LX.Music.MusicInfoOnline, index: number, position: { x: number, y: number, w: number, h: number }) => void
   selectedList: LX.Music.MusicInfoOnline[]
   rowInfo: RowInfo
   isShowAlbumName: boolean
   isShowInterval: boolean
+  // 末尾那一格的文字覆盖：不传就是原来的时长。识曲历史页在那里放「什么时候听到的」，
+  // 那是这一行唯一多出来的东西，所以只开一个可选口子，别的列表一律不受影响。
+  intervalText?: string
   isMultiSelectMode: boolean
+  activeIndex: number
 }) => {
   const theme = useTheme()
 
   const isSelected = selectedList.includes(item)
+  const active = activeIndex == index
 
   const moreButtonRef = useRef<TouchableOpacity>(null)
   const handleShowMenu = () => {
     if (moreButtonRef.current?.measure) {
       moreButtonRef.current.measure((fx, fy, width, height, px, py) => {
         // console.log(fx, fy, width, height, px, py)
-        onShowMenu(item, index, { x: Math.ceil(px), y: Math.ceil(py), w: Math.ceil(width), h: Math.ceil(height) })
+        onShowMenu?.(item, index, { x: Math.ceil(px), y: Math.ceil(py), w: Math.ceil(width), h: Math.ceil(height) })
       })
     }
   }
@@ -70,9 +73,9 @@ export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu
       width: rowInfo.rowWidth,
       height: ITEM_HEIGHT,
       borderBottomColor: theme['c-border-background'],
-      backgroundColor: isSelected ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)',
+      backgroundColor: isSelected || active ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)',
     }}>
-      <TouchableOpacity style={[styles.listItemLeft, isMultiSelectMode && styles.listItemLeftMultiSelect]} onPress={() => { onPress(item, index) }} onLongPress={() => { onLongPress(item, index) }}>
+      <TouchableOpacity style={[styles.listItemLeft, isMultiSelectMode && styles.listItemLeftMultiSelect]} onPress={() => { onPress(item, index) }} onLongPress={onLongPress ? () => { onLongPress(item, index) } : undefined}>
         {
           isMultiSelectMode
             ? <Checkbox status={isSelected ? 'checked' : 'unchecked'} disabled tintColors={{ true: theme['c-primary'], false: theme['c-300'] }} size={0.75} />
@@ -82,7 +85,7 @@ export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu
           <Image style={styles.coverImage} url={item.meta.picUrl} />
         </View>
         <View style={styles.itemInfo}>
-          <Text size={15} color={theme['c-font']} numberOfLines={1}>{item.name}</Text>
+          <Text size={15} color={active ? theme['c-primary-font'] : theme['c-font']} numberOfLines={1}>{item.name}</Text>
           <View style={styles.listItemSingle}>
             { tagInfo.type ? <Badge type={tagInfo.type}>{tagInfo.text}</Badge> : null }
             <Text style={styles.listItemSingleText} size={12} color={theme['c-font-label']} numberOfLines={1}>{singer}</Text>
@@ -90,13 +93,17 @@ export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu
         </View>
         {
           isShowInterval ? (
-            <Text size={12} color={theme['c-250']} numberOfLines={1}>{item.interval}</Text>
+            <Text size={12} color={active ? theme['c-primary-alpha-400'] : theme['c-250']} numberOfLines={1}>{intervalText ?? item.interval}</Text>
           ) : null
         }
       </TouchableOpacity>
-     <TouchableOpacity onPress={handleShowMenu} ref={moreButtonRef} style={styles.moreButton}>
-        <Icon name="dots-vertical" style={{ color: theme['c-350'] }} size={12} />
-      </TouchableOpacity>
+      {
+        onShowMenu ? (
+          <TouchableOpacity onPress={handleShowMenu} ref={moreButtonRef} style={styles.moreButton} accessibilityRole="button" accessibilityLabel={global.i18n.t('more_actions')}>
+            <Icon name="dots-vertical" style={{ color: theme['c-350'] }} size={12} />
+          </TouchableOpacity>
+        ) : null
+      }
     </View>
   )
 }, (prevProps, nextProps) => {
@@ -105,6 +112,9 @@ export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu
     prevProps.isShowAlbumName === nextProps.isShowAlbumName &&
     prevProps.isShowInterval === nextProps.isShowInterval &&
     prevProps.isMultiSelectMode === nextProps.isMultiSelectMode &&
+    // 本行变为正在播放、或正在播放切走时需要重渲染
+    prevProps.activeIndex != nextProps.index &&
+    nextProps.activeIndex != nextProps.index &&
     nextProps.selectedList.includes(nextProps.item) == prevProps.selectedList.includes(nextProps.item)
   )
 })
@@ -113,7 +123,7 @@ const styles = createStyle({
   listItem: {
     flexDirection: 'row',
     flexWrap: 'nowrap',
-    paddingLeft: scaleSizeW(16),
+    paddingLeft: 16,
     paddingRight: 2,
     alignItems: 'center',
     borderBottomWidth: BorderWidths.normal,
@@ -129,11 +139,11 @@ const styles = createStyle({
     paddingLeft: 8,
   },
   cover: {
-    width: ITEM_COVER_SIZE,
-    height: ITEM_COVER_SIZE,
+    width: 52,
+    height: 52,
     borderRadius: BorderRadius.normal,
     overflow: 'hidden',
-    marginRight: scaleSizeW(12),
+    marginRight: 12,
   },
   coverImage: {
     width: '100%',

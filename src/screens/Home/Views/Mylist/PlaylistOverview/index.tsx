@@ -9,7 +9,6 @@ import { useMyList } from '@/store/list/hook'
 import { getListMusics, removeUserList } from '@/core/list'
 import { createStyle, confirmDialog } from '@/utils/tools'
 import { useI18n } from '@/lang'
-import { scaleSizeH, scaleSizeW } from '@/utils/pixelRatio'
 import { BorderWidths, BorderRadius } from '@/theme'
 import { LIST_IDS } from '@/config/constant'
 
@@ -19,7 +18,9 @@ import ListMusicSort, { type ListMusicSortType } from '../MyList/ListMusicSort'
 import DuplicateMusic, { type DuplicateMusicType } from '../MyList/DuplicateMusic'
 import ListImportExport, { type ListImportExportType } from '../MyList/ListImportExport'
 import { handleRemove, handleSync } from '../MyList/listAction'
-import { useMylistSearch } from '../Search'
+import OpenListModal from '../../SongList/HeaderBar/OpenList/Modal'
+import homeDetailActions from '@/store/homeDetail/action'
+import songlistState from '@/store/songlist/state'
 
 type FlatListType = FlatListProps<LX.List.UserListInfo>
 
@@ -106,7 +107,7 @@ const PlaylistRow = memo(({ item, meta, onPress, onShowMenu, onSelect, index, is
       {
         !isMultiSelect
           ? (
-            <TouchableOpacity onPress={handleShowMenu} ref={moreButtonRef} style={styles.playlistMoreBtn}>
+            <TouchableOpacity onPress={handleShowMenu} ref={moreButtonRef} style={styles.playlistMoreBtn} accessibilityRole="button" accessibilityLabel={global.i18n.t('more_actions')}>
               <Icon name="dots-vertical" color={theme['c-350']} size={16} />
             </TouchableOpacity>
             )
@@ -116,7 +117,7 @@ const PlaylistRow = memo(({ item, meta, onPress, onShowMenu, onSelect, index, is
   )
 })
 
-const OverviewHeader = ({ isMultiSelect, selectedCount, onOpenLove, onOpenHistory, onToggleMultiSelect, onSelectAll, onCreatePlaylist }: {
+const OverviewHeader = ({ isMultiSelect, selectedCount, onOpenLove, onOpenHistory, onToggleMultiSelect, onSelectAll, onCreatePlaylist, onOpenSonglist }: {
   onOpenLove: () => void
   onOpenHistory: () => void
   isMultiSelect: boolean
@@ -124,6 +125,7 @@ const OverviewHeader = ({ isMultiSelect, selectedCount, onOpenLove, onOpenHistor
   onToggleMultiSelect: () => void
   onSelectAll: () => void
   onCreatePlaylist: () => void
+  onOpenSonglist: () => void
 }) => {
   const theme = useTheme()
   const t = useI18n()
@@ -149,6 +151,15 @@ const OverviewHeader = ({ isMultiSelect, selectedCount, onOpenLove, onOpenHistor
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.sectionAction}
+          onPress={onOpenSonglist}
+          activeOpacity={0.7}
+        >
+          <Text size={13} color={theme['c-primary']}>
+            {t('songlist_open')}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.sectionAction}
           onPress={isMultiSelect ? onSelectAll : onCreatePlaylist}
           activeOpacity={0.7}
         >
@@ -169,17 +180,10 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
   const theme = useTheme()
   const t = useI18n()
   const allList = useMyList()
-  const { keyword } = useMylistSearch()
   const userList = useMemo(() => allList.filter((l): l is LX.List.UserListInfo => {
     return l.id !== LIST_IDS.DEFAULT && l.id !== LIST_IDS.LOVE && l.id !== LIST_IDS.TEMP &&
       !('isLove' in l && l.isLove)
   }), [allList])
-  const searchText = keyword.trim().toLowerCase()
-  const displayUserList = useMemo(() => {
-    return searchText
-      ? userList.filter(listInfo => listInfo.name.toLowerCase().includes(searchText))
-      : userList
-  }, [searchText, userList])
   const [metas, setMetas] = useState<Record<string, PlaylistMeta>>({})
   const [isMultiSelect, setIsMultiSelect] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -190,9 +194,9 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
   }, [])
 
   useEffect(() => {
-    for (const listInfo of displayUserList) void loadMeta(listInfo.id).catch(() => {})
+    for (const listInfo of userList) void loadMeta(listInfo.id).catch(() => {})
     void loadMeta(LIST_IDS.LOVE).catch(() => {})
-  }, [displayUserList, loadMeta])
+  }, [userList, loadMeta])
 
   useEffect(() => {
     const handleChange = (ids: string[]) => {
@@ -205,6 +209,7 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
   }, [loadMeta])
 
   const listMenuRef = useRef<ListMenuType>(null)
+  const openListModalRef = useRef<InstanceType<typeof OpenListModal>>(null)
   const listNameEditRef = useRef<ListNameEditType>(null)
   const listMusicSortRef = useRef<ListMusicSortType>(null)
   const duplicateMusicRef = useRef<DuplicateMusicType>(null)
@@ -229,8 +234,8 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
   }, [])
 
   const selectAllPlaylists = useCallback(() => {
-    setSelectedIds(prev => prev.size == displayUserList.length ? new Set() : new Set(displayUserList.map(listInfo => listInfo.id)))
-  }, [displayUserList])
+    setSelectedIds(prev => prev.size == userList.length ? new Set() : new Set(userList.map(listInfo => listInfo.id)))
+  }, [userList])
 
   const removeSelectedPlaylists = useCallback(() => {
     const ids = userList.filter(listInfo => selectedIds.has(listInfo.id)).map(listInfo => listInfo.id)
@@ -264,7 +269,7 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
     <View style={styles.container}>
       <FlatList
         style={styles.list}
-        data={displayUserList}
+        data={userList}
         maxToRenderPerBatch={9}
         windowSize={9}
         removeClippedSubviews={true}
@@ -279,7 +284,8 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
             selectedCount={selectedIds.size}
             onToggleMultiSelect={toggleMultiSelect}
             onSelectAll={selectAllPlaylists}
-            onCreatePlaylist={() => { listNameEditRef.current?.showCreate(displayUserList.length) }}
+            onCreatePlaylist={() => { listNameEditRef.current?.showCreate(userList.length) }}
+            onOpenSonglist={() => { openListModalRef.current?.show(songlistState.listInfo.source) }}
           />
         }
         ListEmptyComponent={
@@ -289,6 +295,23 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
         }
       />
       <ListNameEdit ref={listNameEditRef} />
+      <OpenListModal
+        ref={openListModalRef}
+        onOpenId={(id, source) => {
+          homeDetailActions.push({
+            type: 'songlist',
+            info: {
+              play_count: undefined,
+              id,
+              author: '',
+              name: '',
+              img: undefined,
+              desc: undefined,
+              source,
+            },
+          })
+        }}
+      />
       <ListMusicSort ref={listMusicSortRef} />
       <DuplicateMusic ref={duplicateMusicRef} />
       <ListImportExport ref={listImportExportRef} />
@@ -313,7 +336,7 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
               </TouchableOpacity>
               <TouchableOpacity style={styles.selectionBtn} onPress={selectAllPlaylists}>
                 <Text size={13} color={theme['c-font']}>
-                  {selectedIds.size == displayUserList.length ? t('list_select_unall') : t('list_select_all')}
+                  {selectedIds.size == userList.length ? t('list_select_unall') : t('list_select_all')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -331,8 +354,6 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
   )
 }
 
-const ITEM_HEIGHT = scaleSizeH(68)
-
 const styles = createStyle({
   container: {
     flex: 1,
@@ -340,53 +361,53 @@ const styles = createStyle({
   },
   list: {
     flex: 1,
-    paddingLeft: scaleSizeW(16),
-    paddingRight: scaleSizeW(16),
+    paddingLeft: 16,
+    paddingRight: 16,
   },
   quickGrid: {
     flexDirection: 'row',
-    gap: scaleSizeW(12),
-    paddingTop: scaleSizeH(12),
-    paddingBottom: scaleSizeH(16),
+    gap: 12,
+    paddingTop: 12,
+    paddingBottom: 16,
   },
   quickTile: {
     flex: 1,
     borderRadius: BorderRadius.normal * 2,
-    paddingVertical: scaleSizeH(16),
+    paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickTileLabel: {
-    marginTop: scaleSizeH(6),
+    marginTop: 6,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: scaleSizeH(10),
+    paddingBottom: 10,
   },
   sectionLabel: {
     flex: 1,
   },
   sectionAction: {
-    marginLeft: scaleSizeW(12),
-    paddingVertical: scaleSizeH(4),
-    paddingLeft: scaleSizeW(4),
+    marginLeft: 12,
+    paddingVertical: 4,
+    paddingLeft: 4,
   },
   playlistRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: ITEM_HEIGHT,
+    height: 68,
     borderBottomWidth: BorderWidths.normal,
   },
   playlistCover: {
-    width: scaleSizeH(52),
-    height: scaleSizeH(52),
+    width: 52,
+    height: 52,
     borderRadius: BorderRadius.normal,
     overflow: 'hidden',
-    marginRight: scaleSizeW(12),
+    marginRight: 12,
   },
   playlistCheckbox: {
-    marginRight: scaleSizeW(10),
+    marginRight: 10,
   },
   playlistCoverImage: {
     width: '100%',
@@ -400,26 +421,26 @@ const styles = createStyle({
     marginTop: 2,
   },
   playlistMoreBtn: {
-    width: scaleSizeW(36),
+    width: 36,
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
   emptyText: {
     textAlign: 'center',
-    paddingTop: scaleSizeH(24),
+    paddingTop: 24,
   },
   selectionBar: {
     position: 'absolute',
-    left: scaleSizeW(16),
-    right: scaleSizeW(16),
-    bottom: scaleSizeH(8),
+    left: 16,
+    right: 16,
+    bottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: BorderRadius.normal,
     borderWidth: BorderWidths.normal,
-    borderColor: 'rgba(0,0,0,0)',
-    minHeight: scaleSizeH(48),
+    borderColor: 'transparent',
+    minHeight: 48,
   },
   selectionBtn: {
     flex: 1,

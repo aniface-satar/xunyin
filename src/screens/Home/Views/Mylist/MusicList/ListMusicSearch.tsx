@@ -8,7 +8,7 @@ import Text from '@/components/common/Text'
 import Image from '@/components/common/Image'
 import { useTheme } from '@/store/theme/hook'
 import { View } from 'react-native'
-import { scaleSizeH, scaleSizeW } from '@/utils/pixelRatio'
+import { scaleSizeH } from '@/utils/pixelRatio'
 import { BorderRadius } from '@/theme'
 import { getListMusics } from '@/core/list'
 import listState from '@/store/list/state'
@@ -17,9 +17,8 @@ type SearchTipListProps = _SearchTipListProps<LX.Music.MusicInfo>
 interface ListMusicSearchProps {
   onScrollToInfo: (info: LX.Music.MusicInfo) => void
 }
-const ITEM_RAW_HEIGHT = scaleSizeH(68)
-// History rows are scaled again by createStyle; keep virtualization aligned with that final height.
-export const ITEM_HEIGHT = scaleSizeH(ITEM_RAW_HEIGHT)
+// createStyle 会换算 height，这里只为 getItemLayout 预先换算一次，两者结果一致
+export const ITEM_HEIGHT = scaleSizeH(68)
 
 export interface ListMusicSearchType {
   search: (keyword: string, height: number) => void
@@ -131,11 +130,11 @@ export default forwardRef<ListMusicSearchType, ListMusicSearchProps>(({ onScroll
 
 const styles = createStyle({
   item: {
-    height: ITEM_RAW_HEIGHT,
+    height: 68,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: scaleSizeW(16),
-    paddingRight: scaleSizeW(16),
+    paddingLeft: 16,
+    paddingRight: 16,
     // backgroundColor: 'rgba(0, 0, 0, 0.2)',
   },
   itemName: {
@@ -143,11 +142,11 @@ const styles = createStyle({
     flexShrink: 1,
   },
   cover: {
-    width: scaleSizeH(52),
-    height: scaleSizeH(52),
+    width: 52,
+    height: 52,
     borderRadius: BorderRadius.normal,
     overflow: 'hidden',
-    marginRight: scaleSizeW(12),
+    marginRight: 12,
   },
   coverImage: {
     width: '100%',

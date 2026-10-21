@@ -8,8 +8,7 @@ import SortTab, { type SortTabProps, type SortTabType } from './SortTab'
 import { createStyle } from '@/utils/tools'
 import { type Source } from '@/store/songlist/state'
 // import { useTheme } from '@/store/theme/hook'
-import Tag, { type TagType, type TagProps } from './Tag'
-import OpenList, { type OpenListType } from './OpenList'
+import Tag, { type TagType, TagProps } from './Tag'
 // import { BorderWidths } from '@/theme'
 
 export interface HeaderBarProps {
@@ -25,14 +24,12 @@ export interface HeaderBarType {
 export default forwardRef<HeaderBarType, HeaderBarProps>(({ onSortChange, onTagChange }, ref) => {
   const sortTabRef = useRef<SortTabType>(null)
   const tagRef = useRef<TagType>(null)
-  const openListRef = useRef<OpenListType>(null)
   // const theme = useTheme()
 
   useImperativeHandle(ref, () => ({
     setSource(source, sortId, tagName, tagId) {
       sortTabRef.current?.setSource(source, sortId)
       tagRef.current?.setSelectedTagInfo(source, tagName, tagId)
-      openListRef.current?.setInfo(source)
     },
   }), [])
 
@@ -41,7 +38,6 @@ export default forwardRef<HeaderBarType, HeaderBarProps>(({ onSortChange, onTagC
     <View style={styles.searchBar}>
       <SortTab ref={sortTabRef} onSortChange={onSortChange} />
       <Tag ref={tagRef} onTagChange={onTagChange} />
-      <OpenList ref={openListRef} />
     </View>
   )
 })

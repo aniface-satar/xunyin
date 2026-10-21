@@ -6,7 +6,7 @@ import { clearMusicUrl, handleDislikeMusic, handlePlay, handlePlayLater, handleR
 import List, { type ListType } from './List'
 import ListMusicAdd, { type MusicAddModalType as ListMusicAddType } from '@/components/MusicAddModal'
 import ListMusicMultiAdd, { type MusicMultiAddModalType as ListAddMultiType } from '@/components/MusicMultiAddModal'
-import { createStyle } from '@/utils/tools'
+import { assertApiSupport, createStyle } from '@/utils/tools'
 import { type LayoutChangeEvent, View } from 'react-native'
 import MultipleModeBar, { type MultipleModeBarType } from './MultipleModeBar'
 import ListMusicSearch, { type ListMusicSearchType } from './ListMusicSearch'
@@ -14,6 +14,7 @@ import MusicPositionModal, { type MusicPositionModalType } from './MusicPosition
 import MetadataEditModal, { type MetadataEditType, type MetadataEditProps } from '@/components/MetadataEditModal'
 import MusicToggleModal, { type MusicToggleModalType } from './MusicToggleModal'
 import MultipleActions, { type MultipleAction } from './MultipleActions'
+import DownloadQualitySheet, { type DownloadQualitySheetType } from '@/components/DownloadQualitySheet'
 
 export interface MusicListType {
   showSearch: () => void
@@ -21,14 +22,22 @@ export interface MusicListType {
   exitSearch: () => void
   showMultiSelect: () => void
   exitMultiSelect: () => void
+  enterCustomSort: () => void
+  exitCustomSort: () => void
+}
+
+// 本地歌曲没有 _qualitys，混入会让音质面板取不到音质列表，下载只挑在线且源支持的部分
+const pickDownloadable = (list: LX.Music.MusicInfo[]) => {
+  return list.filter(m => m.source != 'local' && assertApiSupport(m.source)) as LX.Music.MusicInfoOnline[]
 }
 
 interface MusicListProps {
   onExitSearch?: () => void
   onMultiSelectModeChange?: (isMultiSelectMode: boolean) => void
+  onCustomSortModeChange?: (isCustomSortMode: boolean) => void
 }
 
-export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMultiSelectModeChange }, ref) => {
+export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMultiSelectModeChange, onCustomSortModeChange }, ref) => {
   const listMusicSearchRef = useRef<ListMusicSearchType>(null)
   const listRef = useRef<ListType>(null)
   const multipleModeBarRef = useRef<MultipleModeBarType>(null)
@@ -38,11 +47,13 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
   const metadataEditTypeRef = useRef<MetadataEditType>(null)
   const listMenuRef = useRef<ListMenuType>(null)
   const musicToggleModalRef = useRef<MusicToggleModalType>(null)
+  const downloadQualitySheetRef = useRef<DownloadQualitySheetType>(null)
   const layoutHeightRef = useRef<number>(0)
   const isShowMultipleModeBar = useRef(false)
   const isShowSearchBarModeBar = useRef(false)
   const selectedInfoRef = useRef<SelectInfo>()
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
+  const [isCustomSortMode, setIsCustomSortMode] = useState(false)
   const [selectedList, setSelectedList] = useState<LX.List.ListMusics>([])
   // console.log('render index list')
 
@@ -62,13 +73,24 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
     exitMultiSelect() {
       hancelExitSelect()
     },
+    enterCustomSort() {
+      setIsCustomSortMode(true)
+    },
+    exitCustomSort() {
+      setIsCustomSortMode(false)
+    },
   }))
 
   useEffect(() => {
     onMultiSelectModeChange?.(isMultiSelectMode)
   }, [isMultiSelectMode, onMultiSelectModeChange])
 
+  useEffect(() => {
+    onCustomSortModeChange?.(isCustomSortMode)
+  }, [isCustomSortMode, onCustomSortModeChange])
+
   const hancelMultiSelect = useCallback(() => {
+    setIsCustomSortMode(false)
     if (isShowSearchBarModeBar.current) {
       multipleModeBarRef.current?.setVisibleBar(false)
     }
@@ -135,6 +157,16 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
       listMusicAddRef.current?.show({ musicInfo: info.musicInfo, listId: info.listId, isMove: true })
     }
   }, [])
+  const showDownloadSheet = useCallback((musics: LX.Music.MusicInfoOnline[]) => {
+    if (!musics.length) return
+    hancelExitSelect()
+    requestAnimationFrame(() => {
+      downloadQualitySheetRef.current?.show(musics)
+    })
+  }, [hancelExitSelect])
+  const handleDownloadMusic = useCallback((info: SelectInfo) => {
+    showDownloadSheet(pickDownloadable([info.musicInfo]))
+  }, [showDownloadSheet])
   const handleEditMetadata = useCallback((info: SelectInfo) => {
     if (info.musicInfo.source != 'local') return
     selectedInfoRef.current = info
@@ -161,6 +193,9 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
         break
       case 'move':
         handleMoveMusic(info)
+        break
+      case 'download':
+        showDownloadSheet(pickDownloadable(info.selectedList))
         break
       case 'editMetadata':
         handleEditMetadata(info)
@@ -190,7 +225,7 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
       default:
         break
     }
-  }, [handleAddMusic, handleEditMetadata, handleMoveMusic, hancelExitSelect])
+  }, [handleAddMusic, handleEditMetadata, handleMoveMusic, hancelExitSelect, showDownloadSheet])
 
 
   return (
@@ -205,6 +240,7 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
       <View style={{ flex: 1 }} onLayout={onLayout}>
         <List
           ref={listRef}
+          isCustomSortMode={isCustomSortMode}
           onShowMenu={showMenu}
           onMuiltSelectMode={hancelMultiSelect}
           onSelectAll={isAll => multipleModeBarRef.current?.setIsSelectAll(isAll)}
@@ -234,6 +270,7 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
         onMusicSourceDetail={info => { void handleShowMusicSourceDetail(info.musicInfo) }}
         onAdd={handleAddMusic}
         onMove={handleMoveMusic}
+        onDownload={handleDownloadMusic}
         onEditMetadata={handleEditMetadata}
         onChangePosition={info => musicPositionModalRef.current?.show(info)}
         onToggleSource={info => musicToggleModalRef.current?.show(info)}
@@ -244,6 +281,7 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
         onUpdate={handleUpdateMetadata}
       />
       <MusicToggleModal ref={musicToggleModalRef} />
+      <DownloadQualitySheet ref={downloadQualitySheetRef} />
     </View>
   )
 })

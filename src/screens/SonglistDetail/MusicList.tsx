@@ -151,6 +151,7 @@ export default forwardRef<MusicListType, MusicListProps>(({ componentId, embedde
     multiSelectStyle="mylist"
     multiSelectBarPosition="header"
     onMultiSelectModeChange={handleMultiSelectModeChange}
+    showLocateButton
     // progressViewOffset={}
    />
 })

@@ -10,10 +10,12 @@ import { useNavActiveId } from '@/store/common/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { setNavActiveId } from '@/core/common'
+import homeDetailActions from '@/store/homeDetail/action'
 import { createStyle } from '@/utils/tools'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { BorderRadius, BorderWidths } from '@/theme'
 import { usePlayerOverlay } from '@/components/player/PlayerOverlay'
+import { BOTTOM_STRIP_SETTLE_SPAN, getBottomBarRiseRange } from '@/components/player/PlayerOverlay/transition'
 import GlassBackdrop from '@/components/common/GlassBackdrop'
 
 const TAB_BAR_HEIGHT = 54
@@ -31,12 +33,13 @@ const BottomTabBar = ({ onTabPress }: { onTabPress?: (id: CommonState['navActive
   if (!playerOverlay) return null
 
   const { progress } = playerOverlay
-  const containerTranslateY = progress.interpolate({
-    inputRange: [0, 0.75, 1],
-    outputRange: [TAB_BAR_HEIGHT, TAB_BAR_HEIGHT, 0],
-  })
+  // 与卡片下缘共用同一条窗口（见 PlayerOverlay/transition.ts）：展开时进度一离开 1（动画第一帧 / 手指刚动）
+  // 导航栏就跟着往下走，展开量到 60% 时整条已在屏幕外；收起时在行程后 60% 里一起升回来。
+  // 旧窗口开在整屏一侧（[0, 0.3]），展开要等展开量到 70% 才动 —— 真机反馈"导航栏并没有跟着先动"
+  const containerTranslateY = progress.interpolate(getBottomBarRiseRange({ barHeight: TAB_BAR_HEIGHT }))
+  // 顶边那条线只在往播放栏那一面收敛时长出来（整屏一侧是透明的），跟回升同窗淡入淡出
   const containerBorderTopColor = progress.interpolate({
-    inputRange: [0, 0.75, 1],
+    inputRange: [0, BOTTOM_STRIP_SETTLE_SPAN, 1],
     outputRange: ['transparent', 'transparent', theme['c-border-background']],
   })
 
@@ -58,7 +61,11 @@ const BottomTabBar = ({ onTabPress }: { onTabPress?: (id: CommonState['navActive
               style={styles.item}
               activeOpacity={0.8}
               onPress={() => {
-                global.app_event.homeTabReset()
+                // 重复点当前 tab 才回最初页；切换到别的 tab 时原 tab 的详情栈与子页状态都保留
+                if (activeId == id) {
+                  homeDetailActions.reset(id)
+                  global.app_event.homeTabReset()
+                }
                 onTabPress?.(id)
                 setNavActiveId(id)
               }}

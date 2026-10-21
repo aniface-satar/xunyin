@@ -17,15 +17,27 @@ import { type InitState as CommonState } from '@/store/common/state'
 import commonState from '@/store/common/state'
 import { setNavActiveId } from '@/core/common'
 import { setSettingDetailId, useSettingDetailId } from '@/screens/Home/Views/Setting/detailId'
-import { MylistSearchBar, MylistSearchButton, useMylistSearch } from '@/screens/Home/Views/Mylist/Search'
+import homeDetailActions from '@/store/homeDetail/action'
 import type { SettingScreenIds } from '@/screens/Home/Views/Setting/Main'
 
 const SettingsButton = () => {
   const theme = useTheme()
+  const t = useI18n()
 
   return (
-    <TouchableOpacity style={styles.settingsBtn} onPress={() => { setNavActiveId('nav_setting') }}>
+    <TouchableOpacity style={styles.settingsBtn} onPress={() => { setNavActiveId('nav_setting') }} accessibilityRole="button" accessibilityLabel={t('nav_setting')}>
       <Icon color={theme['c-font']} name="setting" size={18} />
+    </TouchableOpacity>
+  )
+}
+
+const DownloadButton = () => {
+  const theme = useTheme()
+  const t = useI18n()
+
+  return (
+    <TouchableOpacity style={styles.settingsBtn} onPress={() => { homeDetailActions.push({ type: 'download' }) }} accessibilityRole="button" accessibilityLabel={t('nav_download')}>
+      <Icon color={theme['c-font']} name="download-2" size={18} />
     </TouchableOpacity>
   )
 }
@@ -34,11 +46,14 @@ const SettingsBackButton = ({ detailId }: {
   detailId: SettingScreenIds | null
 }) => {
   const theme = useTheme()
+  const t = useI18n()
 
   return (
     <TouchableOpacity
       style={styles.backBtn}
       activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel={t('back')}
       onPress={() => {
         if (detailId != null) {
           setSettingDetailId(null)
@@ -61,8 +76,8 @@ const HeaderActions = ({ id }: {
 
   return (
     <View style={styles.headerActions}>
-      {actions.map(action => action == 'mylistSearch'
-        ? <MylistSearchButton key={action} />
+      {actions.map(action => action == 'download'
+        ? <DownloadButton key={action} />
         : <SettingsButton key={action} />)}
     </View>
   )
@@ -78,7 +93,6 @@ const HeaderActions = ({ id }: {
 const LeftHeader = () => {
   const id = useNavActiveId()
   const settingDetailId = useSettingDetailId()
-  const { isSearchMode } = useMylistSearch()
   const t = useI18n()
   const statusBarHeight = useStatusbarHeight()
 
@@ -88,23 +102,15 @@ const LeftHeader = () => {
       height: scaleSizeH(HEADER_HEIGHT) + statusBarHeight,
       paddingTop: statusBarHeight,
     }}>
-      {
-        id == 'nav_love' && isSearchMode
-          ? <MylistSearchBar />
-          : (
-              <>
-                {id == 'nav_setting' ? <SettingsBackButton detailId={settingDetailId} /> : null}
-                <View style={styles.left}>
-                  <TouchableOpacity style={styles.titleBtn}>
-                    <Text style={styles.leftTitle} size={18}>
-                      {t(id == 'nav_setting' && settingDetailId != null ? `setting_${settingDetailId}` : id)}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                <HeaderActions id={id} />
-              </>
-            )
-      }
+      {id == 'nav_setting' ? <SettingsBackButton detailId={settingDetailId} /> : null}
+      <View style={styles.left}>
+        <TouchableOpacity style={styles.titleBtn}>
+          <Text style={styles.leftTitle} size={18}>
+            {t(id == 'nav_setting' && settingDetailId != null ? `setting_${settingDetailId}` : id)}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      <HeaderActions id={id} />
     </View>
   )
 }
@@ -120,7 +126,6 @@ const RightHeader = () => {
   const t = useI18n()
   const id = useNavActiveId()
   const settingDetailId = useSettingDetailId()
-  const { isSearchMode } = useMylistSearch()
   const statusBarHeight = useStatusbarHeight()
   return (
     <View style={{
@@ -128,23 +133,15 @@ const RightHeader = () => {
       height: scaleSizeH(HEADER_HEIGHT) + statusBarHeight,
       paddingTop: statusBarHeight,
     }}>
-      {
-        id == 'nav_love' && isSearchMode
-          ? <MylistSearchBar />
-          : (
-              <>
-                {id == 'nav_setting' ? <SettingsBackButton detailId={settingDetailId} /> : null}
-                <View style={styles.left}>
-                  <TouchableOpacity style={styles.titleBtn}>
-                    <Text style={styles.rightTitle} size={18}>
-                      {t(id == 'nav_setting' && settingDetailId != null ? `setting_${settingDetailId}` : id)}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                <HeaderActions id={id} />
-              </>
-            )
-      }
+      {id == 'nav_setting' ? <SettingsBackButton detailId={settingDetailId} /> : null}
+      <View style={styles.left}>
+        <TouchableOpacity style={styles.titleBtn}>
+          <Text style={styles.rightTitle} size={18}>
+            {t(id == 'nav_setting' && settingDetailId != null ? `setting_${settingDetailId}` : id)}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      <HeaderActions id={id} />
     </View>
   )
 }

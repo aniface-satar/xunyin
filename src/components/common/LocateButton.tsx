@@ -3,11 +3,8 @@ import Button from '@/components/common/Button'
 import { useTheme } from '@/store/theme/hook'
 import { BorderWidths } from '@/theme'
 import { createStyle } from '@/utils/tools'
-import { scaleSizeH } from '@/utils/pixelRatio'
 
 const locateIconSource = require('@/resources/images/locate.png')
-
-const BTN_SIZE = scaleSizeH(38)
 
 export default ({ onPress }: { onPress: () => void }) => {
   const theme = useTheme()
@@ -26,9 +23,9 @@ const styles = createStyle({
     position: 'absolute',
     right: 16,
     bottom: 24,
-    width: BTN_SIZE,
-    height: BTN_SIZE,
-    borderRadius: BTN_SIZE / 2,
+    width: 38,
+    height: 38,
+    borderRadius: 9999,
     borderWidth: BorderWidths.normal,
     alignItems: 'center',
     justifyContent: 'center',
@@ -36,7 +33,7 @@ const styles = createStyle({
     zIndex: 10,
   },
   icon: {
-    width: scaleSizeH(22),
-    height: scaleSizeH(22),
+    width: 22,
+    height: 22,
   },
 })

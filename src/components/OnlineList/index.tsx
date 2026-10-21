@@ -16,8 +16,9 @@ import { useI18n } from '@/lang'
 import { hasDislike } from '@/core/dislikeList'
 import { hasMusicUrlByMusic } from '@/utils/data'
 import MusicToggleModal, { type MusicToggleModalType } from '@/screens/Home/Views/Mylist/MusicList/MusicToggleModal'
+import DownloadQualitySheet, { type DownloadQualitySheetType } from '@/components/DownloadQualitySheet'
 
-type MultipleAction = 'playLater' | 'add' | 'toggleSource' | 'copyName' | 'musicSourceDetail' | 'removeCache' | 'dislike'
+type MultipleAction = 'playLater' | 'download' | 'add' | 'toggleSource' | 'copyName' | 'musicSourceDetail' | 'removeCache' | 'dislike'
 
 export interface OnlineListProps {
   onRefresh: ListProps['onRefresh']
@@ -30,6 +31,7 @@ export interface OnlineListProps {
   multiSelectStyle?: 'default' | 'mylist'
   multiSelectBarPosition?: 'top' | 'header'
   onMultiSelectModeChange?: (isMultiSelectMode: boolean) => void
+  showLocateButton?: boolean
 }
 export interface OnlineListType {
   setList: (list: LX.Music.MusicInfoOnline[], isAppend?: boolean, showSource?: boolean) => void
@@ -63,6 +65,7 @@ const OnlineMultipleActions = ({ selectedList, onAction }: {
   const actions = useMemo(() => {
     const menus: Array<{ action: MultipleAction, label: string, disabled?: boolean }> = [
       { action: 'playLater', label: t('play_later'), disabled: !selectedList.length },
+      { action: 'download', label: t('download_menu'), disabled: !selectedList.length },
       { action: 'add', label: t('add_to'), disabled: !selectedList.length },
       { action: 'toggleSource', label: t('toggle_source'), disabled: !musicInfo },
       { action: 'copyName', label: t('copy_name'), disabled: !musicInfo },
@@ -108,6 +111,7 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
   multiSelectStyle = 'default',
   multiSelectBarPosition = 'top',
   onMultiSelectModeChange,
+  showLocateButton,
 }, ref) => {
   const listRef = useRef<ListType>(null)
   const multipleModeBarRef = useRef<MultipleModeBarType>(null)
@@ -115,6 +119,7 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
   const listMusicMultiAddRef = useRef<ListAddMultiType>(null)
   const listMenuRef = useRef<ListMenuType>(null)
   const musicToggleModalRef = useRef<MusicToggleModalType>(null)
+  const downloadQualitySheetRef = useRef<DownloadQualitySheetType>(null)
   // const loadingMaskRef = useRef<LoadingMaskType>(null)
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
   const [selectedList, setSelectedList] = useState<LX.Music.MusicInfoOnline[]>([])
@@ -182,6 +187,12 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
       case 'playLater':
         hancelExitSelect()
         handlePlayLater(musicInfo, info, hancelExitSelect)
+        break
+      case 'download':
+        hancelExitSelect()
+        requestAnimationFrame(() => {
+          downloadQualitySheetRef.current?.show(info)
+        })
         break
       case 'add':
         listMusicMultiAddRef.current?.show({ selectedList: info, listId: '', isMove: false })
@@ -252,6 +263,7 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
           checkHomePagerIdle={checkHomePagerIdle}
           rowType={rowType}
           onSelectedListChange={multiSelectStyle == 'mylist' ? handleSelectedListChange : undefined}
+          showLocateButton={showLocateButton}
         />
       </View>
       {
@@ -263,8 +275,21 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
       <ListMusicMultiAdd ref={listMusicMultiAddRef} onAdded={() => { hancelExitSelect() }} />
       <ListMenu
         ref={listMenuRef}
-        onPlay={info => { handlePlay(info.musicInfo) }}
+        onPlay={info => {
+          // 歌单上下文（如歌单详情、榜单）中的“播放”按来源歌单播放，与点行行为一致，
+          // 否则会落入试听列表，导致歌单播放历史无法记录
+          if (onPlayList) {
+            onPlayList(info.index)
+            return
+          }
+          handlePlay(info.musicInfo)
+        }}
         onPlayLater={info => { hancelExitSelect(); handlePlayLater(info.musicInfo, info.selectedList, hancelExitSelect) }}
+        onDownload={info => {
+          requestAnimationFrame(() => {
+            downloadQualitySheetRef.current?.show([info.musicInfo])
+          })
+        }}
         onCopyName={info => { handleShare(info.musicInfo) }}
         onAdd={handleAddMusic}
         onMusicSourceDetail={info => { void handleShowMusicSourceDetail(info.musicInfo) }}
@@ -272,6 +297,7 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
         onDislikeMusic={info => { void handleDislikeMusic(info.musicInfo) }}
       />
       <MusicToggleModal ref={musicToggleModalRef} />
+      <DownloadQualitySheet ref={downloadQualitySheetRef} />
       {/* <LoadingMask ref={loadingMaskRef} /> */}
     </View>
   )

@@ -45,7 +45,7 @@ export default forwardRef<SortTabType, SortTabProps>(({ onSortChange }, ref) => 
       {
         sorts.map(s => (
           <TouchableOpacity style={styles.button} onPress={() => { handleSortChange(s.id) }} key={s.id}>
-            <Text style={{ ...styles.buttonText, borderBottomColor: activeId == s.id ? theme['c-primary-background-active'] : 'transparent' }} color={activeId == s.id ? theme['c-primary-font-active'] : theme['c-font']}>{s.label}</Text>
+            <Text style={{ ...styles.buttonText, borderBottomColor: activeId == s.id ? theme['c-primary-font-active'] : 'transparent' }} color={activeId == s.id ? theme['c-primary-font-active'] : theme['c-font']}>{s.label}</Text>
           </TouchableOpacity>
         ))
       }
