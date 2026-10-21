@@ -14,7 +14,7 @@ Change log format is based on [Keep a Changelog](http://keepachangelog.com/).
 
 - 听歌识曲：搜索页顶部入口，采 PCM 后分片算指纹上传，网易云（小芸）为主引擎、Shazam 兜底；结果按来源分区块展示，带识别历史（`src/core/musicRecognition/`、`src/screens/MusicRecognition/`）
 - 音乐下载：歌曲/歌单菜单入口 + 「下载」页统一管理，音质可选（含"全部按最高/最低"），支持暂停续传与重新下载；默认落系统音乐文件夹，走 SAF 可换目录，文件写入封面/歌词等标签（`src/core/download/`、`src/store/download/`）
-- 分享成图：播放页头部「分享」→「歌词卡片」，音乐卡与歌词卡两层结构，`view-shot` 3.8.0 抓取后经 FileProvider 保存或分享；歌词页长按进选择模式，可复制选中行或出歌词海报（`src/components/ShareCard/`、`src/utils/shareCard/`、`src/core/lyricCopy.ts`）
+- 分享成图：播放页头部「分享」→「歌曲卡片」，音乐卡与歌词卡两层结构，`view-shot` 3.8.0 抓取后经 FileProvider 保存或分享；歌词页长按进选择模式，可复制选中行或出歌词海报（`src/components/ShareCard/`、`src/utils/shareCard/`、`src/core/lyricCopy.ts`）
 - 播放页动态背景：底色由封面取色生成（纯色方案，纹理支已摘下），底色晚到时把屏幕上那一支原样喂回决策表走宽限期淡入；下一首预热直链与封面字节，判据抽成纯表（`src/utils/monet/`、`src/core/init/player/`）
 - 内置源：8 本地 + 3 在线，换源改成管理器行内勾选，当前源名加粗（`src/config/builtinSources/`、`src/utils/builtinSources.ts`）
 - 音源自动更新检查：可选每次启动/每天/每周，只升不降、多地址回退，换上之前过 acorn 语法闸门，load 失败自动退回原版本；本地源补 `@update_url` 与导入记址（`src/core/userApiUpdate/`）
