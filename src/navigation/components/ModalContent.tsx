@@ -13,7 +13,7 @@ export default ({ children }: Props) => {
   const theme = useTheme()
 
   return (
-    <View style={{ ...styles.centeredView, backgroundColor: 'rgba(50,50,50,.3)' }}>
+    <View style={{ ...styles.centeredView, backgroundColor: 'rgba(0,0,0,0.35)' }}>
       <View style={{ ...styles.modalView, backgroundColor: theme['c-content-background'] }}>
         <View style={{ ...styles.header, backgroundColor: theme['c-primary-light-100-alpha-100'] }}></View>
         {children}

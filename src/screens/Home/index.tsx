@@ -5,7 +5,6 @@ import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS } from '@/config/constant'
 import Vertical from './Vertical'
 import Horizontal from './Horizontal'
-import { MylistSearchProvider } from './Views/Mylist/Search'
 import { navigations } from '@/navigation'
 import settingState from '@/store/setting/state'
 import { PlayerOverlayProvider } from '@/components/player/PlayerOverlay'
@@ -30,15 +29,13 @@ export default ({ componentId }: Props) => {
 
   return (
     <PlayerOverlayProvider>
-      <MylistSearchProvider>
-        <PageContent>
-          {
-            isHorizontalMode
-              ? <Horizontal />
-              : <Vertical />
-          }
-        </PageContent>
-      </MylistSearchProvider>
+      <PageContent>
+        {
+          isHorizontalMode
+            ? <Horizontal />
+            : <Vertical />
+        }
+      </PageContent>
     </PlayerOverlayProvider>
   )
 }

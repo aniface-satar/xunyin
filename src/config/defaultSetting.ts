@@ -1,8 +1,14 @@
+// 内置本地音源 HYWmusic_公益版 的 id（config/builtinSources/scripts.ts 里的 key 是 hywmusic）
+export const DEFAULT_BUILTIN_API_SOURCE_ID = 'builtin_hywmusic'
+
 const defaultSetting: LX.AppSetting = {
-  version: '2.0',
+  version: '2.2',
   'common.isAutoTheme': false,
   'common.langId': null,
-  'common.apiSource': '',
+  'common.apiSource': DEFAULT_BUILTIN_API_SOURCE_ID,
+  'common.userApiUpdateCheck': 'daily',
+  'common.userApiAllowShowUpdateAlert': false,
+  'common.userApiAutoUpdate': true,
   'common.sourceNameType': 'alias',
   'common.shareType': 'system',
   'common.isAgreePact': false,
@@ -70,6 +76,8 @@ const defaultSetting: LX.AppSetting = {
   'list.addMusicLocationType': 'top',
 
   'download.fileName': '歌名 - 歌手',
+  'download.savePath': '',
+  'download.savePathName': '',
 
   'shareCard.savePath': '',
   'shareCard.savePathName': '',
@@ -83,7 +91,8 @@ const defaultSetting: LX.AppSetting = {
   'theme.darkId': 'black',
   'theme.hideBgDark': false,
   'theme.fontShadow': false,
-  'theme.dynamicBg': false,
+  'theme.dynamicBg': true,
+  'theme.dynamicBgAlgorithm': 'blur',
 }
 
 

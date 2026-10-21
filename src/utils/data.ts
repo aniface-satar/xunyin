@@ -1,5 +1,8 @@
 import { getData, saveData, getAllKeys, removeDataMultiple, saveDataMultiple, removeData, getDataMultiple } from '@/plugins/storage'
 import { DEFAULT_SETTING, LIST_IDS, storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
+import { matchHeaderComment, parseScriptHeader } from '@/core/userApiUpdate/resolveScript.ts'
+import { BUILTIN_SOURCES } from '@/config/builtinSources/catalog.ts'
+import { planBuiltinSeed } from './builtinSources.ts'
 import { throttle } from './common'
 // import { gzip, ungzip } from '@/utils/nativeModules/gzip'
 // import { readFile, writeFile, temporaryDirectoryPath, unlink } from '@/utils/fs'
@@ -33,6 +36,8 @@ const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi
 const openStoragePathPrefix = storageDataPrefix.openStoragePath
 const selectedManagedFolderPrefix = storageDataPrefix.selectedManagedFolder
+const musicAddTimeKey = storageDataPrefix.musicAddTime
+const musicPlayCountKey = storageDataPrefix.musicPlayCount
 
 // const defaultListKey = listPrefix + 'default'
 // const loveListKey = listPrefix + 'love'
@@ -51,6 +56,10 @@ let playlistHistoryUpdatePromise = Promise.resolve()
 let playHistory: LX.Player.PlayHistoryItem[] | undefined
 let playHistoryLoadPromise: Promise<LX.Player.PlayHistoryItem[]> | undefined
 let playHistoryUpdatePromise = Promise.resolve()
+let musicAddTimes: Record<string, number> | undefined
+let musicAddTimeLoadPromise: Promise<Record<string, number>> | undefined
+let musicPlayCounts: Record<string, number> | undefined
+let musicPlayCountLoadPromise: Promise<Record<string, number>> | undefined
 
 const saveListPositionThrottle = throttle(() => {
   void saveData(listScrollPositionKey, listPosition)
@@ -66,6 +75,12 @@ const savePlaylistHistoryThrottle = throttle(() => {
 }, 1000)
 const savePlayHistoryThrottle = throttle(() => {
   void saveData(playHistoryKey, playHistory)
+}, 1000)
+const saveMusicAddTimeThrottle = throttle(() => {
+  void saveData(musicAddTimeKey, musicAddTimes)
+}, 1000)
+const saveMusicPlayCountThrottle = throttle(() => {
+  void saveData(musicPlayCountKey, musicPlayCounts)
 }, 1000)
 const saveSongListSettingThrottle = throttle(() => {
   void saveData(songListSettingKey, songListSetting)
@@ -358,6 +373,56 @@ export const clearPlayHistory = async() => {
   return playHistoryUpdatePromise
 }
 
+const loadMusicAddTimes = async() => {
+  if (musicAddTimes) return { ...musicAddTimes }
+  musicAddTimeLoadPromise ??= getData<Record<string, number>>(musicAddTimeKey).then(map => map ?? {})
+  // eslint-disable-next-line require-atomic-updates
+  musicAddTimes = await musicAddTimeLoadPromise
+  // eslint-disable-next-line require-atomic-updates
+  musicAddTimeLoadPromise = undefined
+  return { ...musicAddTimes }
+}
+
+export const getMusicAddTimes = async() => {
+  return loadMusicAddTimes()
+}
+
+/**
+ * 记录歌曲添加到列表的时间，key 为 `${listId}/${musicId}`
+ */
+export const stampMusicAddTimes = async(listId: string, musicIds: string[]) => {
+  if (!musicIds.length) return
+  await loadMusicAddTimes()
+  const time = Date.now()
+  for (const musicId of musicIds) {
+    musicAddTimes![`${listId}/${musicId}`] = time
+  }
+  saveMusicAddTimeThrottle()
+}
+
+const loadMusicPlayCounts = async() => {
+  if (musicPlayCounts) return { ...musicPlayCounts }
+  musicPlayCountLoadPromise ??= getData<Record<string, number>>(musicPlayCountKey).then(map => map ?? {})
+  // eslint-disable-next-line require-atomic-updates
+  musicPlayCounts = await musicPlayCountLoadPromise
+  // eslint-disable-next-line require-atomic-updates
+  musicPlayCountLoadPromise = undefined
+  return { ...musicPlayCounts }
+}
+
+export const getMusicPlayCounts = async() => {
+  return loadMusicPlayCounts()
+}
+
+/**
+ * 歌曲播放次数 +1
+ */
+export const addMusicPlayCount = async(musicId: string) => {
+  await loadMusicPlayCounts()
+  musicPlayCounts![musicId] = (musicPlayCounts![musicId] ?? 0) + 1
+  saveMusicPlayCountThrottle()
+}
+
 export const getSongListSetting = async() => {
   // eslint-disable-next-line require-atomic-updates
   songListSetting ??= await getData(songListSettingKey) ?? { ...DEFAULT_SETTING.songList }
@@ -637,14 +702,72 @@ export const getUserApiList = async(): Promise<LX.UserApi.UserApiInfo[]> => {
       delete (info as LX.UserApi.UserApiInfo & { script?: string }).script
       updated = true
     }
+    // 旧版本导入的源没有这些开关字段，补充默认值
+    if (info.allowShowUpdateAlert == null) {
+      info.allowShowUpdateAlert = true
+      updated = true
+    }
+    if (info.autoUpdate == null) {
+      info.autoUpdate = true
+      updated = true
+    }
+    // 自动更新要用到的三个字段：老版本导入的源没有，空地址/没查过就是它们的初值
+    if (info.updateUrl == null) {
+      info.updateUrl = ''
+      updated = true
+    }
+    if (info.scriptUpdateUrl == null) {
+      info.scriptUpdateUrl = ''
+      updated = true
+    }
+    if (info.lastCheckAt == null) {
+      info.lastCheckAt = 0
+      updated = true
+    }
+    if (info.verifyPending == null) {
+      info.verifyPending = false
+      updated = true
+    }
   }
-  if (updated) void saveData(userApiPrefix, userApis)
+
+  // 内置源随应用提供：第一次启动补进列表；本地源换脚本时跟着应用更新，
+  // 在线源可能已被自动更新换成更新的版本，只在存储丢了时补包里的
+  const storedScripts: Record<string, string | undefined> = {}
+  const builtinKeys = BUILTIN_SOURCES.map(source => `${userApiPrefix}${source.id}`)
+  if (builtinKeys.length) {
+    const stored = await getDataMultiple(builtinKeys)
+    BUILTIN_SOURCES.forEach((source, index) => {
+      const script = stored[index]?.[1]
+      storedScripts[source.id] = typeof script == 'string' ? script : undefined
+    })
+  }
+  const seedPlan = planBuiltinSeed({ existing: userApis, storedScripts, definitions: BUILTIN_SOURCES })
+  userApis = seedPlan.list
+  if (seedPlan.changed) {
+    const writes: Array<[string, any]> = seedPlan.writes.map(item => [`${userApiPrefix}${item.id}`, item.script])
+    await saveDataMultiple([[userApiPrefix, userApis], ...writes])
+  } else if (updated) {
+    await saveData(userApiPrefix, userApis)
+  }
 
   return [...userApis]
 }
 export const getUserApiScript = async(id: string): Promise<string> => {
   const script = await getData<string>(`${userApiPrefix}${id}`) ?? ''
   return script
+}
+
+// 更新前留一份旧脚本，键必须和正在用的脚本隔开（隔开不了就没有回滚，只有覆盖）
+const userApiBackupKey = (id: string) => `${userApiPrefix}${id}@backup`
+export const getUserApiBackupScript = async(id: string): Promise<string | null> => {
+  return await getData<string>(userApiBackupKey(id))
+}
+export const saveUserApiBackupScript = async(id: string, script: string) => {
+  await saveData(userApiBackupKey(id), script)
+}
+// 回滚用的写入：只把脚本换回去，不要求头部注释 —— 保命路径不该被格式卡住
+export const saveUserApiScript = async(id: string, script: string) => {
+  await saveData(`${userApiPrefix}${id}`, script)
 }
 
 const INFO_NAMES = {
@@ -675,17 +798,22 @@ const matchInfo = (scriptInfo: string) => {
 
   return infos as Record<keyof typeof INFO_NAMES, string>
 }
-export const addUserApi = async(script: string): Promise<LX.UserApi.UserApiInfo> => {
-  const result = /^\/\*[\S|\s]+?\*\//.exec(script)
-  if (!result) throw new Error(global.i18n.t('user_api_add_failed_tip'))
+export const addUserApi = async(script: string, updateUrl?: string): Promise<LX.UserApi.UserApiInfo> => {
+  const headerComment = matchHeaderComment(script)
+  if (headerComment == null) throw new Error(global.i18n.t('user_api_add_failed_tip'))
 
-  let scriptInfo = matchInfo(result[0])
+  let scriptInfo = matchInfo(headerComment)
 
   scriptInfo.name ||= `user_api_${new Date().toLocaleString()}`
   const apiInfo: LX.UserApi.UserApiInfo = {
     id: `user_api_${Math.random().toString().substring(2, 5)}_${Date.now()}`,
     ...scriptInfo,
     allowShowUpdateAlert: true,
+    autoUpdate: true,
+    // 线上导入时记下取脚本的地址，入库后就能走定时检查；本地文件导入没有来源地址
+    updateUrl: updateUrl?.trim() ?? '',
+    scriptUpdateUrl: parseScriptHeader(script)?.updateUrl ?? '',
+    lastCheckAt: 0,
   }
   userApis.push(apiInfo)
   await saveDataMultiple([
@@ -699,7 +827,7 @@ export const removeUserApi = async(ids: string[]) => {
   const _ids: string[] = []
   for (let index = userApis.length - 1; index > -1; index--) {
     if (ids.includes(userApis[index].id)) {
-      _ids.push(`${userApiPrefix}${userApis[index].id}`)
+      _ids.push(`${userApiPrefix}${userApis[index].id}`, userApiBackupKey(userApis[index].id))
       userApis.splice(index, 1)
       ids.splice(index, 1)
     }
@@ -708,9 +836,60 @@ export const removeUserApi = async(ids: string[]) => {
   if (_ids.length) await removeDataMultiple(_ids)
   return [...userApis]
 }
-export const setUserApiAllowShowUpdateAlert = async(id: string, enable: boolean) => {
+/**
+ * 用户在设置里填的更新地址，空字符串表示清除（清除后退回用脚本自己给的）
+ */
+export const setUserApiUpdateUrl = async(id: string, updateUrl: string) => {
   const targetApi = userApis?.find(api => api.id == id)
   if (!targetApi) return
-  targetApi.allowShowUpdateAlert = enable
+  targetApi.updateUrl = updateUrl.trim()
   await saveData(userApiPrefix, userApis)
+}
+export const setUserApiLastCheckAt = async(id: string, checkAt: number) => {
+  const targetApi = userApis?.find(api => api.id == id)
+  if (!targetApi) return
+  targetApi.lastCheckAt = checkAt
+  await saveData(userApiPrefix, userApis)
+}
+/**
+ * 标记 / 清除「这个源的脚本是自动更新写进去的，还没被真正加载验证过」。
+ * 只有它不是当前源时才会被标上：当前源换完脚本会立刻加载验证一次。
+ */
+export const setUserApiVerifyPending = async(id: string, pending: boolean) => {
+  const targetApi = userApis?.find(api => api.id == id)
+  // 值没变就别写盘：初始化成功时每次都会来清一遍
+  if (!targetApi || !!targetApi.verifyPending === pending) return
+  targetApi.verifyPending = pending
+  await saveData(userApiPrefix, userApis)
+}
+/**
+ * 用新脚本替换指定源，并解析更新脚本信息
+ * @returns 更新后的源列表，若脚本内容与当前一致则返回 null
+ */
+export const updateUserApi = async(id: string, script: string): Promise<LX.UserApi.UserApiInfo[] | null> => {
+  const targetIndex = userApis.findIndex(api => api.id == id)
+  if (targetIndex < 0) throw new Error('api not found')
+  const headerComment = matchHeaderComment(script)
+  if (headerComment == null) throw new Error(global.i18n.t('user_api_add_failed_tip'))
+
+  const storedScript = await getUserApiScript(id)
+  if (script === storedScript) return null
+
+  const targetApi = userApis[targetIndex]
+  const scriptInfo = matchInfo(headerComment)
+  userApis[targetIndex] = {
+    ...targetApi,
+    name: scriptInfo.name || targetApi.name,
+    description: scriptInfo.description,
+    author: scriptInfo.author,
+    homepage: scriptInfo.homepage,
+    version: scriptInfo.version,
+    // 作者在新脚本里写的地址跟着刷新；用户自己填的那个不动，覆盖它等于把他的话擦掉
+    scriptUpdateUrl: parseScriptHeader(script)?.updateUrl ?? '',
+  }
+  await saveDataMultiple([
+    [userApiPrefix, userApis],
+    [`${userApiPrefix}${id}`, script],
+  ])
+  return [...userApis]
 }

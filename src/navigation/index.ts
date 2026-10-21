@@ -20,6 +20,9 @@ const init = (callback: () => void | Promise<void>) => {
     //     waitForRender: true,
     //   },
     // },
+    layout: {
+      orientation: ['portrait'],
+    },
   })
   unRegisterEvent = Navigation.events().registerScreenPoppedListener(({ componentId }) => {
     removeComponentId(componentId)

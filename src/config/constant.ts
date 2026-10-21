@@ -84,8 +84,12 @@ export const storageDataPrefix = {
   remoteLyricTip: '@remote_lyric_tip',
 
   dislikeList: '@dislike_list',
+  downloadList: '@download_list',
 
   userApi: '@user_api__',
+
+  musicAddTime: '@music_add_time',
+  musicPlayCount: '@music_play_count',
 } as const
 
 // v0.x.x 版本的 data keys

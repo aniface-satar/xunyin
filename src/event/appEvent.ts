@@ -3,6 +3,7 @@ import Event from './Event'
 import commonState from '@/store/common/state'
 import { type Source as SonglistSource } from '@/store/songlist/state'
 import { type SearchType } from '@/store/search/state'
+import { type HistoryItem } from '@/core/musicRecognition/history'
 
 
 // {
@@ -132,6 +133,11 @@ export class AppEvent extends Event {
 
   playHistoryUpdated(history: LX.Player.PlayHistoryItem[]) {
     this.emit('playHistoryUpdated', history)
+  }
+
+  // 识曲历史：面板每记一行、后台每回填一个歌条都要广播，历史页才能实时长行。
+  musicRecognitionHistoryUpdated(history: HistoryItem[]) {
+    this.emit('musicRecognitionHistoryUpdated', history)
   }
 
 

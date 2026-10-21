@@ -13,6 +13,7 @@ import { createStyle, openUrl } from '@/utils/tools'
 import { useSettingValue } from '@/store/setting/hook'
 import { useTheme } from '@/store/theme/hook'
 import Text from '@/components/common/Text'
+import { useI18n } from '@/lang'
 import ModalContent from './ModalContent'
 import { exitApp } from '@/utils/nativeModules/utils'
 import { updateSetting } from '@/core/common'
@@ -21,6 +22,7 @@ import settingState from '@/store/setting/state'
 
 const Content = () => {
   const theme = useTheme()
+  const t = useI18n()
 
   const openHomePage = () => {
     void openUrl('https://github.com/lyswhut/lx-music-mobile#readme')
@@ -38,9 +40,9 @@ const Content = () => {
 
   return (
     <View style={styles.main}>
-      <Text style={styles.title} size={18} >许可协议</Text>
+      <Text style={styles.title} size={18} >{t('pact_title')}</Text>
       <ScrollView style={styles.content} keyboardShouldPersistTaps={'always'}>
-        {!settingState.setting['common.isAgreePact'] && <Text selectable style={styles.bold} >在使用本软件前，你（使用者）需签署本协议才可继续使用！{'\n'}</Text>}
+        {!settingState.setting['common.isAgreePact'] && <Text selectable style={styles.bold} >{t('pact_require_agree')}{'\n'}</Text>}
         <Text selectable style={styles.text} >本项目基于 <Text onPress={openLicensePage} style={textLinkStyle}>Apache License 2.0</Text> 许可证发行，以下协议是对于 Apache License 2.0 的补充，如有冲突，以以下协议为准。{'\n'}</Text>
         <Text selectable style={styles.text} >词语约定：本协议中的“本项目”指寻音移动版项目；“使用者”指签署本协议的使用者；“官方音乐平台”指对本项目内置的包括酷我、酷狗、咪咕等音乐源的官方平台统称；“版权数据”指包括但不限于图像、音频、名字等在内的他人拥有所属版权的数据。{'\n'}</Text>
         <Text selectable style={styles.bold} >一、数据来源{'\n'}</Text>
@@ -64,7 +66,7 @@ const Content = () => {
         <Text selectable style={styles.text} >8.1 本项目仅用于对技术可行性的探索及研究，不接受任何商业（包括但不限于广告等）合作及捐赠。{'\n'}</Text>
         <Text selectable style={styles.bold} >九、接受协议{'\n'}</Text>
         <Text selectable style={styles.text} >9.1 若你使用了本项目，将代表你接受本协议。{'\n'}</Text>
-        <Text selectable style={styles.text} >* 若协议更新，恕不另行通知，可到开源地址查看。</Text>
+        <Text selectable style={styles.text} >{t('pact_update_note')}</Text>
       </ScrollView>
     </View>
   )
@@ -72,9 +74,10 @@ const Content = () => {
 
 const Footer = ({ componentId }: { componentId: string }) => {
   const theme = useTheme()
+  const t = useI18n()
   const isAgreePact = useSettingValue('common.isAgreePact')
   // const checkUpdate = useDispatch('common', 'checkUpdate')
-  const [time, setTime] = useState(20)
+  const [time, setTime] = useState(10)
 
   const handleRejct = () => {
     exitApp()
@@ -103,9 +106,9 @@ const Footer = ({ componentId }: { componentId: string }) => {
 
 
   const confirmBtn = useMemo(() => {
-    if (isAgreePact) return { disabled: false, text: '关闭' }
-    return time ? { disabled: true, text: `接受（${time}）` } : { disabled: false, text: '接受' }
-  }, [isAgreePact, time])
+    if (isAgreePact) return { disabled: false, text: t('close') }
+    return time ? { disabled: true, text: t('pact_accept_countdown', { time }) } : { disabled: false, text: t('pact_accept') }
+  }, [isAgreePact, time, t])
 
   useEffect(() => {
     if (isAgreePact) return
@@ -138,7 +141,7 @@ const Footer = ({ componentId }: { componentId: string }) => {
         isAgreePact
           ? null
           : (
-              <Text selectable style={styles.tip} size={13}>若你（使用者）接受以上协议，请点击下面的“接受”按钮签署本协议；若不接受，请点击“不接受”后退出软件并清除本软件的所有数据。</Text>
+              <Text selectable style={styles.tip} size={13}>{t('pact_tip')}</Text>
             )
       }
       <View style={styles.btns}>
@@ -147,7 +150,7 @@ const Footer = ({ componentId }: { componentId: string }) => {
             ? null
             : (
                 <Button style={{ ...styles.btn, backgroundColor: theme['c-button-background'] }} onPress={handleRejct}>
-                  <Text color={theme['c-button-font']}>不接受</Text>
+                  <Text color={theme['c-button-font']}>{t('pact_reject')}</Text>
                 </Button>
               )
         }

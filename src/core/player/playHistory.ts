@@ -1,4 +1,4 @@
-import { addPlayHistory as addPlayHistoryToStorage, clearPlayHistory as clearPlayHistoryStorage, getPlayHistory } from '@/utils/data'
+import { addPlayHistory as addPlayHistoryToStorage, addMusicPlayCount, clearPlayHistory as clearPlayHistoryStorage, getPlayHistory } from '@/utils/data'
 
 
 /**
@@ -7,6 +7,8 @@ import { addPlayHistory as addPlayHistoryToStorage, clearPlayHistory as clearPla
  */
 export const addPlayHistory = (playMusicInfo: LX.Player.PlayMusicInfo) => {
   void addPlayHistoryToStorage(playMusicInfo)
+  // 记录歌曲播放次数，用于列表按播放次数排序
+  void addMusicPlayCount(playMusicInfo.musicInfo.id)
 }
 
 /**

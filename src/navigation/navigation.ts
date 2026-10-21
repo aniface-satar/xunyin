@@ -8,11 +8,11 @@ import {
   SONGLIST_DETAIL_SCREEN,
   LEADERBOARD_DETAIL_SCREEN,
   MYLIST_DETAIL_SCREEN,
-  MUSIC_RECOGNITION_SCREEN,
   // SETTING_SCREEN,
 } from './screenNames'
 
 import themeState from '@/store/theme/state'
+import { peekCoverBackdrop } from '@/utils/monet/coverBackdropStore'
 import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
 import { getStatusBarStyle } from './utils'
 import { windowSizeTools } from '@/utils/windowSizeTools'
@@ -157,6 +157,10 @@ export function pushPlayDetailScreen(componentId: string, skipAnimation = false)
   */
   requestAnimationFrame(() => {
     const theme = themeState.theme
+    // 动态背景生效时这一屏底下是封面铺的色，原生栏若还按主题取色，浅色主题就会在页面上下各留一条亮带。
+    // push 那一刻只能同步读现成的值（store 里那份是上一次发布好的；取色还没落地时是 null，走原路）。
+    const { surface } = peekCoverBackdrop()
+    const barBackground = surface?.base ?? theme['c-content-background']
 
     void Navigation.push(componentId, {
       component: {
@@ -170,15 +174,16 @@ export function pushPlayDetailScreen(componentId: string, skipAnimation = false)
           statusBar: {
             drawBehind: true,
             visible: true,
-            style: getStatusBarStyle(theme.isDark),
+            // 场上恒为深色（墨色恒为白），图标一律走 light
+            style: getStatusBarStyle(surface == null ? theme.isDark : true),
             backgroundColor: 'transparent',
           },
           navigationBar: {
             // visible: false,
-            backgroundColor: theme['c-content-background'],
+            backgroundColor: barBackground,
           },
           layout: {
-            componentBackgroundColor: theme['c-content-background'],
+            componentBackgroundColor: barBackground,
           },
           animations: {
             push: skipAnimation ? {} : {
@@ -246,9 +251,6 @@ export function pushLeaderboardDetailScreen(componentId: string, source: LX.Onli
 
 export function pushMylistDetailScreen(componentId: string, info: MylistDetailInfo) {
   pushDetailScreen(componentId, MYLIST_DETAIL_SCREEN, { info })
-}
-export function pushMusicRecognitionScreen(componentId: string) {
-  pushDetailScreen(componentId, MUSIC_RECOGNITION_SCREEN, {})
 }
 export function pushCommentScreen(componentId: string) {
   /*

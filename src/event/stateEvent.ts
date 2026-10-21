@@ -3,7 +3,7 @@ import type { InitState as CommonState } from '@/store/common/state'
 import type { InitState as ListState } from '@/store/list/state'
 import type { InitState as PlayerState } from '@/store/player/state'
 import type { InitState as VersionState } from '@/store/version/state'
-import type { HomeDetailRoute } from '@/store/homeDetail/state'
+import type { HomeDetailStacks } from '@/store/homeDetail/state'
 import { type I18n } from '@/lang'
 import type { SettingScreenIds } from '@/screens/Home/Views/Setting'
 
@@ -16,6 +16,12 @@ import type { SettingScreenIds } from '@/screens/Home/Views/Setting'
 //   //   handle_sync_list: 'handle_sync_list',
 //   // },
 // }
+
+export interface UserApiInitResultInfo {
+  id: string
+  status: boolean
+  errorMessage?: string
+}
 
 export class StateEvent extends Event {
   configUpdated(keys: Array<keyof LX.AppSetting>, setting: Partial<LX.AppSetting>) {
@@ -36,6 +42,10 @@ export class StateEvent extends Event {
 
   apiSourceUpdated(source: LX.AppSetting['common.apiSource']) {
     this.emit('apiSourceUpdated', source)
+  }
+
+  userApiInitResult(info: UserApiInitResultInfo) {
+    this.emit('userApiInitResult', info)
   }
 
   themeUpdated(theme: LX.ActiveTheme) {
@@ -68,6 +78,10 @@ export class StateEvent extends Event {
 
   playPlayedListChanged(playedList: PlayerState['playedList']) {
     this.emit('playPlayedListChanged', playedList)
+  }
+
+  playRandomListChanged(randomList: PlayerState['randomList']) {
+    this.emit('playRandomListChanged', randomList)
   }
 
   playTempPlayListChanged(tempPlayList: PlayerState['tempPlayList']) {
@@ -116,8 +130,8 @@ export class StateEvent extends Event {
     this.emit('navActiveIdUpdated', id)
   }
 
-  homeDetailStackUpdated(routes: HomeDetailRoute[]) {
-    this.emit('homeDetailStackUpdated', routes)
+  homeDetailStacksUpdated(stacks: HomeDetailStacks) {
+    this.emit('homeDetailStacksUpdated', stacks)
   }
 
   settingDetailIdUpdated(id: SettingScreenIds | null) {

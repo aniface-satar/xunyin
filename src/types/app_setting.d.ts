@@ -1,4 +1,5 @@
 import type { I18n } from '@/lang/i18n'
+import type { UserApiUpdateCheckMode } from '@/core/userApiUpdate/schedule'
 
 declare global {
   namespace LX {
@@ -19,6 +20,21 @@ declare global {
        * api id
        */
     'common.apiSource': string
+
+    /**
+       * 音源自动检查更新的频率，由用户选择
+       */
+    'common.userApiUpdateCheck': UserApiUpdateCheckMode
+
+    /**
+       * 所有音源（自定义源、内置源）发现新版本时是否允许弹窗提醒
+       */
+    'common.userApiAllowShowUpdateAlert': boolean
+
+    /**
+       * 所有音源（自定义源、内置源）是否自动检查并更新
+       */
+    'common.userApiAutoUpdate': boolean
 
     /**
        * 音源名称类型，原名、别名
@@ -99,6 +115,14 @@ declare global {
        * 播放页动态背景（跟随封面莫奈取色）
        */
     'theme.dynamicBg': boolean
+
+    /**
+       * 动态背景的取色算法：
+       * monet = 官方 Material Color Utilities 链路（一块染色底 + 少量封面透出）
+       * blur = 重度模糊的封面图本身固定铺底（默认）
+       * 旧存档里存着的 'native'（已删除的安卓原生取色）会归到 monet，老用户升级后看到的与之前一致。
+       */
+    'theme.dynamicBgAlgorithm': 'monet' | 'blur'
 
     /**
        * 启动时自动播放歌曲
@@ -360,6 +384,16 @@ declare global {
        * 文件命名方式
        */
     'download.fileName': '歌名 - 歌手' | '歌手 - 歌名' | '歌名'
+
+    /**
+     * 下载保存位置（系统文件夹选择器返回的位置）
+     */
+    'download.savePath': string
+
+    /**
+     * 下载保存位置的展示名称
+     */
+    'download.savePathName': string
 
     /**
      * 分享图/歌词海报的保存位置（系统文件夹选择器返回的位置）

@@ -1,10 +1,11 @@
 import { storageDataPrefix, storageDataPrefixOld } from '@/config/constant'
-import defaultSetting from '@/config/defaultSetting'
+import defaultSetting, { DEFAULT_BUILTIN_API_SOURCE_ID } from '@/config/defaultSetting'
 import { getData, removeData, saveData } from '@/plugins/storage'
 import migrateSetting from './migrateSetting'
 import settingState from '@/store/setting/state'
 import { migrateMetaData, migrateListData } from './migrate'
 import { exitApp, tipDialog } from '@/utils/tools'
+import { compareVer } from '@/utils'
 
 // 业务相关工具方法
 
@@ -104,6 +105,18 @@ export const initSetting = async() => {
   }
 
   // console.log(setting)
+  // 2026-10-20：内置源默认勾选 HYWmusic_公益版。配置版本 < 2.1 的老用户也强制切一次，
+  // 否则存量的 common.apiSource 会盖过新默认值；切过一次后版本升到 2.1，用户仍可自行换源。
+  if (setting && compareVer(setting.version ?? '', '2.1') < 0) {
+    setting['common.apiSource'] = DEFAULT_BUILTIN_API_SOURCE_ID
+  }
+  // 2026-10-21：切歌预加载默认开启。配置版本 < 2.2 的老用户也强制切一次，
+  // 否则存量里被关掉的开关会盖过新默认值；切过一次后版本升到 2.2，用户仍可自行关闭。
+  if (setting && compareVer(setting.version ?? '', '2.2') < 0) {
+    setting['player.preloadNextMusic'] = true
+    // 已选「整首」的保持不变，只把「不下载/空」拉回开头档
+    if (setting['player.preloadNextMusicAudio'] !== 'full') setting['player.preloadNextMusicAudio'] = 'head'
+  }
   const updatedSetting = updateSetting(setting, true)
   void saveData(storageDataPrefix.setting, updatedSetting.setting)
 
