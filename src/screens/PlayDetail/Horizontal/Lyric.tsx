@@ -252,11 +252,6 @@ export default () => {
     playLineRef.current?.updateLayoutInfo(listLayoutInfoRef.current)
   }, [])
 
-  const handlePlayLine = useCallback((time: number) => {
-    playLineRef.current?.setVisible(false)
-    global.app_event.setProgress(time)
-  }, [])
-
   const renderItem: FlatListType['renderItem'] = ({ item, index }) => {
     return (
       <LrcLine line={item} lineNum={index} activeLine={line} onLayout={handleLineLayout} />
@@ -286,7 +281,7 @@ export default () => {
         onScrollToIndexFailed={handleScrollToIndexFailed}
         onScroll={handleScroll}
       />
-      { isShowLyricProgressSetting ? <PlayLine ref={playLineRef} onPlayLine={handlePlayLine} /> : null }
+      { isShowLyricProgressSetting ? <PlayLine ref={playLineRef} /> : null }
     </>
   )
 }

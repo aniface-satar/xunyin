@@ -1,13 +1,10 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
-import { type NativeScrollEvent, type NativeSyntheticEvent, View, TouchableOpacity, Animated } from 'react-native'
+import { type NativeScrollEvent, type NativeSyntheticEvent, Animated } from 'react-native'
 import Text from '@/components/common/Text'
 import { createStyle } from '@/utils/tools'
 import { type Lines } from 'lrc-file-parser'
-import { useTheme } from '@/store/theme/hook'
-import { BorderWidths } from '@/theme'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { formatPlayTime2 } from '@/utils'
-import { Icon } from '@/components/common/Icon'
 
 
 export interface PlayLineType {
@@ -17,14 +14,15 @@ export interface PlayLineType {
   setVisible: (visible: boolean) => void
 }
 
-export interface PlayLineProps {
-  onPlayLine: (time: number) => void
-}
-
 const ANIMATION_DURATION = 300
 
-export default forwardRef<PlayLineType, PlayLineProps>(({ onPlayLine }, ref) => {
-  const theme = useTheme()
+export interface PlayLineProps {
+  // When set, anchor the label at ratio × list viewport height and show the time of
+  // the line whose center is nearest to the anchor. Without it the legacy formula is used.
+  viewportRatio?: number
+}
+
+export default forwardRef<PlayLineType, PlayLineProps>(({ viewportRatio }, ref) => {
   const glassColors = useGlassColors()
   const [scrollInfo, setScrollInfo] = useState<NativeSyntheticEvent<NativeScrollEvent>['nativeEvent'] | null>(null)
   const [listLayoutInfo, setListLayoutInfo] = useState<{ spaceHeight: number, lineHeights: number[] }>({ spaceHeight: 0, lineHeights: [] })
@@ -65,33 +63,43 @@ export default forwardRef<PlayLineType, PlayLineProps>(({ onPlayLine }, ref) => 
     },
   }))
 
-  const handlePlayLine = () => {
-    onPlayLine(time / 1000)
-  }
-
   if (!scrollInfo || !visible) return null
-  // spaceHeight is the visible distance between the lyric list top and the fixed play line.
-  const offset = scrollInfo.contentOffset.y + listLayoutInfo.spaceHeight
-  let lineOffset = listLayoutInfo.spaceHeight
   let targetLineNum = -1
-  for (let line = 0; line < listLayoutInfo.lineHeights.length; line++) {
-    lineOffset += listLayoutInfo.lineHeights[line]
-    if (lineOffset < offset) continue
-    targetLineNum = line
-    break
+  if (viewportRatio != null) {
+    // Line i sits centered on the anchor when contentOffset.y = spaceHeight + sumAbove(i) + h(i)/2 - anchorY.
+    const x = scrollInfo.contentOffset.y + scrollInfo.layoutMeasurement.height * viewportRatio - listLayoutInfo.spaceHeight
+    let bestDist = Number.MAX_VALUE
+    let lineOffset = 0
+    for (let line = 0; line < listLayoutInfo.lineHeights.length; line++) {
+      const height = listLayoutInfo.lineHeights[line] ?? 0
+      const dist = Math.abs(lineOffset + height / 2 - x)
+      if (dist < bestDist) {
+        bestDist = dist
+        targetLineNum = line
+      }
+      lineOffset += height
+    }
+  } else {
+    // spaceHeight is the visible distance between the lyric list top and the fixed play line.
+    const offset = scrollInfo.contentOffset.y + listLayoutInfo.spaceHeight
+    let lineOffset = listLayoutInfo.spaceHeight
+    for (let line = 0; line < listLayoutInfo.lineHeights.length; line++) {
+      lineOffset += listLayoutInfo.lineHeights[line]
+      if (lineOffset < offset) continue
+      targetLineNum = line
+      break
+    }
+    if (targetLineNum == -1) targetLineNum = listLayoutInfo.lineHeights.length - 1
   }
-  if (targetLineNum == -1) targetLineNum = listLayoutInfo.lineHeights.length - 1
   const time = lyricLines[targetLineNum]?.time ?? 0
   const timeLabel = formatPlayTime2(time / 1000)
   return (
-    <Animated.View style={{ ...styles.playLine, opacity: opsAnim }}>
-      <Text style={styles.label} color={glassColors.text} size={13}>{timeLabel}</Text>
-      <View style={styles.lineContent}>
-        <View style={{ ...styles.line, borderBottomColor: theme['c-primary-alpha-700'] }} />
-        <TouchableOpacity style={styles.button} onPress={handlePlayLine}>
-          <Icon name="play" color={glassColors.accent} size={18} />
-        </TouchableOpacity>
-      </View>
+    <Animated.View style={{
+      ...styles.playLine,
+      top: viewportRatio != null ? `${viewportRatio * 100}%` : '40%',
+      opacity: opsAnim,
+    }}>
+      <Text style={viewportRatio != null ? styles.labelCentered : styles.label} color={glassColors.text} size={13}>{timeLabel}</Text>
     </Animated.View>
   )
 })
@@ -100,40 +108,21 @@ const styles = createStyle({
   playLine: {
     position: 'absolute',
     width: '100%',
-    top: '40%',
     left: 0,
     height: 2,
-    // paddingTop: 5,
-    // paddingBottom: 5,
-    // backgroundColor: 'rgba(0,0,0,0.1)',
   },
   label: {
     position: 'absolute',
-    right: 45,
+    right: 20,
     bottom: 3,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
   },
-  lineContent: {
-    // backgroundColor: 'rgba(0,0,0,0.1)',
+  labelCentered: {
     position: 'absolute',
-    width: '100%',
-    height: 20,
-    top: -10,
+    right: 20,
+    top: -9,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-  },
-  line: {
-    marginLeft: 30,
-    borderBottomWidth: BorderWidths.normal2,
-    borderStyle: 'dashed',
-    flex: 1,
-  },
-  button: {
-    flex: 0,
-    paddingLeft: 5,
-    paddingRight: 15,
   },
 })
