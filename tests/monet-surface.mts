@@ -42,6 +42,19 @@ test('parseCssColor 支持 rgb 与 rgba，非 rgb 字符串返回 null', () => {
   assert.equal(parseCssColor(''), null)
 })
 
+test('①没有分台：压暗层 δ 恒 0、亮台与歌词台同一格（②的两台不许渗过来）', () => {
+  // ① 的场是按"最亮块 vs 底色"解的一支蒙版，两台布光是 ② 专属的设计；
+  // ① 若某一支算出非零 δ，说明 ② 的新字段被错用到了共用分支上。
+  for (const font of [LIGHT_FONT, DARK_FONT]) {
+    for (const cover of [0xFF1B2C40, GRAY, 0xFFFAFAFA]) {
+      const s = buildCoverSurface(m(cover, cover, WHITE), font)
+      if (s == null) continue
+      assert.equal(s.browseScrimAlpha, s.scrimAlpha, `底色 ${cover.toString(16)}：亮台与歌词台不同值`)
+      assert.equal(s.stageDimAlpha, 0, `底色 ${cover.toString(16)}：① 长出了压暗层 δ=${s.stageDimAlpha}`)
+    }
+  }
+})
+
 test('亮主题：底色落在高 tone 端，色相跟封面走', () => {
   const s = buildCoverSurface(m(ORANGE), LIGHT_FONT)!
   const tone = Hct.fromInt(baseArgb(s)).tone

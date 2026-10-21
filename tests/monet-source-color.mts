@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { QUANTIZE_COLORS, analyzeArgbPixels, type CoverPixels } from '../src/utils/monet/sourceColor.ts'
+import { QUANTIZE_COLORS, analyzeArgbPixels, measureArgbPixels, type CoverPixels } from '../src/utils/monet/sourceColor.ts'
 import { Hct } from '@material/material-color-utilities/hct/hct.js'
 
 const fill = (argb: number, n: number) => new Array(n).fill(argb >>> 0)
@@ -172,4 +172,60 @@ test('canary：量化确实在消费 Math.random —— 计数归零就该删掉
   // 这条是承重的墓碑用例：@material 的 JS 移植版把随机留在 quantizer_wsmeans.js:95。
   // 哪天上游改成确定性实现，calls 变 0，这里会红 —— 那时请删掉 withSeededRandom，不要留着。
   assert.ok(calls > 0, 'Math.random 未被消费：seeding 包裹已成死代码，删掉 withSeededRandom')
+})
+
+// 下面三条从 tests/monet-native-seed.mts 搬过来（那条安卓原生取色的路整支删掉了，见 spec §10.3）。
+// 它们盯的是 measure/analyze 这对接口的**一致性**：②「动态取色」只调 measure，
+// 一旦 measure 与 analyze 算出两个版本的平均色或最亮块，两档的闸门输入就不再同源。
+const measureFixtures: Array<[string, CoverPixels]> = [
+  ['灰底红块', cv([...fill(GRAY, 900), ...fill(RED, 100)])],
+  ['整幅中灰', cv(fill(GRAY, 4096), 64, 64)],
+  ['带透明通道', cv([...fill(0x00FF00FF, 3000), ...fill(RED, 1000)], 2000, 2)],
+  ['扁长条（块采不到像素那一路）', cv([...fill(GRAY, 64), ...fill(RED, 8)], 72, 1)],
+]
+
+test('measure 与 analyze 在同一份像素上交出完全相同的平均色与最亮块', () => {
+  for (const [name, pixels] of measureFixtures) {
+    const full = analyzeArgbPixels(pixels)
+    const fields = measureArgbPixels(pixels)
+    assert.ok(full && fields, name)
+    assert.equal(fields!.average, full!.average, name)
+    assert.equal(fields!.highlight, full!.highlight, name)
+  }
+})
+
+test('measure 不跑量化，analyze 跑（②省下的正是 JS 主线程那一段）', () => {
+  const pixels = cv([...fill(GRAY, 900), ...fill(RED, 100)])
+  const drawsOf = (fn: () => unknown) => {
+    let calls = 0
+    const original = Math.random
+    // 计数包一层转发而不是替成常数：withSeededRandom 会把当时读到的 Math.random 当 ambient 存下来再恢复
+    Math.random = () => {
+      calls += 1
+      return original()
+    }
+    try {
+      fn()
+      return calls
+    } finally {
+      Math.random = original
+    }
+  }
+  const measured = drawsOf(() => measureArgbPixels(pixels))
+  const analyzed = drawsOf(() => analyzeArgbPixels(pixels))
+  assert.equal(measured, 0, `measure 读了 ${measured} 次 Math.random，量化没被跳过`)
+  assert.ok(analyzed > 0, 'analyze 里量化一次都没跑，那这条用例就抓不到"误跳过量化"')
+})
+
+test('measure 的入参自洽校验与 analyze 是同一套（行宽错了就整体判失败）', () => {
+  const bad: Array<[string, CoverPixels]> = [
+    ['长度与宽高不自洽', cv(new Array(999).fill(GRAY), 40, 25)],
+    ['宽或高小于 1', cv([GRAY], 0, 0)],
+    ['全透明', cv(fill(0x00FF00FF, 100), 10, 10)],
+    ['空数组', cv([], 0, 0)],
+  ]
+  for (const [name, pixels] of bad) {
+    assert.equal(measureArgbPixels(pixels), null, name)
+    assert.equal(analyzeArgbPixels(pixels), null, name)
+  }
 })

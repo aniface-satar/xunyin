@@ -1,5 +1,6 @@
 import { playNext, setMusicUrl } from '@/core/player/player'
 import { setStatusText } from '@/core/player/playStatus'
+import { recommendationEngine } from '@/core/recommend'
 import { getPosition, isEmpty, setStop } from '@/plugins/player'
 import { isActive } from '@/utils/tools'
 import BackgroundTimer from 'react-native-background-timer'
@@ -26,6 +27,7 @@ export default () => {
       // 如果加载超时，则尝试刷新URL
       if (prevTimeoutId == playerState.musicInfo.id) {
         prevTimeoutId = null
+        recommendationEngine.onPlayError('load_error')
         void playNext(true)
       } else {
         prevTimeoutId = playerState.musicInfo.id
@@ -104,6 +106,7 @@ export default () => {
       return
     }
     if (!isEmpty()) void setStop()
+    recommendationEngine.onPlayError('play_error')
 
     if (isActive()) {
       setStatusText(global.i18n.t('player__error'))

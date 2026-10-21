@@ -11,7 +11,7 @@
 // 于是加在表里的判据不会在这里长出第二个版本。
 import { resolveCoverBackdrop, COVER_BACKDROP_GRACE_MS, type CoverBackdropState, type CoverBackdropStale } from './backdropGate'
 import { getCoverSurface } from './index'
-import { ON_COVER_FONT_CSS } from './surface'
+import { ON_COVER_FONT_CSS, type CoverBackdropMode } from './surface'
 import { createAttemptLedger } from './attemptLedger'
 
 const IDLE: CoverBackdropState = { enabled: false, picUrl: null, surface: null, wantsSurface: false }
@@ -24,9 +24,11 @@ const listeners = new Set<() => void>()
 const attempts = createAttemptLedger()
 // 在途代数：换歌、翻开关、清缓存都会 ++，晚到的旧结果据此丢弃
 let generation = 0
-// 最近一次投递的三条输入。取色结果是异步晚到的，回来时要用"当下"的输入重算一遍状态，
+// 最近一次投递的四条输入。取色结果是异步晚到的，回来时要用"当下"的输入重算一遍状态，
 // 而不是拿旧 state 拼一份 —— 拼出来的那份会绕过决策表对 picUrl 的判定。
-let inputs = { dynamicBg: false, hasThemeBgImage: false, pic: null as string | null }
+// algo 也要记下来：② 会在"还没有测量色"的时候就铺一层保守底，重试与宽限那两条定时器
+// 回调时若按旧档位重算，表和 hook 就会对"屏上到底该不该有层"给出两个答案。
+let inputs = { dynamicBg: false, hasThemeBgImage: false, pic: null as string | null, algo: 'monet' as CoverBackdropMode }
 let retryTimer: ReturnType<typeof setTimeout> | null = null
 
 const clearRetry = () => {
@@ -63,12 +65,12 @@ const publish = (next: CoverBackdropState) => {
 const isSame = (a: CoverBackdropState, b: CoverBackdropState) =>
   a.enabled === b.enabled && a.picUrl === b.picUrl && a.surface === b.surface && a.wantsSurface === b.wantsSurface
 
-/** 收尾一条尝试：先销账，再用"当下"的三条输入重跑一遍。
+/** 收尾一条尝试：先销账，再用"当下"的四条输入重跑一遍。
  *  成功时 wantsSurface 已经变假，这一跑只是把状态确认一遍；失败/被丢弃时它仍然是真，
  *  于是这里会替下一次尝试把定时器挂上 —— 自愈的入口就在这。 */
 const settle = (picUrl: string) => {
   attempts.end(picUrl)
-  if (inputs.pic === picUrl) updateCoverBackdrop(inputs.dynamicBg, inputs.hasThemeBgImage, picUrl)
+  if (inputs.pic === picUrl) updateCoverBackdrop(inputs.dynamicBg, inputs.hasThemeBgImage, picUrl, inputs.algo)
 }
 
 const request = (picUrl: string) => {
@@ -77,8 +79,9 @@ const request = (picUrl: string) => {
   void getCoverSurface(picUrl, ON_COVER_FONT_CSS).then(surface => {
     if (surface != null && my === generation && inputs.pic === picUrl && state.enabled) {
       // 三条守卫：还是当代、还是当前这首歌、功能还开着。
-      // 判据用 inputs.pic 而不是 state.picUrl —— 后者要等这份色到手才非空，拿它当守卫会把第一次成功的结果丢掉。
-      publish(resolveCoverBackdrop(inputs.dynamicBg, inputs.hasThemeBgImage, picUrl, surface))
+      // 判据用 inputs.pic 而不是 state.picUrl：后者可能是保守底那一格（② 在测量色到手之前就有 picUrl），
+      // 也可能是上一首留着的层 —— 它说的不是"这次请求是为哪张封面发的"。
+      publish(resolveCoverBackdrop(inputs.dynamicBg, inputs.hasThemeBgImage, picUrl, surface, inputs.algo))
     }
     settle(picUrl)
   }, () => {
@@ -111,18 +114,21 @@ const arm = (url: string | null, next: CoverBackdropState) => {
   const wait = verdict === 'in-flight' ? attempts.inflightLeft(url, now) : attempts.cooldownLeft(url, now)
   retryTimer = setTimeout(() => {
     retryTimer = null
-    if (inputs.pic === url) updateCoverBackdrop(inputs.dynamicBg, inputs.hasThemeBgImage, url)
+    if (inputs.pic === url) updateCoverBackdrop(inputs.dynamicBg, inputs.hasThemeBgImage, url, inputs.algo)
   }, wait)
 }
 
 /**
- * 组件把三条输入（开关、主题是否自带背景图、当前封面）交进来，这里负责发布结果并按需发一次取色。
+ * 组件把四条输入（开关、主题是否自带背景图、当前封面、哪一档取色）交进来，这里负责发布结果并按需发一次取色。
+ * algo 由调用方归一后再传（useCoverSurface 走 normalizeCoverAlgo）：这张表只认 'monet' | 'blur' 两个值，
+ * 旧存储里的「native」之类的脏值不该在这张表里另长出一套解释。
  * 幂等：输入没变时不会 publish，所以 effect 里每次 render 都调也安全。
  */
-export function updateCoverBackdrop(dynamicBg: boolean, hasThemeBgImage: boolean, pic: string | null | undefined) {
+export function updateCoverBackdrop(dynamicBg: boolean, hasThemeBgImage: boolean,
+  pic: string | null | undefined, algo: CoverBackdropMode) {
   const url = pic ?? null
   if (url !== inputs.pic) switchedAt = Date.now()
-  inputs = { dynamicBg, hasThemeBgImage, pic: url }
+  inputs = { dynamicBg, hasThemeBgImage, pic: url, algo }
   // 手里那份色只在该它属于这张封面时才交进去：换歌瞬间不交，决策表就把它判成"还没有色"，
   // 既不拿上一张的底色铺新一张，又立刻为新那张发一次取色。
   const held = url != null && url === state.picUrl ? state.surface : null
@@ -131,7 +137,7 @@ export function updateCoverBackdrop(dynamicBg: boolean, hasThemeBgImage: boolean
     ? { picUrl: state.picUrl, surface: state.surface }
     : null
   const now = Date.now()
-  const next = resolveCoverBackdrop(dynamicBg, hasThemeBgImage, url, held, stale, now - switchedAt < COVER_BACKDROP_GRACE_MS)
+  const next = resolveCoverBackdrop(dynamicBg, hasThemeBgImage, url, held, algo, stale, now - switchedAt < COVER_BACKDROP_GRACE_MS)
   if (!isSame(next, state)) publish(next)
   arm(url, next)
   // 铺着的还是别的那一首 → 到点必须自己再算一次，否则旧色会永远挂在新一首上（spec §4.6-4）。
@@ -139,7 +145,7 @@ export function updateCoverBackdrop(dynamicBg: boolean, hasThemeBgImage: boolean
   if (next.picUrl != null && next.picUrl !== url) {
     graceTimer = setTimeout(() => {
       graceTimer = null
-      if (inputs.pic === url) updateCoverBackdrop(inputs.dynamicBg, inputs.hasThemeBgImage, url)
+      if (inputs.pic === url) updateCoverBackdrop(inputs.dynamicBg, inputs.hasThemeBgImage, url, inputs.algo)
     }, Math.max(0, COVER_BACKDROP_GRACE_MS - (now - switchedAt)))
   }
 }
@@ -151,7 +157,7 @@ export function resetCoverBackdrop() {
   clearGrace()
   switchedAt = 0
   attempts.reset()
-  inputs = { dynamicBg: false, hasThemeBgImage: false, pic: null }
+  inputs = { dynamicBg: false, hasThemeBgImage: false, pic: null, algo: 'monet' }
   publish(IDLE)
 }
 

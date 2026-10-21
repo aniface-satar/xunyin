@@ -1,10 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { NEGATIVE_TTL_MS, PIXEL_LIMIT, TEXTURE_LIMIT, createCoverPalette } from '../src/utils/monet/coverPalette.ts'
-import { ON_COVER_FONT_CSS, SCRIM_MAX, SCRIM_MIN } from '../src/utils/monet/surface.ts'
+import {
+  BLUR_ANCHOR_TONE,
+  DARK_ANCHOR_TONE,
+  ON_COVER_FONT_CSS,
+  SCRIM_MAX,
+  SCRIM_MIN,
+  parseCssColor,
+} from '../src/utils/monet/surface.ts'
+import { NEGATIVE_TTL_MS, PIXEL_LIMIT, TEXTURE_LIMIT, createCoverPalette, normalizeCoverAlgo } from '../src/utils/monet/coverPalette.ts'
 import type { CoverPixels } from '../src/utils/monet/sourceColor.ts'
 import { TEXTURE_OUT_HEIGHT, type TextureRequest } from '../src/utils/monet/texture.ts'
+import { Hct } from '@material/material-color-utilities/hct/hct.js'
 const GRAY = 0xFF808080
 const RED = 0xFFCC2222
 const LIGHT_FONT = 'rgb(33, 33, 33)'
@@ -398,4 +406,161 @@ test('纹理层有自己更小的上限（一张 data URI 顶得上一条配色�
   // 最后一张还在
   await getCoverTexture(`https://example.com/${TEXTURE_LIMIT}.jpg`, LIGHT_FONT, 132)
   assert.equal(builds, TEXTURE_LIMIT + 2)
+})
+
+// 2026-10-16 卡顿：analyzeArgbPixels 整段是同步的（实测 128×86 封面 143ms，其中量化 123ms），
+// 落在播放页那段 useNativeDriver:false 的 800ms 展开动画里就是掉帧。
+// 配色那一步必须能交出去：外面（analysisGate）只在"没有交互在手"时才放行。
+const holdScheduler = () => {
+  let release: () => void = () => {}
+  return {
+    // <T,> 的尾逗号不是装饰：.mts 里裸 <T> 会按 JSX 解析，tsc 直接报 TS7060
+    scheduleIdle: <T,>(task: () => T): Promise<T> => new Promise<T>(resolve => {
+      release = () => resolve(task())
+    }),
+    release: () => release(),
+  }
+}
+
+test('配色那一步走注入的调度器：扣住时不落地，像素也不重问', { timeout: 2000 }, async() => {
+  let calls = 0
+  const { scheduleIdle, release } = holdScheduler()
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    return pixels(RED)
+  }, TEXTURE, undefined, scheduleIdle)
+  const pending = getCoverSurface('https://example.com/idle.jpg', LIGHT_FONT)
+  let settled = false
+  void pending.then(() => { settled = true })
+  // 推进若干轮微任务/宏任务：像素那条 await 早就该回来了
+  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve))
+  assert.equal(calls, 1, '像素已到手，等调度器期间不该再问一次原生')
+  assert.equal(settled, false, '调度器还没放行，配色结果不能落地')
+  release()
+  assert.ok(await pending)
+  assert.equal(calls, 1)
+})
+
+// ②「动态取色」= 重度模糊封面固定铺底（spec §10）。这一支只要两个测量值，
+// 官方量化（实测 143ms 里的 123ms）整段不跑。
+// "没跑量化"用随机数消耗来观察，不用耗时：量化内部那句裸 Math.random 是实测事实
+// （见 tests/monet-source-color.mts 的 canary），而耗时断言在真机和 CI 上都抖。
+const withRandomCounter = async<T,>(fn: () => Promise<T>) => {
+  let calls = 0
+  const original = Math.random
+  Math.random = () => {
+    calls += 1
+    return original()
+  }
+  try {
+    return { value: await fn(), calls }
+  } finally {
+    Math.random = original
+  }
+}
+
+const toneOf = (base: string) => Hct.fromInt(parseCssColor(base)!).tone
+
+test('monet 支：默认那一档标成 monet，照旧跑官方量化', async() => {
+  const { getCoverSurface } = createCoverPalette(async() => pixels(RED), TEXTURE)
+  const { value: surface, calls } = await withRandomCounter(() => getCoverSurface('https://example.com/m.jpg', ON_COVER_FONT_CSS))
+  assert.ok(surface)
+  assert.equal(surface!.mode, 'monet')
+  assert.equal(surface!.provisional, false)
+  assert.ok(calls > 0, 'monet 支不该把量化跳掉')
+})
+
+test('blur 支：标成 blur 并且一个随机数都不消费（量化整段没跑）', async() => {
+  const { getCoverSurface } = createCoverPalette(async() => pixels(RED), TEXTURE)
+  const { value: surface, calls } = await withRandomCounter(() => getCoverSurface('https://example.com/b.jpg', ON_COVER_FONT_CSS, 'blur'))
+  assert.ok(surface)
+  assert.equal(surface!.mode, 'blur')
+  assert.equal(surface!.provisional, false)
+  assert.equal(calls, 0, 'blur 支不该跑 QuantizerCelebi —— 省下那 123ms 正是这条选项存在的全部理由')
+})
+
+test('② 的底色比 ① 暗一条落差：两档的分工是透出照片与两台布光', async() => {
+  const { getCoverSurface } = createCoverPalette(async() => pixels(RED), TEXTURE)
+  const blur = await getCoverSurface('https://example.com/split.jpg', ON_COVER_FONT_CSS, 'blur')
+  const monet = await getCoverSurface('https://example.com/split.jpg', ON_COVER_FONT_CSS, 'monet')
+  assert.ok(blur && monet)
+  assert.ok(Math.abs(toneOf(blur!.base) - BLUR_ANCHOR_TONE) < 1, `blur 底色应贴 ${BLUR_ANCHOR_TONE}，实得 ${toneOf(blur!.base)}`)
+  assert.ok(Math.abs(toneOf(monet!.base) - DARK_ANCHOR_TONE) < 1, `monet 底色应贴 ${DARK_ANCHOR_TONE}，实得 ${toneOf(monet!.base)}`)
+  // 锚点 28 是用户从六档小样里挑的那一支（spec §14.1 的扫描：20→28 之间起伏从 18.7 收到 3.7 个 L*）。
+  // 这一格上 ② 的底色只比 ① 暗 4.07，撑开两档靠的是② 能透出照片的大块起伏、还按浏览/歌词两台各解一格蒙版。
+  // 2026-10-18 那三轮"再亮一点"（30→32→34→36）连同 ③ 一起从全屏播控页回退掉了，所以这条的方向判据回到"② 比 ① 暗"。
+  // 地雷线只钉往前：真要把锚点再抬，抬过 ① + 4 格就是平涂（lucky 那类亮封面的歌词台透出只剩 0.03~0.04），
+  // 抬到 38 起整档过不了闸门、静默回落纯色 —— 那一格该由人重新拍板，不该由这条测试替他放行。
+  assert.ok(BLUR_ANCHOR_TONE <= DARK_ANCHOR_TONE + 4,
+    `锚点 ${BLUR_ANCHOR_TONE} 已经亮过莫奈支 ${DARK_ANCHOR_TONE} 四格以上，② 正在往平涂走，这一格该由人重新拍板`)
+  assert.ok(toneOf(blur!.base) < toneOf(monet!.base),
+    `blur 底色 L*${toneOf(blur!.base).toFixed(1)} 不该亮过 monet L*${toneOf(monet!.base).toFixed(1)}（回退后的分工：② 靠透出照片，不靠更亮）`)
+})
+
+test('同一张封面两档各存一格：切算法不会读到上一支的色，但像素只问一次', async() => {
+  let calls = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    return pixels(RED)
+  }, TEXTURE)
+  const blur = await getCoverSurface('https://example.com/both.jpg', ON_COVER_FONT_CSS, 'blur')
+  const monet = await getCoverSurface('https://example.com/both.jpg', ON_COVER_FONT_CSS, 'monet')
+  // 原来这里比的是 base 字符串。10-18 两步把 ② 的锚点抬到 32 之后，这张夹具上两支底色合成完是同一串
+  // rgb(108, 63, 59) —— 那是"两档底色并平"这一设计的正常结果（撑开两档的是照片层），不是缓存串色。
+  // 串色的现象是第二次拿到第一支的同一个对象，所以判据换成整支 surface 不许 deep-equal：
+  // mode / 蒙版 / tint / band 任一处不同都算各存各的。
+  assert.notDeepEqual(blur, monet, '两档拿到的是同一支 surface —— 缓存键把算法漏掉了')
+  assert.equal(calls, 1, '切档只换"用哪支色"，不该把封面重下一遍')
+})
+
+test('blur 支没有纹路也没有强调色：带恒 null，tint 彩度归零', async() => {
+  const { getCoverSurface } = createCoverPalette(async() => pixels(RED), TEXTURE)
+  const surface = await getCoverSurface('https://example.com/plain.jpg', ON_COVER_FONT_CSS, 'blur')
+  assert.ok(surface)
+  assert.equal(surface!.band, null)
+  assert.equal(surface!.tint.chroma, 0)
+})
+
+test('blur 支也排在调度闸门之后', { timeout: 2000 }, async() => {
+  const { scheduleIdle, release } = holdScheduler()
+  const { getCoverSurface } = createCoverPalette(async() => pixels(RED), TEXTURE, undefined, scheduleIdle)
+  const pending = getCoverSurface('https://example.com/idle-blur.jpg', ON_COVER_FONT_CSS, 'blur')
+  let settled = false
+  void pending.then(() => { settled = true })
+  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve))
+  assert.equal(settled, false, '连两个均值的活也不该压在补间中间跑')
+  release()
+  assert.equal((await pending)!.mode, 'blur')
+})
+
+test('blur 支取色失败：给 null 并按同样的保质期缓存住', async() => {
+  let calls = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    calls += 1
+    return null
+  }, TEXTURE)
+  assert.equal(await getCoverSurface('https://example.com/bad.jpg', ON_COVER_FONT_CSS, 'blur'), null)
+  assert.equal(await getCoverSurface('https://example.com/bad.jpg', ON_COVER_FONT_CSS, 'blur'), null)
+  assert.equal(calls, 1)
+})
+
+test('旧值与脏值一律归一到 monet：「native」这条路已经不存在，也不开出第三格缓存', () => {
+  assert.equal(normalizeCoverAlgo('blur'), 'blur')
+  for (const value of ['native', '', 'MONET', 'magic', 'MAGIC', 'Magic', undefined, null, 0, {}]) {
+    assert.equal(normalizeCoverAlgo(value), 'monet', `${String(value)} 该归一到 monet（已被回退的档位读回来也只当脏值，不许默认落在 ② 上）`)
+  }
+})
+
+// 归一不彻底等于给老用户白算一份色：他们存储里躺着的还是「native」。
+test('默认档 / 显式 monet / 旧值「native」命中同一格缓存：不重算也不重下封面', async() => {
+  let pixelCalls = 0
+  const { getCoverSurface } = createCoverPalette(async() => {
+    pixelCalls += 1
+    return pixels(RED)
+  }, TEXTURE)
+  const legacy = await getCoverSurface('https://example.com/legacy.jpg', LIGHT_FONT)
+  assert.ok(legacy)
+  assert.equal(await getCoverSurface('https://example.com/legacy.jpg', LIGHT_FONT, 'monet'), legacy)
+  assert.equal(await getCoverSurface('https://example.com/legacy.jpg', LIGHT_FONT, 'native' as never), legacy)
+  assert.equal(pixelCalls, 1)
 })

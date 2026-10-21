@@ -11,10 +11,13 @@ import initI18n from './i18n'
 import initUserApi from './userApi'
 import initPlayer from './player'
 import dataInit from './dataInit'
+import { initDownload } from '@/core/download/scheduler'
 import initSync from './sync'
 import { initDeeplink } from './deeplink'
 import { checkUpdate } from '@/core/version'
 import { setApiSource } from '@/core/apiSource'
+import { runUserApiUpdateCheckOnStartup } from '@/core/userApiUpdate'
+import { initMusicAddTimeTracker } from '@/core/list'
 import commonActions from '@/store/common/action'
 import settingState from '@/store/setting/state'
 import { bootLog } from '@/utils/bootLog'
@@ -56,12 +59,18 @@ export default async() => {
   setApiSource(setting['common.apiSource'])
   bootLog('Api inited.')
 
+  // 更新检查要等音源真的初始化完再动手，所以放在 setApiSource 之后
+  // （它内部会等 apiInitPromise，占位 promise 不算数）
+  void runUserApiUpdateCheckOnStartup()
+
   registerPlaybackService()
   bootLog('Playback Service Registered.')
   await initPlayer(setting)
   bootLog('Player inited.')
   await dataInit(setting)
   bootLog('Data inited.')
+  void initDownload()
+  initMusicAddTimeTracker()
 
   void initSync(setting)
   bootLog('Sync inited.')

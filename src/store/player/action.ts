@@ -1,5 +1,5 @@
 import { arrPush, arrUnshift, formatPlayTime2 } from '@/utils'
-import state from './state'
+import state, { type RandomList } from './state'
 
 type PlayerMusicInfoKeys = keyof LX.Player.MusicInfo
 const musicInfoKeys: PlayerMusicInfoKeys[] = Object.keys(state.musicInfo) as PlayerMusicInfoKeys[]
@@ -79,6 +79,11 @@ export default {
     state.playedList = []
 
     global.state_event.playPlayedListChanged({ ...state.playedList })
+  },
+  setRandomList(randomList: RandomList | null) {
+    state.randomList = randomList
+
+    global.state_event.playRandomListChanged(randomList)
   },
   addTempPlayList(list: LX.Player.TempPlayListItem[]) {
     const topList: Array<{ listId: string | null, musicInfo: LX.Music.MusicInfo | LX.Download.ListItem }> = []

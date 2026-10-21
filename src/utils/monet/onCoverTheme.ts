@@ -93,6 +93,72 @@ export const buildOnCoverInk = (surface: Pick<CoverSurface, 'fieldTone' | 'tint'
   return { font, fontLabel, accent, primary, lyric, lyricSoft, panel }
 }
 
+/** `useGlassColors.lyricOpacity`：歌词页的非当前行与它的译文，组件自己还要再乘这一档透明度。
+ *  这条乘法必须记在这里而不是只记在脑子里 —— 上一版就是按主题色核的对比度，漏掉了组件那层 0.6，
+ *  结果亮封面上非当前行的实际值只有 1.88:1。`useGlassColors` 的默认值现在直接 import 这一个常量，
+ *  两边不可能再各写一个数。不在这里反向 import 那个 hook：它带 `react` 与主题 store，而这个模块要能被 `node --test` 直接拉起来。 */
+export const LYRIC_COMPONENT_OPACITY = 0.6
+
+/** ②那一档的组件透明度，由 `Vertical/Lyric.tsx` 只在封面场是 'blur' 时传给 `useGlassColors`
+ *  （① 与普通主题照旧走上面那条 0.6，一个像素都没变）。
+ *
+ *  2026-10-18 是 0.75、`BLUR_MIN_CONTRAST` 5.0：那天钉的是"非当前行不许破 3.0"（最坏封面 3.39 / 3.20）。
+ *  2026-10-19 用户反馈"非当前歌词和当前歌词的颜色区分不明显"，要"加大歌词白色的实度/饱和度/亮度"，
+ *  并在四档小样（.scratch/t170_*.png，用真机截图反解重渲染）里选了最强烈的一档 —— 于是 0.75 → 0.50，
+ *  歌词那两层在真机截图上的成图落到 L\*67.4 / 64.9（在此之前是 83.4 / 80.9；同一张图的当前行恒 L\*100）。
+ *  代价写明：最坏（白底）封面上非当前行 2.52、译文 2.31 —— 低于大字号 3.0 那条线，这两格是用户拍板的交换，
+ *  不是漏核。深色封面（多数）上仍在 4 以上（真机那片场上 4.55 / 3.98）。改这里要重跑 .scratch/t166_gap.mts、
+ *  t170_final.py 与 t171_ship.mts。 */
+export const BLUR_LYRIC_COMPONENT_OPACITY = 0.5
+
+/** ②把"当前行译文"也从主题那支 0.80 收进梯队的一格（有效 α）。
+ *  主题给这一格的 alpha 是 `c-primary-alpha-200` = 0.80，它在 ② 里比非当前行那一档（0.49）还亮 ——
+ *  用户 2026-10-19 说的"区分不明显"里，它是离当前行最近的那一层：真机截图上是当前行 L\*100、它 L\*90.2、
+ *  非当前行 L\*83.4，当前行的最近竞争者其实是它自己这句译文。收到 0.66 之后：100 / 83.2 / 67.4。
+ *  ① 与普通主题照旧走主题自己的 0.80，不动。 */
+export const BLUR_LYRIC_ACTIVE_TRANSLATION_ALPHA = 0.66
+
+/**
+ * ②「动态取色」那一档的整套前景：一支白用到底，不读场、不读色相。
+ * 用户 2026-10-17 定稿"控件统一为一个颜色、近乎白、不随背景改变"，2026-10-18 又把这个界面整体调亮；
+ * 两条一起成立的结果就是**文字只剩一档**：标题、时间/说明、控件图标、当前行全是实白，
+ * 层次改由两处买 —— 歌词那条 alpha 梯队（当前行实白、当前行译文白@0.66、非当前行白@0.98、译文白@0.88，
+ * 后两层再乘组件那条 0.50）与面板那层黑纱。
+ *
+ * 全部读数对着最坏那支 L\*46.0 的场（闸门 5.5 钉住的模型场 43.7~44.3 + 真机峰值那 1.7 个 L\*，
+ * 逐张账见 .scratch/t171_ship.mts）：实白 5.17（线 4.5）｜ 当前行译文 0.66 → 3.25 ｜
+ * 非当前行有效 0.49 → 2.52 ｜ 译文有效 0.44 → 2.31。该场上当前行 L\*100、当前行译文 L\*82.4、
+ * 非当前行 L\*73.7、译文 L\*70.7 —— 当前行与它下面那一层差 17.6 个 L\*（10-18 那一档是 100 / 90.2 / 83.4 / 80.9）。
+ *
+ * 为什么小字层还是实白（旧值 0.78）：那一格是在闸门 7.0（场 ≤L\*37.8）下才摆得下的阶梯；
+ * 场一旦亮到 L\*48~49，0.78 只剩 3.5~3.6，破 4.5（现在的上限 L\*46 上也只有 3.9）。恒白这一档既然不让步，
+ * 能动的只有背景。
+ * 代价写明：标题与"时间/下一行预告"逐字节同色（上一版特意拆开过），
+ * 这一档的层次语言是"白字 + 黑纱面板 + 歌词那条梯队"，不是四级灰。
+ * 面板反着走 —— 黑纱：它永远比场暗，白字在它上面只会更安全，同时封面轮廓还能从卡片底下透出来。
+ */
+export const BLUR_INK: CoverInk = {
+  font: 0xFFFFFFFF,
+  fontLabel: 0xFFFFFFFF,
+  accent: 0xFFFFFFFF,
+  primary: 0xFFFFFFFF,
+  // 0.98 而不是 1.0：取满的话 c-350 与 c-font 是同一串 rgb(255, 255, 255)，
+  // 层次全靠组件那条 opacity 撑着，漏挂一次就退回"当前行与非当前行没区分"那个老症状。
+  lyric: ((250 << 24) | 0xFFFFFF) >>> 0, // 0.98 的白：非当前行（再乘组件 0.50 才是屏上那条）
+  // 0.88 而不是 0.92：组件落到 0.50 之后，0.98/0.92 那对 ink 在模型场上只差 1.7 个 L\*（真机成图上 1.3），
+  // "译文"这一档又并回非当前行那一层 —— 退到 0.88 才有 2.9（真机成图 2.5）的档。
+  // 代价落在普通译文行上：暗封面从 L\*66 一线落到 L\*57（对那片场仍有 3.98:1），另外三档不受影响。
+  lyricSoft: ((224 << 24) | 0xFFFFFF) >>> 0, // 0.88 的白：译文行
+  panel: (82 << 24) >>> 0, // 0.32 的黑纱
+}
+
+/** 场上真正该用的墨色：① 由场与封面色相导出，② 恒为那一支不随背景变的白（层次全靠 alpha 摆）。
+ *  ② 永远"算得出来"（白阶梯不依赖闸门），所以 null 只会从 ① 那一支来。 */
+export const resolveOnCoverInk = (surface: CoverSurface): CoverInk | null => {
+  if (surface.mode === 'monet') return buildOnCoverInk(surface)
+  return BLUR_INK
+}
+
 /** 实心态：直接换成某一支墨色 */
 interface SolidRule { kind: 'solid', ink: keyof CoverInk }
 /** 透光态：留着主题自己那条 alpha（alpha 命名是反的：alpha-900 = 0.10），只换颜料 */
@@ -152,6 +218,19 @@ export const COVER_PLATE_KEYS = COVER_RULE_KEYS.filter(key => COVER_RULES[key].k
 
 const rgbaAlphaRxp = /rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*(\d*\.?\d+)\s*\)/
 
+/**
+ * ② 专属的 alpha 覆盖：只改这一个键，且只在封面场是 'blur' 时生效。
+ *
+ * `c-primary-alpha-200` 在主题里是"当前行译文"那一格（useGlassColors.lyricActiveTranslation）。
+ * ① 那一档留着主题的 0.80 是对的 —— 强调色淡一点仍然成档；② 那一档不行：前景只剩白，
+ * 0.80 比非当前行（0.98 × 0.50 = 0.49）亮出一大截，当前行的最近竞争者就成了它自己的译文。
+ * 收进 0.66：仍在非当前行之上（那是"当前这一句的译文"该有的位置），又与实白拉开 17 个 L\*。
+ * 只覆盖 alpha、颜料照旧走规则表（② 是那支白），所以"① 与 ② 的颜料一致"那条用例不受影响。
+ */
+const BLUR_ALPHA_OVERRIDES: Record<string, number> = {
+  'c-primary-alpha-200': BLUR_LYRIC_ACTIVE_TRANSLATION_ALPHA,
+}
+
 /** 主题里那条 alpha 阶梯是这个组件自己的层次语言，换色不动它；只有 solid 角色才整个替换。 */
 const keepAlpha = (value: string | undefined): number => {
   const matched = value == null ? null : rgbaAlphaRxp.exec(value)
@@ -161,6 +240,10 @@ const keepAlpha = (value: string | undefined): number => {
 
 const cssRgba = (argb: number, alpha: number) =>
   alpha >= 1 ? cssRgb(argb) : `rgba(${redOf(argb)}, ${greenOf(argb)}, ${blueOf(argb)}, ${alpha.toFixed(2)})`
+/** 实心态的发色：墨色自己那条 alpha 要跟着出去（② 的歌词档与黑纱面板靠它分层）。
+ *  不透明时发串跟原来完全一样，所以 ① 那一支逐字节不变。
+ *  导出给单测用：② 那条用例要对着 BLUR_INK 常量表核出屏上真正的串，自己抄一份发串逻辑迟早脱拍。 */
+export const cssArgb = (argb: number) => cssRgba(argb, (argb >>> 24) / 255)
 const redOf = (argb: number) => (argb >> 16) & 0xff
 const greenOf = (argb: number) => (argb >> 8) & 0xff
 const blueOf = (argb: number) => argb & 0xff
@@ -172,7 +255,7 @@ const blueOf = (argb: number) => argb & 0xff
  */
 export const applyOnCoverTheme = <T extends object>(theme: T, surface: CoverSurface | null): T => {
   if (surface == null) return theme
-  const ink = buildOnCoverInk(surface)
+  const ink = resolveOnCoverInk(surface)
   if (ink == null) return theme
   // ActiveTheme 上除字色串之外还有 isDark / bg-image 这类非字符串键，所以按 unknown 读写、只动字符串键
   const next = Object.assign({}, theme) as Record<string, unknown>
@@ -180,11 +263,13 @@ export const applyOnCoverTheme = <T extends object>(theme: T, surface: CoverSurf
   // components/common/StatusBar.tsx 读的就是 context 里的这个布尔来决定状态栏图标用亮还是暗，
   // 翻它一个就把图标带对了，不需要引入任何 mergeOptions（仓库里此前没有先例）。
   next.isDark = true
+  // ② 的歌词台把"当前行译文"那一格收进梯队（见 BLUR_ALPHA_OVERRIDES）；① 不改主题自己那条 alpha。
+  const overrides = surface.mode === 'blur' ? BLUR_ALPHA_OVERRIDES : null
   for (const [key, rule] of Object.entries(COVER_RULES)) {
     const current = next[key]
     if (typeof current !== 'string') continue
     const argb = ink[rule.ink]
-    next[key] = rule.kind === 'solid' ? cssRgb(argb) : cssRgba(argb, keepAlpha(current))
+    next[key] = rule.kind === 'solid' ? cssArgb(argb) : cssRgba(argb, overrides?.[key] ?? keepAlpha(current))
   }
   return next as T
 }

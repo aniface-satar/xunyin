@@ -57,17 +57,42 @@ export interface CoverMeasure {
   highlightArgb: number
 }
 
+/** 背景是哪一档给的。定义在这里而不是 coverPalette.ts：配色层已经 import 这个文件，反过来就成环。
+ *  ① monet：官方量化挑出的源色 + 洗色 + 蒙版；② blur：重度模糊的封面直接铺底，颜色跟着封面整体走。
+ *  两档共用同一套 tone 锚点写法与对比度闸门，分岔只在"底色从哪来"。 */
+export type CoverBackdropMode = 'monet' | 'blur'
+
+/** ② 分两台布光：浏览台（歌曲页）亮、歌词台（读词）暗。两台共用同一支底色与糊封面，只差蒙版透出量 ——
+ *  浏览台薄（闸门 BLUR_BROWSE_MIN_CONTRAST）、歌词台厚（BLUR_MIN_CONTRAST）。渲染层铺浏览台那一格，
+ *  再叠一层 δ 蒙版从浏览台压回歌词台（见 CoverSurface.stageDimAlpha）。
+ *  分台的可读性账：2026-10-18 两条线一度并平（浏览页那支淡白小字层并进了实白，δ 恒 0）；2026-10-19
+ *  用户要"当前行与非当前行拉开"，歌词那两层被压到 0.49/0.44 的有效 α（见 onCoverTheme 的歌词梯队），
+ *  只有更暗的场兜得住，两台就此分开（5.0 / 5.5）。浏览页没有这两层，能安全地保留亮一档的照片。 */
+export type CoverStage = 'browse' | 'lyric'
+
 export interface CoverSurface {
+  /** 哪一档交出的这一支。渲染层与闸门都要靠它分岔：② 即使还没测量也要铺底（见 provisional）。 */
+  mode: CoverBackdropMode
+  /** 测量还没到手时的保守起点（spec §10.2"切换加载最短"）。真的色到位之后会被换成非 provisional 的那一支。 */
+  provisional: boolean
   /** 铺底色，同时用作蒙版色：保证前景字色始终落在它这一侧 */
   base: string
-  /** 蒙版不透明度：封面越亮/越暗（相对底色）越实，限制封面透出的 tone 漂移 */
+  /** 歌词台（暗台）的蒙版总不透明度：闸门 BLUR_MIN_CONTRAST 的解，证书核的就是它。
+   *  渲染层不直接铺这一格 —— 它铺 browseScrimAlpha，靠 stageDimAlpha 那一层补到这一格。 */
   scrimAlpha: number
+  /** 浏览台（亮台）的蒙版：闸门 BLUR_BROWSE_MIN_CONTRAST 的解。恒 <= scrimAlpha（更松的线只会更薄）。 */
+  browseScrimAlpha: number
+  /** 从浏览台压回歌词台、再叠一层底色蒙版的不透明度 δ。渲染层把它挂在"跟随页面滑动的压暗层"上
+   *  （δ × dim，dim 0=浏览台、1=歌词台）。恒等式在整数百分格上精确成立：
+   *  1 - (1 - browseScrimAlpha)(1 - stageDimAlpha) === scrimAlpha。 */
+  stageDimAlpha: number
   /** 纹理层可用的整数明度带：带内每一档对字色都 >= MIN_CONTRAST + BAND_HEADROOM。
    *  带顶在 TEXTURE_ANCHOR_TONE 上沿、只往下摆，所以不再包住 base（base 是纯色底，另按自己的锚点走）。
-   *  只喂纹理支；纯色背景不依赖它，算不出来就是 null。 */
+   *  只喂纹理支；纯色背景不依赖它，算不出来就是 null。② 恒为 null（那一档没有纹路可言）。 */
   band: ToneBand | null
   /** 纹理层的那"一套颜色"：莫奈式上色是同一支颜料摆明暗，不是把封面糊一下。
-   *  色相取源色、彩度已按 CHROMA_CAP 夹过，封面只贡献明度结构（见 texture.ts 的 HUE_DEV）。 */
+   *  色相取源色、彩度已按 CHROMA_CAP 夹过，封面只贡献明度结构（见 texture.ts 的 HUE_DEV）。
+   *  ② 交的是彩度 0：那一档的颜色由糊封面自己提供，前景只剩白与灰，不再中途翻色相。 */
   tint: { hue: number, chroma: number }
   /** 最亮那块上、蒙版合成之后用户真正看到的明度（L*）。
    *  前景色阶必须对着它算：对着 base 算会得到乐观结果，白字恰好就破在透出最多的那块上。 */
@@ -113,6 +138,24 @@ export const buildToneBand = (baseArgb: number, fontArgb: number): ToneBand | nu
   return lo <= hi ? { lo, hi } : null
 }
 
+// 合成 ≈ scrim(base, a) 盖在模糊封面(最亮块) 上：偏离量 = (1 - a) * |块 tone - 底色 tone|
+// 混法按 sRGB 通道走，不是按线性光：RN/Android 的 alpha 混合就在 sRGB 编码值上做，
+// 线性混会把场算亮 4~6 个 L*（真机蓝封面夹具、锚点 32 蒙版 0.92 时线性 40.9 对 sRGB 36.5，差 4.5；
+// 白底亮封面夹具差 5.6；暗封面夹具几乎不差，因为蒙版只有 0.55）。
+// 这 4~6 个色阶不是白留的 —— 它是前景"灰"和"带色相的高亮"两档的全部空间：
+// 按线性混算时次级字色、图标色、强调色会一起被顶到接近白，层次塌成一片白。
+// 安全余量另有来源：参照物是 1/16 屏宽的块均色，比 blurRadius=90 糊完剩下的起伏更悲观。
+//
+// 两支（莫奈纯色底、模糊封面铺底）共用这两个函数：**闸门只许有一个定义**。
+// 第二份混法就算今天数值一样，将来改一侧忘了另一侧，破线的那一档是没人拦的。
+const mixFieldArgb = (baseArgb: number, highlightArgb: number, a: number) => argbFromRgb(
+  Math.round(a * redFromArgb(baseArgb) + (1 - a) * redFromArgb(highlightArgb)),
+  Math.round(a * greenFromArgb(baseArgb) + (1 - a) * greenFromArgb(highlightArgb)),
+  Math.round(a * blueFromArgb(baseArgb) + (1 - a) * blueFromArgb(highlightArgb)),
+) >>> 0
+
+const fieldToneOf = (baseArgb: number, highlightArgb: number, a: number) => Hct.fromInt(mixFieldArgb(baseArgb, highlightArgb, a)).tone
+
 export const buildCoverSurface = (measure: CoverMeasure, fontArgb: number): CoverSurface | null => {
   const { sourceArgb, averageArgb, highlightArgb } = measure
   if (!isUsableArgb(fontArgb) || !isUsableArgb(sourceArgb) || !isUsableArgb(averageArgb) || !isUsableArgb(highlightArgb)) return null
@@ -147,32 +190,157 @@ export const buildCoverSurface = (measure: CoverMeasure, fontArgb: number): Cove
   // 闸门核的是"看到的那层"，不是底色本身：底色按蒙版混进糊掉的封面之后才是用户眼里的背景。
   // 旧实现只核底色就交出去，实测暗主题配亮封面时底色 4.67、合成只剩 3.39。
   // 透出量把合成顶出闸门时，做法是少透（蒙版往上顶），顶到完全不透还是不过才 null 回落。
-  //
-  // 混法按 sRGB 通道走，不是按线性光：RN/Android 的 alpha 混合就在 sRGB 编码值上做，
-  // 线性混会把场算亮 4~6 个 L*（真机蓝封面夹具、锚点 32 蒙版 0.92 时线性 40.9 对 sRGB 36.5，差 4.5；
-  // 白底亮封面夹具差 5.6；暗封面夹具几乎不差，因为蒙版只有 0.55）。
-  // 这 4~6 个色阶不是白留的 —— 它是前景"灰"和"带色相的高亮"两档的全部空间：
-  // 按线性混算时次级字色、图标色、强调色会一起被顶到接近白，层次塌成一片白。
-  // 安全余量另有来源：参照物是 1/16 屏宽的块均色，比 blurRadius=90 糊完剩下的起伏更悲观。
-  const fieldToneOf = (a: number) => Hct.fromInt(argbFromRgb(
-    Math.round(a * redFromArgb(base) + (1 - a) * redFromArgb(highlightArgb)),
-    Math.round(a * greenFromArgb(base) + (1 - a) * greenFromArgb(highlightArgb)),
-    Math.round(a * blueFromArgb(base) + (1 - a) * blueFromArgb(highlightArgb)),
-  ) >>> 0).tone
   // 在"两位小数"的格点上搜：渲染层拿到的就是这一格，证书也必须核这一格。
   // 早先是拿未取整的 alpha 过闸、再把 toFixed(2) 的值交出去，两者最多差 0.005 ——
   // 那 0.005 恰好是往"多透封面"的方向差，等于交出去的场比判过的场更亮一点。
   let scrimCenti = Math.round(scrimAlpha * 100)
-  while (scrimCenti < SCRIM_MAX * 100 && Contrast.ratioOfTones(fieldToneOf(scrimCenti / 100), font.tone) < MIN_CONTRAST) {
+  while (scrimCenti < SCRIM_MAX * 100 && Contrast.ratioOfTones(fieldToneOf(base, highlightArgb, scrimCenti / 100), font.tone) < MIN_CONTRAST) {
     scrimCenti += 2
   }
   const scrim = Math.min(SCRIM_MAX, scrimCenti / 100)
-  const fieldTone = fieldToneOf(scrim)
+  const fieldTone = fieldToneOf(base, highlightArgb, scrim)
   if (Contrast.ratioOfTones(fieldTone, font.tone) < MIN_CONTRAST) return null
 
   // 带是纹理支的事：它算不出来（字色 tone 落在底色两侧都够不着闸门时）不该连带把纯色背景一起废掉。
   // 实测暗主题字色 rgb(219,219,219) 下三支夹具的带全塌，旧代码据此 return null —— 整个功能在暗主题静默不生效。
   const band = buildToneBand(Hct.from(source.hue, chroma, isDark ? TEXTURE_ANCHOR_TONE : LIGHT_ANCHOR_TONE).toInt() >>> 0, fontArgb)
 
-  return { base: cssRgb(base), scrimAlpha: scrim, band, tint: { hue: source.hue, chroma }, fieldTone }
+  return {
+    mode: 'monet',
+    provisional: false,
+    base: cssRgb(base),
+    scrimAlpha: scrim,
+    // 莫奈支没有分台：一台布光，浏览页与歌词页共用同一个蒙版（δ=0 等于没有压暗层）
+    browseScrimAlpha: scrim,
+    stageDimAlpha: 0,
+    band,
+    tint: { hue: source.hue, chroma },
+    fieldTone,
+  }
+}
+
+/** ②的底色锚点。它**不是**亮度旋钮 —— 亮度归闸门钉；锚点决定的是"同样过闸时透多少照片"：
+ *  底色越暗，越薄的蒙版就能把场压到线上，照片读得越清楚。
+ *  §14.1 的六档扫描（.scratch/t107_grid.mts，四张真封面的整屏均值 L*）：
+ *  锚点 20 → 26.0/29.3/33.6/29.6，28 → 28.9/32.5/35.0/32.2，32 → 31.3/34.4/36.1/34.0，36 → 35.4/37.0/37.4/36.5；
+ *  同一趟量到的封面起伏 P95−P5 是 18.7/14.7/11.4/16.2 → 14.3/8.8/7.2/10.8 → 10.1/5.7/4.5/7.0 → 3.7/2.0/1.6/2.5。
+ *  20 是 2026-10-18 重新选定的一格：用户圈定的那档小样（t85 的 9dp 列）就是"锚 20 + 闸门 4.5"解出来的
+ *  （逐字段复现见 .scratch/t150_ship.mts），换到 5.0 那条线之后只从 α0.60 加厚到 α0.64，照片还是读得得出轮廓。
+ *  同一闸门下的对照（.scratch/t154_gate_table.mts）：锚 20 → α0.40~0.64 场 L\*45.0~46.9，锚 28 → α0.44~0.72 场 L\*46.6~46.8，
+ *  两档一样亮，但锚 28 每张多蒙 6~8 个百分点、起伏先塌掉。
+ *  再往下（锚 16 之类）没有硬约束、只是没必要：闸门已经由 5.0 那条线管住亮度，锚点低到头照片就变成"底下一张黑卡"。
+ *  代价写明（§14.4）：② 的底色比莫奈档（DARK_ANCHOR_TONE 32）暗 12 格、合成完的场反而亮得多，
+ *  明度先后从来不是两档的分界；撑开两档的是糊半径（② 9dp + 1.25 外扩读得出照片轮廓，① 90dp 只剩大块色与纹路）。 */
+export const BLUR_ANCHOR_TONE = 20
+/** ②的"最少透出量"比莫奈的 SCRIM_MIN 更松：这一档要的就是看见封面。
+ *  再松没收益（闸门常常就在这一档收手），再紧则暗封面也要蒙一层灰。 */
+export const BLUR_SCRIM_MIN = 0.4
+/** ②歌词台（读词那一面）的白字线。这一档的前景是一支不随背景变的白（`onCoverTheme.BLUR_INK`），连"小字层"
+ *  都是实白 —— 亮度只能从这条线买：闸门每紧 0.5，模型场上限就低 2~3 个 L\*、蒙版厚 6~10 个百分点。
+ *  2026-10-18 定在 5.0，那天的诉求是"背景太暗了"。2026-10-19 用户反馈"当前歌词与非当前歌词区分不明显"，
+ *  拍板要最强烈的那一档落差（组件透明度 0.75 → 0.50，见 `onCoverTheme.BLUR_LYRIC_COMPONENT_OPACITY`），
+ *  而压下去的那两层要的正是"场再暗一点"：同一套有效 α（0.49 / 0.44），5.0 上最坏封面只有 2.39 / 2.21，
+ *  5.5 上是 2.52 / 2.31；实白（当前行、控件）自己也从 4.74 抬到 5.17。
+ *  所以取 5.5 这一格（.scratch/t166_gap.mts 的闸门×透明度扫描表：5.5 → 场 L\*43.7~44.3、蒙版 α0.42~0.73）。
+ *  为什么不高于 5.5：6.0 那一格场 L\*41.5~42.0、蒙版每张多压 6~11 个百分点，照片只剩大块色，
+ *  换来的只是 0.12 的余量 —— 那是"把亮度还给平涂"的方向（用户 2026-10-18 否掉过更暗的 7.0）。
+ *  代价写明：歌词那两层的下限从 3.0 掉到 2.3 一线（2026-10-19 的实测最坏值 2.52 / 2.31，
+ *  逐张见 .scratch/t171_ship.mts），这是"更大的梯队落差"与"非当前行还够不够读"之间的交换，
+ *  由用户 2026-10-19 在四档小样里选定了这一档。 */
+export const BLUR_MIN_CONTRAST = 5.5
+
+/** ② 浏览台（歌曲页）那一条闸门。两台共用同一支底色，只差蒙版；**2026-10-19 起两台不再同值**（5.0 / 5.5）。
+ *  为什么这一页不回跟歌词台：这一页看的是封面照片本身，只有一档实白（标题/时间/控件/歌词预览都是那支白），
+ *  没有第二层字色阶梯要摆 —— 把歌词页那一档落差买下来不必连歌曲页的照片一起压暗。
+ *  两条线分开之后 `solveStages` 解出的歌词格比浏览格厚，δ = (歌词 − 浏览)/(100 − 浏览) > 0，
+ *  CoverBackdrop 那层压暗层（stageDim × δ）第一次有了读者：滑向歌词页时背景连续压深，落定钉在歌词台那一格。
+ *  这一条自己仍守着 5.0：它是为浏览页那支实白买的，读数与 2026-10-18 定稿时一致（场 ≤L\*46.9、实白 ≥4.74）。 */
+export const BLUR_BROWSE_MIN_CONTRAST = 5.0
+
+/** ②只要这两个测量值：那一档不用官方量化挑出来的源色，颜色由封面整体与照片自己给。 */
+export interface BlurMeasure {
+  averageArgb: number
+  highlightArgb: number
+}
+
+/** 解一条闸门线下的蒙版整数百分位：从这一档自己的"最少透出量"起，一直加到合成场过线为止。
+ *  ② 的两台（浏览/歌词）只是线与下限不同，步进同一个定义 —— 各写一份循环迟早会分岔。 */
+const solveScrimCenti = (base: number, highlightArgb: number, fontTone: number, gate: number, floor: number) => {
+  let centi = Math.round(floor * 100)
+  while (centi < SCRIM_MAX * 100 && Contrast.ratioOfTones(fieldToneOf(base, highlightArgb, centi / 100), fontTone) < gate) {
+    centi += 1
+  }
+  return centi
+}
+
+/** ② 的"两台蒙版"解算：同一支底色上按两条线各解一格，折成渲染层要的三格。
+ *  只留一支定义的原因是 δ 那条恒等式 —— 1-(1-浏览)(1-δ)=歌词 在整数百分格上精确成立，
+ *  分两处写就有两份"精确"，而破线的那一格是没人拦的。
+ *  解不出（加到全遮还过不了歌词台那条线）交 null，由调用方回落到保守底。 */
+const solveStages = (base: number, highlightArgb: number, fontTone: number, floor: number) => {
+  const centiMax = SCRIM_MAX * 100
+  const lyricCenti = solveScrimCenti(base, highlightArgb, fontTone, BLUR_MIN_CONTRAST, floor)
+  const scrimAlpha = Math.min(SCRIM_MAX, lyricCenti / 100)
+  const fieldTone = fieldToneOf(base, highlightArgb, scrimAlpha)
+  if (Contrast.ratioOfTones(fieldTone, fontTone) < BLUR_MIN_CONTRAST) return null
+  const browseCenti = solveScrimCenti(base, highlightArgb, fontTone, BLUR_BROWSE_MIN_CONTRAST, floor)
+  const browseScrimAlpha = Math.min(SCRIM_MAX, browseCenti / 100)
+  // δ 由两格的整数百分位直接解，渲染层拿到的就是同一个数（见上面那条恒等式）。
+  // 浏览台已是全遮（两格并成 100）时 δ=0，不叠空层。
+  const stageDimAlpha = browseCenti >= centiMax ? 0 : (lyricCenti - browseCenti) / (centiMax - browseCenti)
+  return { scrimAlpha, browseScrimAlpha, stageDimAlpha, fieldTone }
+}
+
+/**
+ * 「动态取色」= 重度模糊封面固定铺底那一档的蒙版。
+ * 与莫奈支的三点区别：底色锚得更低、透出量从更松的地方起步、前景没有色相可跟（tint 彩度 0）。
+ * 混法用的是模块级那两个函数，与莫奈支同一个定义 —— 一支改混法另一支也跑不掉；
+ * 闸门线是这一档自己的：歌词台 BLUR_MIN_CONTRAST、浏览台 BLUR_BROWSE_MIN_CONTRAST。
+ * 两条线在同一支底色上各解一格 —— 浏览台那格只会更薄（更松的线停得更早），差值折成 stageDimAlpha。
+ */
+export const buildBlurSurface = (measure: BlurMeasure | null, fontArgb: number): CoverSurface | null => {
+  if (measure == null) return null
+  const { averageArgb, highlightArgb } = measure
+  if (!isUsableArgb(fontArgb) || !isUsableArgb(averageArgb) || !isUsableArgb(highlightArgb)) return null
+
+  const font = Hct.fromInt(fontArgb)
+  const coverAvg = Hct.fromInt(averageArgb)
+  const isDark = font.tone > 50
+  // 彩度直接跟封面整体走、只夹一个上限：这一档不做"洗色"，蒙版的作用是把照片压到字色能站住。
+  const chroma = Math.min(coverAvg.chroma, CHROMA_CAP)
+  const anchor = isDark ? BLUR_ANCHOR_TONE : 100 - BLUR_ANCHOR_TONE
+  const base = Hct.from(coverAvg.hue, chroma, anchor).toInt() >>> 0
+  // 夹完 sRGB 色域读回来的才是真铺出来的那一层，判断以它为准（同 §7.4：够不到就 null，不跨侧硬凑）
+  const baseTone = Hct.fromInt(base).tone
+  if (Contrast.ratioOfTones(baseTone, font.tone) < MIN_CONTRAST) return null
+
+  const stages = solveStages(base, highlightArgb, font.tone, BLUR_SCRIM_MIN)
+  if (stages == null) return null
+
+  return {
+    mode: 'blur',
+    provisional: false,
+    base: cssRgb(base),
+    ...stages,
+    band: null,
+    tint: { hue: coverAvg.hue, chroma: 0 },
+  }
+}
+
+// 测量还没到手时先铺的那一支：完全不透的中性深色。保守到"对任意封面都过闸"只有全遮这一个解
+// —— 糊完的最亮块可能接近纯白，白字要对它过 4.5，任何透出量都不敢留。
+// 两台同值（都是全遮、δ=0）：测量还没到手就分不出"浏览台该透多少"，分台只发生在测量色那一支上。
+// 之所以是常量而不是函数：store 的 isSame 按引用比 surface，每帧造一份会把订阅子树白刷一遍。
+const PROVISIONAL_BASE = Hct.from(0, 0, 8).toInt() >>> 0
+
+export const PROVISIONAL_BLUR_SURFACE: CoverSurface = {
+  mode: 'blur',
+  provisional: true,
+  base: cssRgb(PROVISIONAL_BASE),
+  scrimAlpha: SCRIM_MAX,
+  browseScrimAlpha: SCRIM_MAX,
+  stageDimAlpha: 0,
+  band: null,
+  tint: { hue: 0, chroma: 0 },
+  fieldTone: Hct.fromInt(PROVISIONAL_BASE).tone,
 }

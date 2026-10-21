@@ -124,6 +124,9 @@ const Progress = ({ progress, duration, buffered }: {
 const progressContentPadding = 10
 const progressHeight = 3.6
 const progressContentHeight = progressContentPadding * 2 + progressHeight
+// 拖拽热区只有 23.6dp，低于 44dp 最小可点面积；只向下方（播放时间行，不可点）扩展，
+// 不改 styles.progress 的布局高度，所以列表与 morph 动画量到的尺寸都不变
+const progressHitExtra = 10
 const progressHeightSize = scaleSizeH(progressHeight)
 const progressDotSize = scaleSizeW(progressContentHeight * 0.65)
 export const MINI_PROGRESS_INFO_HEIGHT = Math.ceil(setSpText(11) * 1.2)
@@ -149,7 +152,8 @@ const styles = createStyle({
     // backgroundColor: 'rgba(0,0,0,0.5)',
     left: 0,
     top: 0,
-    height: progressContentHeight,
+    // 热区向下扩展，见上方 progressHitExtra 说明
+    height: progressContentHeight + progressHitExtra,
     paddingTop: progressContentPadding,
     paddingBottom: progressContentPadding,
     width: '100%',

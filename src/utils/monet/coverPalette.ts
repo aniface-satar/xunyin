@@ -1,9 +1,23 @@
 // 相对 import 必须带 .ts：这个文件被 `node --test` 直接加载，Node ESM 不认无扩展名的相对路径
 // （实测 ERR_MODULE_NOT_FOUND: .../monet/sourceColor），而 Metro 0.80.12 带扩展名照样解析成功（已用探针 bundle 验过）。
-import { analyzeArgbPixels, averageArgbOfPixels, type CoverPixels } from './sourceColor.ts'
-import { buildCoverSurface, parseCssColor, type CoverSurface } from './surface.ts'
+import { analyzeArgbPixels, averageArgbOfPixels, measureArgbPixels, type CoverPixels } from './sourceColor.ts'
+import { buildBlurSurface, buildCoverSurface, parseCssColor, type CoverBackdropMode, type CoverSurface } from './surface.ts'
 import { TEXTURE_OUT_HEIGHT, type TextureRequest } from './texture.ts'
 import { ATTEMPT_COOLDOWN_MS } from './attemptLedger.ts'
+import type { IdleSchedule } from './analysisGate.ts'
+
+/** 背景由哪一档给出。类型住在 surface.ts（配色层已经 import 它，反过来就成环），这里只是转发一个别名给调用方。
+ *  ① monet：官方量化挑出的源色 + 洗色 + 蒙版；② blur：重度模糊的封面直接铺底，只用平均色与最亮块。
+ *  两支共用同一套 tone 锚点写法与对比度闸门（见 spec §10.2），分岔只发生在"颜色从哪量出来"这一步。 */
+export type CoverAlgo = CoverBackdropMode
+
+/** 算法来自设置存储（用户可改、旧版本残留、被写坏都可能），所以在这里一次性归一。
+ *  认不出的一律按 monet 走 —— 包括旧版本的「native」（安卓原生取色那条路已经整支删掉，
+ *  它的种子色再也不会回来），也包括已经整档回退的「magic」（浓色模糊：旧设置里可能还存着这个值）。
+ *  默认给 monet 而不是 blur 是有意的：② 还没在真机验收过（见 spec §10.4），
+ *  脏值不该把一个没人看过的档位推到屏幕上。
+ *  不归一的话脏值会开出第三个配色 key —— 白算一份色，还看不出来。 */
+export const normalizeCoverAlgo = (value: unknown): CoverAlgo => value === 'blur' ? 'blur' : 'monet'
 
 export const CACHE_LIMIT = 60
 // 像素层单独设上限，而且要比 CACHE_LIMIT 小：一个 value 是最多 16384 个数字的数组，
@@ -24,12 +38,32 @@ export const TEXTURE_LIMIT = 12
 // 减掉的 5_000 是给原生返回留的预算 —— 单次取色慢于 5s 时会落到第二个窗口，仍然会自己好。
 export const NEGATIVE_TTL_MS = ATTEMPT_COOLDOWN_MS - 5_000
 
+/** 像素到手之后的那一段配色，整段同步，所以要交给外面的调度闸门（见下面注入的 scheduleIdle）。
+ *  ② blur 只量两个均值（逐像素一遍，实测比量化轻一个量级，不跑官方量化）；
+ *  ① monet 还要跑量化挑源色（实测 143ms 里有 123ms 是那一段）。
+ *  两支分岔只到"颜色从哪量出来"为止，底色锚点写法、蒙版与对比闸门共用 surface.ts 里的那一个定义。 */
+const computeSurface = (pixels: CoverPixels, algo: CoverAlgo, fontArgb: number): CoverSurface | null => {
+  // 一律传具名对象：average 与 highlight 传反不会报错，只会让闸门悄悄变乐观
+  if (algo === 'blur') {
+    const fields = measureArgbPixels(pixels)
+    if (fields == null) return null
+    return buildBlurSurface({ averageArgb: fields.average, highlightArgb: fields.highlight }, fontArgb)
+  }
+  const analysis = analyzeArgbPixels(pixels)
+  if (analysis == null) return null
+  return buildCoverSurface({ sourceArgb: analysis.source, averageArgb: analysis.average, highlightArgb: analysis.highlight }, fontArgb)
+}
+
 // now 是注入的时钟，只为让单测能把时间拨过窗口（node --test 里等 10 秒不可接受）；
 // 生产调用方（index.ts）不传，走 Date.now。
+// scheduleIdle 把"量化 + 配色"那一步（analyzeArgbPixels，实测 128×86 封面 143ms 全同步）
+// 交给外面的调度闸门：播放页展开动画是 JS 驱动的 800ms timing，这段计算落在窗口里就掉帧。
+// 默认值保持"立刻跑"，这样未注入闸门的调用方（含全部单测与纹理支）行为一字不变。
 export const createCoverPalette = (
   fetchPixels: (url: string) => Promise<CoverPixels | null>,
   buildTexture: (request: TextureRequest) => Promise<string | null>,
   now: () => number = Date.now,
+  scheduleIdle: IdleSchedule = async <T>(task: () => T): Promise<T> => task(),
 ) => {
   // 两层缓存：像素按 url 缓存（下载+量化只一次），配色按 url|font 缓存（暗/亮主题各一份）
   const pixelCache = new Map<string, Promise<CoverPixels | null>>()
@@ -122,7 +156,10 @@ export const createCoverPalette = (
 
   // 读写两处的 key 只由这一条式子生成。配色层命中与否全看这两处串不串得上，
   // 而只数 fetchPixels 调用次数的断言观察不到它：把写入那处的分隔符改掉，8 条用例照样全绿（控制方实测）。
-  const paletteKey = (picUrl: string, fontArgb: number) => `${picUrl}|${fontArgb}`
+  // algo 必须进 key：同一张封面 + 同一支字色，三档算出来的就是三份色，共用一格会变成
+  // "切了档但屏幕上还是上一次那份色"。像素层不带这个维度是有意的 —— 三档读的是同一份像素
+  // （差别只在"要不要再跑一次量化挑源色"），切档只换用哪支色，不该把封面重下一遍。
+  const paletteKey = (picUrl: string, fontArgb: number, algo: CoverAlgo) => `${picUrl}|${fontArgb}|${algo}`
 
   // outWidth 进 key：纹理是按屏幕宽高比折算的那张，尺寸变了就是另一张图，复用会把纹路拉歪。
   const textureKeyOf = (picUrl: string, fontArgb: number, outWidth: number) => `${picUrl}|${fontArgb}|${outWidth}`
@@ -160,7 +197,7 @@ export const createCoverPalette = (
   }
 
   // 同上：async 只为过 lint。pending 里的原始 promise 仍是去重的那一条。
-  const load = async(key: string, picUrl: string, fontArgb: number): Promise<CoverSurface | null> => {
+  const load = async(key: string, picUrl: string, fontArgb: number, algo: CoverAlgo): Promise<CoverSurface | null> => {
     // 失败的配色过保质期就整个摘掉，下面重新算（像素层那一格同样会在那一刻过期，见 fetchOnce）
     if (isExpired(key, surfaceFailedAt)) {
       cache.delete(key)
@@ -174,14 +211,11 @@ export const createCoverPalette = (
     const task = (async() => {
       try {
         const pixels = await fetchOnce(picUrl)
-        const analysis = pixels == null ? null : analyzeArgbPixels(pixels)
-        if (analysis == null) return null
-        // 具名而不是三个位置参数：average 与 highlight 传反不报错，只会让闸门悄悄变乐观
-        return buildCoverSurface({
-          sourceArgb: analysis.source,
-          averageArgb: analysis.average,
-          highlightArgb: analysis.highlight,
-        }, fontArgb)
+        if (pixels == null) return null
+        // 配色整段同步（monet 支实测 143ms），所以要等"没有交互在手"再跑。
+        // 这里排在 fetchOnce 之后：像素那条 promise 已经进缓存，等调度器的这段时间不会重问原生。
+        // 两档都在闸门之后 —— blur 那一段虽然轻，仍是逐像素循环，压在补间中间照样看得见。
+        return await scheduleIdle(() => computeSurface(pixels, algo, fontArgb))
       } catch {
         return null
       } finally {
@@ -198,7 +232,9 @@ export const createCoverPalette = (
     if (inFlight) return inFlight
     const task = (async() => {
       try {
-        const surface = await load(paletteKey(picUrl, fontArgb), picUrl, fontArgb)
+        // 钉成 monet：纹理支没有接进界面（spec §8 / 2026-10-15 §8），
+        // 让它跟着设置里的算法漂等于给一条没人验收的路径改行为。
+        const surface = await load(paletteKey(picUrl, fontArgb, 'monet'), picUrl, fontArgb, 'monet')
         if (surface == null) return null
         const source = await fetchOnce(picUrl)
         if (source == null) return null
@@ -219,13 +255,14 @@ export const createCoverPalette = (
   }
 
   return {
-    getCoverSurface: async(picUrl: string | null | undefined, fontColor: string): Promise<CoverSurface | null> => {
+    getCoverSurface: async(picUrl: string | null | undefined, fontColor: string, algo?: CoverAlgo | null): Promise<CoverSurface | null> => {
       if (!picUrl) return null
       const fontArgb = parseCssColor(fontColor)
       if (fontArgb == null) return null
-      const key = paletteKey(picUrl, fontArgb)
+      const useAlgo = normalizeCoverAlgo(algo)
+      const key = paletteKey(picUrl, fontArgb, useAlgo)
       const gen = generation
-      return load(key, picUrl, fontArgb).then(surface => {
+      return load(key, picUrl, fontArgb, useAlgo).then(surface => {
         // 还在同一代里才写回：翻开关 clearCache() 之后才到达的旧判定（多半是 null）必须丢掉，
         // 否则它会立刻把刚清空的这一格重新占住，自愈（NEGATIVE_TTL_MS）和翻开关两条出口一起被压住。
         if (gen === generation) remember(key, surface)

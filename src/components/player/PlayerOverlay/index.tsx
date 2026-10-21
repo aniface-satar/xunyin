@@ -24,6 +24,11 @@ var _PlayModeBtn = _interopRequireDefault(require("../../../screens/PlayDetail/V
 var _TimeoutExitBtn = _interopRequireDefault(require("../../../screens/PlayDetail/Vertical/Player/components/MoreBtn/TimeoutExitBtn"));
 var _CommentBtn = _interopRequireDefault(require("../../../screens/PlayDetail/Vertical/Player/components/MoreBtn/CommentBtn"));
 var _LyricPreview = _interopRequireDefault(require("../../../screens/PlayDetail/Vertical/Player/components/LyricPreview"));
+var _lyricCopy = require("../../../core/lyricCopy");
+var _useLyricToolMode = require("../../../utils/hooks/useLyricToolMode");
+var _OnCoverThemeProvider = _interopRequireDefault(require("../OnCoverThemeProvider"));
+var _CoverBackdrop = _interopRequireDefault(require("../CoverBackdrop"));
+var _CoverStageProvider = _interopRequireDefault(require("../CoverStageProvider"));
 var _jsxRuntime = require("react/jsx-runtime");
 var _this = this,
   _jsxFileName = "C:\\Users\\30913\\Documents\\ChatGPT\\music\\lx-music-mobile\\lx-music-mobile-master\\src\\components\\player\\PlayerOverlay\\index.tsx";
@@ -48,13 +53,19 @@ function _interopRequireWildcard(e, t) {
   })(e, t);
 }
 var LYRIC_PAGE = 1;
+// 下滑收起手势只依据位移判定：Fabric 下 gestureState.x0/y0 是相对被命中视图的坐标，
+// 用它做窗口热区判定会失效，因此热区改由响应器树（头部行、小封面行）决定
+var isCloseGestureAllowed = function isCloseGestureAllowed(gestureState) {
+  return gestureState.dy > (0, require("./transition").getCloseGestureActivationThreshold)() && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+};
 var LyricPage = function LyricPage(_ref) {
   var activeIndex = _ref.activeIndex,
-    showSummary = _ref.showSummary;
+    showSummary = _ref.showSummary,
+    summaryGestureHandlers = _ref.summaryGestureHandlers;
   var initedRef = (0, _react.useRef)(false);
   var lyric = (0, _react.useMemo)(function () {
-    return <_Lyric.default showSummary={showSummary} />;
-  }, [showSummary]);
+    return <_Lyric.default showSummary={showSummary} summaryGestureHandlers={summaryGestureHandlers} />;
+  }, [showSummary, summaryGestureHandlers]);
   switch (activeIndex) {
     case LYRIC_PAGE:
       if (!initedRef.current) initedRef.current = true;
@@ -70,6 +81,7 @@ var usePlayerOverlay = exports.usePlayerOverlay = function usePlayerOverlay(): P
 var clamp = function clamp(value) {
   var min = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
   var max = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 1;
+  if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
 };
 var localRect = function localRect(rect, rootX, rootY) {
@@ -90,6 +102,11 @@ var localControlLayout = function localControlLayout(layouts, rootX, rootY) {
 var MINI_TITLE_FONT_SIZE = (0, require("../../../utils/pixelRatio").setSpText)(15);
 var MINI_ARTIST_FONT_SIZE = (0, require("../../../utils/pixelRatio").setSpText)(15);
 var TRANSITION_CLEAR_GAP = 6;
+// 与 PlayerBar 的 borderTopLeftRadius / 卡片终态圆角同源：播放栏顶部的边框线在两端各内缩这个半径
+var BAR_TOP_CORNER_RADIUS = 12;
+// 与 SynchronizedMarquee 测量层同源：给 morph 文字一个远超屏宽的自然宽度，
+// 让它永远排成一整行、由外层 morphClip 硬裁，而不是触发系统的整字省略
+var MORPH_TEXT_NATURAL_WIDTH = 10000;
 var TRANSITION_DURATION_MS = 800;
 var toProgressVelocity = function toProgressVelocity(velocity, distance) {
   return velocity * 1000 / distance;
@@ -110,54 +127,37 @@ var thresholdRange = function thresholdRange(threshold) {
   return [0, clamp(threshold, min, 0.94), 1];
 };
 var OverlayBackdrop = function OverlayBackdrop(_refBackdrop) {
-  var progress = _refBackdrop.progress,
-    source = _refBackdrop.source,
-    winWidth = _refBackdrop.winWidth,
-    winHeight = _refBackdrop.winHeight;
+  var winWidth = _refBackdrop.winWidth,
+    winHeight = _refBackdrop.winHeight,
+    progress = _refBackdrop.progress;
   var theme = (0, require("../../../store/theme/hook").useTheme)();
+  var baseTheme = require("../../../store/theme/state").default.theme;
   var backdropImageSource = theme['bg-image'];
   var hasBackdropImage = backdropImageSource != null;
   var coverBackdrop = (0, require("../../../utils/monet/useCoverSurface").useCoverSurface)();
   var coverSurface = hasBackdropImage || !coverBackdrop.enabled ? null : coverBackdrop.surface;
-  var coverSource = coverSurface != null && coverBackdrop.picUrl ? {
-    uri: coverBackdrop.picUrl.startsWith('/') ? 'file://' + coverBackdrop.picUrl : coverBackdrop.picUrl,
-    headers: require("../../common/Image").defaultHeaders,
-    cache: 'force-cache'
-  } : null;
-  var backdropOffsetX = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-source.bar.x, 0]
-  });
-  var backdropOffsetY = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-source.bar.y, 0]
-  });
+  // 封面那三层交给 CoverBackdrop：它会"叠一层淡到位"，这里的旧写法是有就整层硬出现。
+  // 底色自己不淡的话，淡的就只剩装饰层：c-content-background 被 COVER_RULES 换成封面深色 panel 后，
+  // 卡片挂载那一帧就是深底，播放栏→卡片那一下的亮度跳变跟 CoverBackdrop 的墙钟时长无关。
+  // 所以这里把根 View 的底色挂到 progress 上（起点=播放栏那一面的主题色），并把 progress 交给
+  // CoverBackdrop，让"浮现"那两层也跟着手指走。
   return (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
     pointerEvents: "none",
-    style: {
-      position: 'absolute',
-      left: 0,
-      top: 0,
-      width: winWidth,
-      height: winHeight,
-      backgroundColor: coverSurface != null ? coverSurface.base : theme['c-content-background'],
-      transform: [{ translateX: backdropOffsetX }, { translateY: backdropOffsetY }]
-    },
+    style: Object.assign((0, require("./transition").getBackdropFrame)(winWidth, winHeight), {
+      backgroundColor: progress.interpolate((0, require("./transition").getEnterFieldRange)(baseTheme['c-content-background'], theme['c-content-background']))
+    }),
     children: (0, _jsxRuntime.jsxs)(_jsxRuntime.Fragment, {
       children: [hasBackdropImage ? (0, _jsxRuntime.jsx)(_ImageBackground.default, {
         style: _reactNative.StyleSheet.absoluteFill,
         source: backdropImageSource,
         resizeMode: "cover",
         blurRadius: 24
-      }) : null, coverSource != null ? (0, _jsxRuntime.jsx)(_ImageBackground.default, {
-        style: _reactNative.StyleSheet.absoluteFill,
-        source: coverSource,
-        resizeMode: "cover",
-        blurRadius: 90
-      }) : null, (0, _jsxRuntime.jsx)(_reactNative.View, {
+      }) : null, coverSurface != null ? (0, _jsxRuntime.jsx)(_CoverBackdrop.default, {
+        progress: progress
+      }) : null, coverSurface != null ? null : (0, _jsxRuntime.jsx)(_reactNative.View, {
         style: [_reactNative.StyleSheet.absoluteFill, {
-          backgroundColor: coverSurface != null ? coverSurface.base : theme['c-content-background'],
-          opacity: coverSurface != null ? coverSurface.scrimAlpha : hasBackdropImage ? 0.58 : 0.64
+          backgroundColor: theme['c-content-background'],
+          opacity: hasBackdropImage ? 0.58 : 0.64
         }]
       })]
     })
@@ -170,11 +170,36 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     onBarSettledChange = _ref2.onBarSettledChange;
   var theme = (0, require("../../../store/theme/hook").useTheme)();
   var glassColors = (0, require("../../../utils/hooks/useGlassColors").useGlassColors)();
+  // 进入/收起那一下的"变色"必须挂在 progress 轴上（窗口表在 ./transition）：底色和墨色都是
+  // OnCoverThemeProvider 从 context 发下来的静态值，卡片挂载那一帧就整体翻完，任何墙钟淡入都追不上手指。
+  // baseTheme 直接读 store —— provider 只换 context、不换这份，于是两个端点就是"播放栏那一面"与"全屏那一面"。
+  // 动态背景没生效时 applyOnCoverTheme 原样返回同一个引用，enterFadeActive 为假、两条端点同色，整组退化成常量。
+  var baseTheme = require("../../../store/theme/state").default.theme;
+  var enterFadeActive = theme !== baseTheme;
+  var _enterFade = require("./transition");
+  var enterFieldBg = progress.interpolate((0, _enterFade.getEnterFieldRange)(baseTheme['c-content-background'], theme['c-content-background']));
+  var enterInkFont = progress.interpolate((0, _enterFade.getEnterInkRange)(baseTheme['c-font'], theme['c-font']));
+  var enterInkLabel = progress.interpolate((0, _enterFade.getEnterInkRange)(baseTheme['c-font-label'], theme['c-font-label']));
+  var enterInkBorder = progress.interpolate((0, _enterFade.getEnterInkRange)(baseTheme['c-border-background'], theme['c-border-background']));
+  var enterInkTrack = progress.interpolate((0, _enterFade.getEnterInkRange)(baseTheme['c-primary-light-300-alpha-800'], theme['c-primary-light-300-alpha-800']));
+  var enterInkBuffered = progress.interpolate((0, _enterFade.getEnterInkRange)(baseTheme['c-primary-light-400-alpha-700'], theme['c-primary-light-400-alpha-700']));
+  var enterInkFill = progress.interpolate((0, _enterFade.getEnterInkRange)(baseTheme['c-primary-light-100-alpha-400'], theme['c-primary-light-100-alpha-400']));
+  var enterInkDot = progress.interpolate((0, _enterFade.getEnterInkRange)(baseTheme['c-primary-light-100'], theme['c-primary-light-100']));
+  var enterInkPlate = progress.interpolate((0, _enterFade.getEnterInkRange)(baseTheme['c-primary-light-900-alpha-200'], theme['c-primary-light-900-alpha-200']));
+  var enterIconRanges = (0, _enterFade.getEnterInkOpacityRanges)(enterFadeActive);
+  var enterIconExpanded = progress.interpolate(enterIconRanges.expanded);
+  var enterIconCollapsed = progress.interpolate(enterIconRanges.collapsed);
+  // 静态侧 Text/Icon 在 fontShadow 开启时带文字阴影，动画层的裸 Animated.Text 必须补齐同样的阴影，
+  // 否则开启动画端点切换瞬间标题/歌手/时间文本会有阴影闪现
+  var fontShadow = (0, require("../../../store/theme/hook").useTextShadow)();
+  var textShadowStyle = fontShadow ? {
+    textShadowColor: theme['c-primary-dark-300-alpha-800'],
+    textShadowOffset: { width: 0.2, height: 0.2 },
+    textShadowRadius: 2
+  } : null;
   var musicInfo = (0, require("../../../store/player/hook").usePlayerMusicInfo)();
   var playMusicInfo = (0, require("../../../store/player/hook").usePlayMusicInfo)();
   var isLove = (0, require("../../../store/player/useIsLove").useIsLove)();
-  var playerProgress = (0, require("../../../store/player/hook").useProgress)();
-  var playProgress = playerProgress.progress;
   var playBuffered = (0, require("../../../plugins/player").useBufferProgress)();
   var isPlay = (0, require("../../../store/player/hook").useIsPlay)();
   var _useWindowSize = (0, require("../../../utils/hooks").useWindowSize)(),
@@ -212,6 +237,14 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     _useState10 = (0, _slicedToArray2.default)(_useState1, 2),
     gestureEnabled = _useState10[0],
     setGestureEnabled = _useState10[1];
+  // 播放进度按 1000ms / 倍速推一次（playProgress.ts 的轮询），每次都是一个新对象，所以必然让本组件
+  // 整树重渲染：57 条 progress.interpolate 与所有 animated style 重建、39 个 Animated.* 的动画图重挂。
+  // 补间是 useNativeDriver:false 的，JS 每帧都要参与，落在动画里的那一次重渲染正好吃掉当帧剩余时间。
+  // 倍速越高越密（2 倍速下 800ms 的动画里平均会撞上一次以上）。
+  // 动画这 800ms 里进度条本身正在形变、静态层透明度为 0，冻结进度不影响观感；
+  // 转场结束重新订阅时 useProgress 会立刻 update(state.progress) 把真值补回来。
+  var playerProgress = (0, require("../../../store/player/hook").useProgress)(!isTransitioning && !gestureEnabled);
+  var playProgress = playerProgress.progress;
   var _useState11 = (0, _react.useState)(musicInfo.pic),
     _useState12 = (0, _slicedToArray2.default)(_useState11, 2),
     transitionPic = _useState12[0],
@@ -232,7 +265,17 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     _useState20 = (0, _slicedToArray2.default)(_useState19, 2),
     transitionOrigin = _useState20[0],
     setTransitionOrigin = _useState20[1];
+  var lyricToolMode = (0, _useLyricToolMode.useLyricToolMode)();
+  var coverStage = (0, _CoverStageProvider.useCoverStage)();
   var transitionOriginRef = (0, _react.useRef)('pic');
+  var _useState25 = (0, _react.useState)(null),
+    _useState26 = (0, _slicedToArray2.default)(_useState25, 2),
+    pagerOrigin = _useState26[0],
+    setPagerOrigin = _useState26[1];
+  var _useState27 = (0, _react.useState)(null),
+    _useState28 = (0, _slicedToArray2.default)(_useState27, 2),
+    coverRelLayout = _useState28[0],
+    setCoverRelLayout = _useState28[1];
   var progressRef = (0, _react.useRef)(1);
   var isOpenRef = (0, _react.useRef)(false);
   var pageIndexRef = (0, _react.useRef)(0);
@@ -241,12 +284,6 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var targetLayoutsSettledRef = (0, _react.useRef)(false);
   var targetMeasurementEpochRef = (0, _react.useRef)(0);
   var closeGestureStartDyRef = (0, _react.useRef)(0);
-  var closeGestureAreaRef = (0, _react.useRef)({
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0
-  });
   if (__DEV__) {
     console.log('[PAGE_DEBUG] PlayerOverlay render', {
       mounted,
@@ -269,7 +306,6 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var coverY = headerHeight + coverGap;
   var coverRight = coverX + coverSize;
   var transitionDistance = Math.max(winHeight * 0.36, 250);
-  var closeGestureActivationThreshold = (0, require("./transition").getCloseGestureActivationThreshold)();
   // 歌词页顶部的小封面摘要：收起动画从这里出发才能和静态布局无缝衔接
   var lyricSummary = (0, require("./transition").getLyricSummaryLayout)({
     headerHeight: headerHeight,
@@ -288,15 +324,6 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     }
   });
   var isLyricOrigin = transitionOrigin == 'lyric';
-  closeGestureAreaRef.current = pageIndex == LYRIC_PAGE ? (0, require("./transition").getLyricCloseGestureArea)({
-    coverBottom: lyricSummary.cover.y + lyricSummary.cover.height,
-    windowWidth: winWidth
-  }) : {
-    top: coverY,
-    bottom: coverY + coverSize,
-    left: coverX,
-    right: coverRight
-  };
   var fullTitleTop = headerHeight + pageTitleTop;
   var fullArtistTop = headerHeight + pageArtistTop;
   // 与静态 MusicInfo 的 actionColumn（横向 row，右对齐，gap 4，paddingTop 2）完全一致
@@ -413,6 +440,22 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
       return (prev == null ? void 0 : prev.titleY) == layout.titleY && prev.titleWidth == layout.titleWidth && prev.artistY == layout.artistY && prev.artistWidth == layout.artistWidth && prev.lyricY == layout.lyricY && prev.actionX == layout.actionX && prev.actionY == layout.actionY && prev.actionWidth == layout.actionWidth && prev.actionHeight == layout.actionHeight ? prev : layout;
     });
   }, []);
+  // 封面端点测量：pager 原点 + 封面在页内的相对布局（均为 Yoga 像素取整后的静态布局值），
+  // 比公式重算更能保证与静态封面逐像素一致；onLayout 不受转场 transform 影响，动画期间即可获得
+  var handlePagerLayout = (0, _react.useCallback)(function (event) {
+    var layout = event.nativeEvent.layout;
+    setPagerOrigin(function (prev) {
+      return prev != null && prev.x == layout.x && prev.y == layout.y ? prev : {
+        x: layout.x,
+        y: layout.y
+      };
+    });
+  }, []);
+  var handleCoverLayout = (0, _react.useCallback)(function (rect) {
+    setCoverRelLayout(function (prev) {
+      return prev != null && prev.x == rect.x && prev.y == rect.y && prev.width == rect.width && prev.height == rect.height ? prev : rect;
+    });
+  }, []);
   var handleToggleLove = function handleToggleLove() {
     if (!playMusicInfo.musicInfo) return;
     if (__DEV__) {
@@ -427,6 +470,10 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   (0, _react.useEffect)(function () {
     pageIndexRef.current = pageIndex;
     (0, require("./transition").setLastOverlayPage)(pageIndex);
+    // 分台布光：翻页落定后把压暗层钉到该台的端值。重开时 initialStage 已经对，
+    // 这条兜的是运行中的翻页（含 setPageIndex 的其余三条路径）；中途跟手在 handlePageScroll。
+    coverStage.dim.setValue(pageIndex == LYRIC_PAGE ? 1 : 0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageIndex]);
   var setSourceLayout = (0, _react.useCallback)(function (nextSource) {
     var _rootRef$current;
@@ -521,6 +568,9 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     if (toValue == 1) setFullscreenMounted(false);
     if (toValue == 0) setFullscreenMounted(true);
     if (toValue == 1) {
+      // 收起动画一开始就退出歌词工具模式：工具模式收掉了静态播控区，而 ghost 控件层照它的
+      // 位置画 morph 终点，不先放回来关闭瞬间会出现鬼影对不上实体的跳变
+      (0, _lyricCopy.setLyricToolMode)(false);
       syncTransitionOriginFromPage();
       // 歌词页收起时保持当前页，动画结束后再复位，避免中途切换页面导致闪跳
       if (transitionOriginRef.current != 'lyric') {
@@ -547,7 +597,14 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     animationRef.current = animation;
     isTransitioningRef.current = true;
     setIsTransitioning(true);
+    // 这段补间是 useNativeDriver:false 的，JS 线程每帧都要参与；而 PanResponder 只为拖拽登记交互句柄，
+    // 动画本身不登记 —— 于是空闲调度器会把"封面取色量化"（实测 143ms 同步）放行进动画中间，
+    // 用户看到的就是展开到一半卡一下。这里补一个句柄，整个补间期间都扣住后台活。
+    var interactionHandle = _reactNative.InteractionManager.createInteractionHandle();
     animation.start(function (_ref3) {
+      // 必须是回调第一行：外部 stop() 也会走到这里（finished=false，下面那行就 return 了），
+      // 句柄漏还一次就等于全局的 runAfterInteractions 永久饿死。
+      _reactNative.InteractionManager.clearInteractionHandle(interactionHandle);
       var finished = _ref3.finished;
       setIsTransitioning(false);
       isTransitioningRef.current = false;
@@ -566,7 +623,14 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
       }
       if (toValue == 1) {
         onBarSettledChange == null ? void 0 : onBarSettledChange(true);
-        setMounted(false);
+        // 整棵 overlay 的卸载（morph 层 + 歌词 pager）实测要 JS ~43ms、主线程删视图 ~16ms，
+        // 赶在落定帧里就是"回到控制栏那一下顿一下"（真机 V2302A 60Hz：帧间隔 66ms，无探针时 30ms）。
+        // progress 已经到 1，overlay 与静态控制栏逐像素重合，卸载本身不改画面 —— 推到下一帧，
+        // 让落定帧先画出去。中途再展开时 animateTo 会把 progressRef 改成 0，这里直接放弃。
+        requestAnimationFrame(function () {
+          if (isTransitioningRef.current || progressRef.current != 1) return;
+          setMounted(false);
+        });
       }
       if (toValue == 1 && _state.default.componentIds.playDetail == _state.default.componentIds.home) {
         (0, require("../../../core/common").removeComponentId)(require("../../../config/constant").COMPONENT_IDS.playDetail);
@@ -651,6 +715,14 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var close = (0, _react.useCallback)(function () {
     animateTo(1);
   }, [animateTo]);
+  // 歌词工具模式是播控页里的子界面：返回先退出模式，再按一次才收起整张卡片
+  var handleBack = (0, _react.useCallback)(function () {
+    if (lyricToolMode) {
+      (0, _lyricCopy.setLyricToolMode)(false);
+      return;
+    }
+    close();
+  }, [close, lyricToolMode]);
   (0, _react.useEffect)(function () {
     if (!isOpen) return;
     setTransitionPic(musicInfo.pic);
@@ -665,13 +737,13 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   (0, _react.useEffect)(function () {
     if (!isTransitioning && !isOpen) return;
     var subscription = _reactNative.BackHandler.addEventListener('hardwareBackPress', function () {
-      if (!isTransitioning) close();
+      if (!isTransitioning) handleBack();
       return true;
     });
     return function () {
       subscription.remove();
     };
-  }, [close, isOpen, isTransitioning]);
+  }, [handleBack, isOpen, isTransitioning]);
   (0, _react.useEffect)(function () {
     return function () {
       var _animationRef$current4;
@@ -693,15 +765,7 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
       progress: progress
     };
   }, [close, endGesture, open, progress, setControlSourceLayout, setControlTargetLayout, setProgressSourceLayout, setProgressTargetLayout, setSourceLayout, startGesture, updateGesture]);
-  var closePanResponder = (0, _react.useRef)(_reactNative.PanResponder.create({
-    onStartShouldSetPanResponderCapture: function onStartShouldSetPanResponderCapture() {
-      return false;
-    },
-    onMoveShouldSetPanResponderCapture: function onMoveShouldSetPanResponderCapture(_event, gestureState) {
-      var gestureArea = closeGestureAreaRef.current;
-      var inGestureArea = gestureState.x0 >= gestureArea.left && gestureState.x0 <= gestureArea.right && gestureState.y0 >= gestureArea.top && gestureState.y0 <= gestureArea.bottom;
-      return isOpenRef.current && !_overlayModalGesture.overlayModalGesture.active && gestureState.dy > closeGestureActivationThreshold && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) && (pageIndexRef.current != LYRIC_PAGE || inGestureArea);
-    },
+  var closeGestureResponderHandlers = {
     onPanResponderGrant: startCloseGesture,
     onPanResponderMove: function onPanResponderMove(_event, gestureState) {
       updateCloseGesture((0, require("./transition").getCloseGestureDistance)(gestureState.dy, closeGestureStartDyRef.current));
@@ -712,7 +776,27 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     onPanResponderTerminate: function onPanResponderTerminate(_event, gestureState) {
       endCloseGesture((0, require("./transition").getCloseGestureDistance)(gestureState.dy, closeGestureStartDyRef.current), gestureState.vy);
     }
-  })).current;
+  };
+  var isOverlayCloseGesture = function isOverlayCloseGesture(gestureState) {
+    return isOpenRef.current && !_overlayModalGesture.overlayModalGesture.active && isCloseGestureAllowed(gestureState);
+  };
+  var closePanResponder = (0, _react.useRef)(_reactNative.PanResponder.create(Object.assign({
+    onStartShouldSetPanResponderCapture: function onStartShouldSetPanResponderCapture() {
+      return false;
+    },
+    // 歌曲页整页可下滑；歌词页交给头部行与小封面行在冒泡阶段认领
+    onMoveShouldSetPanResponderCapture: function onMoveShouldSetPanResponderCapture(_event, gestureState) {
+      return isOverlayCloseGesture(gestureState) && pageIndexRef.current != LYRIC_PAGE;
+    }
+  }, closeGestureResponderHandlers))).current;
+  var lyricClosePanResponder = (0, _react.useRef)(_reactNative.PanResponder.create(Object.assign({
+    onStartShouldSetPanResponder: function onStartShouldSetPanResponder() {
+      return false;
+    },
+    onMoveShouldSetPanResponder: function onMoveShouldSetPanResponder(_event, gestureState) {
+      return isOverlayCloseGesture(gestureState) && pageIndexRef.current == LYRIC_PAGE;
+    }
+  }, closeGestureResponderHandlers))).current;
   var cardMorphTransform = (0, require("./transition").getCardMorphTransformRange)({
     bar: source == null ? {
       x: 0,
@@ -727,26 +811,30 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     inputRange: [0, 1],
     outputRange: [0, 12]
   });
+  // 卡片终态不透明并完全盖住真实播放栏，所以这条线在 progress=1 必须保持可见，
+  // 它此时就是播放栏的 borderTopWidth；只在贴近全屏时淡出
   var separatorOpacity = progress.interpolate({
-    inputRange: [0, 0.08, 0.92, 1],
-    outputRange: [0, 1, 1, 0]
+    inputRange: [0, 0.08, 1],
+    outputRange: [0, 1, 1]
   });
   // ghost 元素只在接近全屏时淡入、离开全屏时立刻淡出，避免手势刚开始时闪现
   var ghostFadeConfig = (0, require("./transition").getGhostFadeConfig)();
   var heartOpacity = progress.interpolate(ghostFadeConfig);
-  var coverShadowOpacity = isLyricOrigin ? progress.interpolate({
-    inputRange: [0, require("./transition").LYRIC_FADE_OUT_END],
-    outputRange: [0, 1],
-    extrapolate: 'clamp'
-  }) : 1;
+  var coverShadowOpacity = progress.interpolate((0, require("./transition").getMorphCoverShadowFadeConfig)(isLyricOrigin, textMoveThreshold));
   // 歌词页摘要里的小封面本身没有描边，收起时再淡入，避免进度 0 时多出一圈边框
   var coverBorderWidth = isLyricOrigin ? progress.interpolate({
     inputRange: [0, require("./transition").LYRIC_FADE_OUT_END],
-    outputRange: [0, require("../../../theme").BorderWidths.normal, require("../../../theme").BorderWidths.normal],
+    outputRange: [0, require("../../../theme").BorderWidths.normal],
     extrapolate: 'clamp'
   }) : require("../../../theme").BorderWidths.normal;
-  // 收起动画的封面起点：歌曲页是大封面，歌词页是顶部小封面摘要
-  var coverStart = isLyricOrigin ? lyricSummary.cover : {
+  var measuredCoverRect = pagerOrigin != null && coverRelLayout != null ? {
+    x: pagerOrigin.x + coverRelLayout.x,
+    y: pagerOrigin.y + coverRelLayout.y,
+    width: coverRelLayout.width,
+    height: coverRelLayout.height
+  } : null;
+  // 收起动画的封面起点：歌曲页是大封面，歌词页是顶部小封面摘要；歌曲页优先用实测布局值
+  var coverStart = isLyricOrigin ? lyricSummary.cover : measuredCoverRect != null ? measuredCoverRect : {
     x: coverX,
     y: coverY,
     width: coverSize,
@@ -874,6 +962,11 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     inputRange: textMorphThresholds,
     outputRange: [artistStartLineHeight, artistStartLineHeight, clampedArtistBarRect.height, clampedArtistBarRect.height]
   });
+  // 歌名自然宽度占满文字栏时，静态底部栏的跑马灯只画到歌名，歌手根本不在末态里；
+  // morph 层必须让歌手在飞行途中淡出，否则它会飞进歌名那一行、被零宽裁切框啃成"躲在空白块后面"
+  var barTextAvailableWidth = barTextRight - clampTextLeft;
+  var titleFillsBarTextColumn = barTextAvailableWidth > 0 && titleBarRect.width > barTextAvailableWidth;
+  var artistOpacity = titleFillsBarTextColumn ? progress.interpolate((0, require("./transition").getMorphArtistFadeConfig)(textMorphThresholds, titleStart, artistStart)) : 1;
   var morphOpacity = 1;
   var progressStyle = {
     left: progress.interpolate({
@@ -965,7 +1058,25 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     if (__DEV__) {
       console.log('[PAGE_DEBUG] pager event', nativeEvent.position, (0, require("./transition").getLastOverlayPage)());
     }
+    pageIndexRef.current = nativeEvent.position;
     setPageIndex(nativeEvent.position);
+    // 工具模式收掉的是全局底部播控区，翻回封面页时必须退回普通模式，否则封面页会没有播控
+    if (nativeEvent.position != LYRIC_PAGE) (0, _lyricCopy.setLyricToolMode)(false);
+  };
+  var handlePageScroll = function handlePageScroll(_refScroll: { nativeEvent: { position: number, offset: number } }) {
+    var nativeEvent = _refScroll.nativeEvent;
+    // 分台布光：翻页中途连续跟手（0=浏览台、1=歌词台）。两页布局里 position+offset 就是 0~1。
+    coverStage.dim.setValue(Math.min(1, Math.max(0, nativeEvent.position + nativeEvent.offset)));
+  };
+  // 卡片与分离出去的 morph/ghost 层一起裁在这条下缘上：下缘从屏幕底边收到播放栏下沿（= 底部导航栏上沿），
+  // 与底部导航栏的下移/回升同一个窗口（展开量 60% 就收到屏底），卡片框的下沿也挂在同一条窗口上。
+  // 详见 transition.ts 的 getCardBottomClampRange
+  var clipStyle = {
+    width: winWidth,
+    height: progress.interpolate((0, require("./transition").getCardBottomClampRange)({
+      winHeight: winHeight,
+      barBottom: source == null ? winHeight : source.bar.y + source.bar.height
+    }))
   };
   var cardStyle = {
     left: 0,
@@ -974,16 +1085,18 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     height: winHeight,
     borderRadius: cardRadius,
     overflow: 'hidden',
-    backgroundColor: theme['c-content-background'],
+    backgroundColor: enterFieldBg,
     transform: [{
       translateX: progress.interpolate({
         inputRange: [0, 1],
         outputRange: [cardMorphTransform.from.translateX, cardMorphTransform.to.translateX]
       })
     }, {
+      // 竖支多一个关键帧（p = BOTTOM_STRIP_SETTLE_SPAN：下沿已到屏幕下缘），
+      // 与底部那一条同窗；水平那一支没有这个拐点
       translateY: progress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [cardMorphTransform.from.translateY, cardMorphTransform.to.translateY]
+        inputRange: [0, require("./transition").BOTTOM_STRIP_SETTLE_SPAN, 1],
+        outputRange: [cardMorphTransform.from.translateY, cardMorphTransform.mid.translateY, cardMorphTransform.to.translateY]
       })
     }, {
       scaleX: progress.interpolate({
@@ -992,15 +1105,17 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
       })
     }, {
       scaleY: progress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [cardMorphTransform.from.scaleY, cardMorphTransform.to.scaleY]
+        inputRange: [0, require("./transition").BOTTOM_STRIP_SETTLE_SPAN, 1],
+        outputRange: [cardMorphTransform.from.scaleY, cardMorphTransform.mid.scaleY, cardMorphTransform.to.scaleY]
       })
     }]
   };
   var separatorStyle = {
-    left: 0,
+    // 直线段两端各内缩一个圆角半径，与静态播放栏 borderTopWidth 的可见直线段对齐；
+    // 元素中心仍是 winWidth/2，所以下面的 translateX/scaleX 落点不变
+    left: BAR_TOP_CORNER_RADIUS,
     top: 0,
-    width: winWidth,
+    width: winWidth - BAR_TOP_CORNER_RADIUS * 2,
     opacity: separatorOpacity,
     transform: [{
       translateX: progress.interpolate({
@@ -1040,9 +1155,30 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     left: artistLeft,
     top: artistTop,
     width: artistWidth,
-    height: artistHeight
+    height: artistHeight,
+    opacity: artistOpacity
   };
   var artistTextStyle = {
+    fontSize: artistFontSize,
+    lineHeight: artistLineHeight
+  };
+  // 静态底部栏是一整段 "歌名 - 歌手"，morph 层的标题与歌手之间空出来的正是 " - " 的位置；
+  // 把它挂在歌手盒子左缘一起飞行、并在行程内淡入，收尾时才不会凭空跳出连接符
+  var morphSeparatorRect = (0, require("./transition").getMorphSeparatorRect)(clampedTitleBarRect, clampedArtistBarRect, barTextRight);
+  var barSeparatorOpacity = progress.interpolate((0, require("./transition").getMorphSeparatorFadeConfig)(textMorphThresholds));
+  // 不能写 artistLeft.subtract(...)：RN 只提供静态的 Animated.subtract，插值节点原型上没有该方法
+  var barSeparatorLeft = progress.interpolate({
+    inputRange: textMorphThresholds,
+    outputRange: [artistStart.x - morphSeparatorRect.width, artistStart.x - morphSeparatorRect.width, morphSeparatorRect.left, morphSeparatorRect.left]
+  });
+  var barSeparatorStyle = {
+    left: barSeparatorLeft,
+    top: artistTop,
+    width: morphSeparatorRect.width,
+    height: artistHeight,
+    opacity: barSeparatorOpacity
+  };
+  var barSeparatorTextStyle = {
     fontSize: artistFontSize,
     lineHeight: artistLineHeight
   };
@@ -1050,6 +1186,7 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     left: isLyricOrigin ? lyricSummary.action.x : fullHeartLeft,
     top: isLyricOrigin ? lyricSummary.action.y : fullHeartTop,
     width: _Btn.BTN_WIDTH,
+    height: _Btn.BTN_WIDTH,
     opacity: heartOpacity
   };
   // 过渡期淡入的非运动元素副本，位置与静态全屏布局完全一致
@@ -1075,64 +1212,75 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   };
   var progressPercent = `${toProgressNumber(playProgress) * 100}%`;
   var bufferedPercent = `${toProgressNumber(playBuffered) * 100}%`;
-  return <_reactNative.View ref={rootRef} pointerEvents={mounted ? 'box-none' : 'none'} style={styles.root}>{mounted && source && <>{(0, _jsxRuntime.jsxs)(_reactNative.Animated.View, Object.assign({
+  return <_reactNative.View ref={rootRef} pointerEvents={mounted ? 'box-none' : 'none'} style={styles.root}>{mounted && source && <>{(<_reactNative.Animated.View pointerEvents="box-none" style={[styles.clip, clipStyle]}>{(0, _jsxRuntime.jsxs)(_reactNative.Animated.View, Object.assign({
         pointerEvents: mounted && !isTransitioning ? 'auto' : 'none',
         style: [styles.card, cardStyle]
       }, closePanResponder.panHandlers, {
-        children: [(0, _jsxRuntime.jsx)(_reactNative.View, {
+        children: [(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
           pointerEvents: "none",
           style: [_reactNative.StyleSheet.absoluteFillObject, {
-            backgroundColor: theme['c-content-background']
+            backgroundColor: enterFieldBg
           }]
         }), (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
           style: styles.background,
           children: (0, _jsxRuntime.jsx)(OverlayBackdrop, {
-            progress: progress,
-            source: source,
             winWidth: winWidth,
-            winHeight: winHeight
+            winHeight: winHeight,
+            progress: progress
           })
-        }), (fullscreenMounted || showLyricPager) && <_reactNative.View pointerEvents={showStaticContent ? 'auto' : 'none'} style={styles.content}>{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+        }), (fullscreenMounted || showLyricPager) && <_reactNative.View pointerEvents={showStaticContent ? 'auto' : 'none'} style={styles.content}>{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, Object.assign({}, lyricClosePanResponder.panHandlers, {
             style: staticOpacityStyle,
-            children: <_Header.default onBack={close} pageIndex={pageIndex} onPageSelected={function onPageSelected(page) {
+            children: <_Header.default onBack={handleBack} pageIndex={pageIndex} onPageSelected={function onPageSelected(page) {
               var _pagerRef$current2;
               return (_pagerRef$current2 = pagerRef.current) == null ? void 0 : _pagerRef$current2.setPage(page);
             }} />
-          })}{(fullscreenMounted || showLyricPager) && (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+          }))}{(fullscreenMounted || showLyricPager) && (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
             style: [styles.pagerView, pagerOpacityStyle],
-            children: <_reactNativePagerView.default ref={pagerRef} initialPage={pageIndex} onPageSelected={handlePageSelected} style={styles.pagerViewInner}><_reactNative.View collapsable={false}><_Pic.default onMusicInfoLayout={handleMusicInfoLayout} marqueeActive={showStaticContent} /></_reactNative.View><_reactNative.View collapsable={false}><LyricPage activeIndex={pageIndex} showSummary={showStaticContent} /></_reactNative.View></_reactNativePagerView.default>
-          })}{(fullscreenMounted || showLyricPager) && (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+            onLayout: handlePagerLayout,
+            children: <_reactNativePagerView.default ref={pagerRef} initialPage={pageIndex} onPageSelected={handlePageSelected} onPageScroll={handlePageScroll} style={styles.pagerViewInner}><_reactNative.View collapsable={false}><_Pic.default onMusicInfoLayout={handleMusicInfoLayout} onCoverLayout={handleCoverLayout} marqueeActive={showStaticContent} /></_reactNative.View><_reactNative.View collapsable={false}><LyricPage activeIndex={pageIndex} showSummary={showStaticContent} summaryGestureHandlers={lyricClosePanResponder.panHandlers} /></_reactNative.View></_reactNativePagerView.default>
+          })}{(fullscreenMounted || showLyricPager) && !lyricToolMode && (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
             style: [styles.bottom, staticOpacityStyle],
             children: <_Player.default showMusicInfo={false} onProgressLayout={setProgressTargetLayout} onControlLayout={setControlTargetLayout} />
           })}</_reactNative.View>]
       }))}{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
         pointerEvents: "none",
         style: [styles.transitionSeparator, separatorStyle, {
-          backgroundColor: theme['c-border-background']
+          backgroundColor: enterInkBorder
         }]
       })}{showCoverMorph && (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
         pointerEvents: "none",
-        style: [styles.morphTitle, titleStyle],
+        style: [styles.morphClip, titleStyle],
         children: (0, _jsxRuntime.jsx)(_reactNative.Animated.Text, {
           numberOfLines: 1,
           ellipsizeMode: "clip",
           style: [styles.morphText, titleTextStyle, {
-            color: glassColors.text
-          }],
+            color: enterInkFont
+          }, textShadowStyle],
           children: musicInfo.name
         })
       })}{showCoverMorph && (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
         pointerEvents: "none",
-        style: [styles.morphTitle, artistStyle],
+        style: [styles.morphClip, artistStyle],
         children: (0, _jsxRuntime.jsx)(_reactNative.Animated.Text, {
           numberOfLines: 1,
           ellipsizeMode: "clip",
           style: [styles.morphText, artistTextStyle, {
-            color: glassColors.muted
-          }],
+            color: enterInkLabel
+          }, textShadowStyle],
           children: musicInfo.singer
         })
-      })}{showCoverMorph && <>{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+      })}{showCoverMorph && musicInfo.singer ? (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+        pointerEvents: "none",
+        style: [styles.morphClip, barSeparatorStyle],
+        children: (0, _jsxRuntime.jsx)(_reactNative.Animated.Text, {
+          numberOfLines: 1,
+          ellipsizeMode: "clip",
+          style: [styles.morphText, barSeparatorTextStyle, {
+            color: enterInkLabel
+          }, textShadowStyle],
+          children: " - "
+        })
+      }) : null}{showCoverMorph && <>{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
           pointerEvents: isOpen ? 'auto' : 'none',
           style: [styles.morphTitle, actionColumnStyle],
           children: <_reactNative.TouchableOpacity activeOpacity={0.7} hitSlop={{
@@ -1140,11 +1288,27 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
             bottom: 5,
             left: 10,
             right: 10
-          }} onPress={handleToggleLove} style={styles.loveBtn}>{(0, _jsxRuntime.jsx)(require("../../common/LoveIcon").LoveIcon, {
+          }} onPress={handleToggleLove} style={styles.loveBtn}>{[(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+            pointerEvents: "none",
+            style: [styles.morphIconLayer, {
+              opacity: enterIconCollapsed
+            }],
+            children: (0, _jsxRuntime.jsx)(require("../../common/LoveIcon").LoveIcon, {
+              filled: isLove,
+              size: _Btn.BTN_ICON_SIZE,
+              color: isLove ? baseTheme['c-button-font'] : baseTheme['c-font-label']
+            })
+          }, 'bar'), (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+            pointerEvents: "none",
+            style: [styles.morphIconLayer, {
+              opacity: enterIconExpanded
+            }],
+            children: (0, _jsxRuntime.jsx)(require("../../common/LoveIcon").LoveIcon, {
               filled: isLove,
               size: _Btn.BTN_ICON_SIZE,
               color: isLove ? glassColors.accent : glassColors.muted
-            })}</_reactNative.TouchableOpacity>
+            })
+          }, 'cover')]}</_reactNative.TouchableOpacity>
         })}{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
           pointerEvents: "none",
           style: [styles.ghostBtn, ghostDotsStyle],
@@ -1178,23 +1342,21 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
         })}{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
           pointerEvents: "none",
           style: [styles.coverShadow, coverStyle, {
-            backgroundColor: theme['c-content-background'],
+            backgroundColor: enterFieldBg,
             borderRadius: coverRadius,
             borderWidth: coverBorderWidth,
-            borderColor: theme['c-border-background'],
+            borderColor: enterInkBorder,
             opacity: coverShadowOpacity
           }]
         })}{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
           pointerEvents: "none",
           style: [styles.cover, coverStyle, {
-            backgroundColor: theme['c-primary-light-900-alpha-200'],
+            backgroundColor: enterInkPlate,
             borderWidth: coverBorderWidth,
-            borderColor: theme['c-border-background']
+            borderColor: enterInkBorder
           }],
           children: (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
-            style: [styles.coverContent, {
-              borderRadius: coverRadius
-            }],
+            style: styles.coverContent,
             children: <_Image.default url={transitionPic} style={styles.coverImage} />
           })
         })}{(0, _jsxRuntime.jsxs)(_reactNative.Animated.View, {
@@ -1204,52 +1366,69 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
               position: 'relative',
               width: '100%',
               height: require("../ProgressBar").PROGRESS_BAR_HEIGHT
-            }}><_reactNative.View style={Object.assign({}, styles.progressBar, (0, require("./transition").getMorphProgressTrackStyle)(), {
-                backgroundColor: theme['c-primary-light-300-alpha-800']
-              })} /><_reactNative.View style={Object.assign({}, styles.progressBar, {
-                backgroundColor: theme['c-primary-light-400-alpha-700'],
+            }}><_reactNative.Animated.View style={Object.assign({}, styles.progressBar, (0, require("./transition").getMorphProgressTrackStyle)(), {
+                backgroundColor: enterInkTrack
+              })} /><_reactNative.Animated.View style={Object.assign({}, styles.progressBar, {
+                backgroundColor: enterInkBuffered,
                 width: bufferedPercent
-              })} /><_reactNative.View style={Object.assign({}, styles.progressBar, {
-                backgroundColor: theme['c-primary-light-100-alpha-400'],
+              })} /><_reactNative.Animated.View style={Object.assign({}, styles.progressBar, {
+                backgroundColor: enterInkFill,
                 width: progressPercent
-              })}><_reactNative.View style={[styles.progressDot, {
+              })}><_reactNative.Animated.View style={[styles.progressDot, {
                   width: require("../ProgressBar").PROGRESS_DOT_SIZE,
                   height: require("../ProgressBar").PROGRESS_DOT_SIZE,
                   top: (require("../ProgressBar").PROGRESS_BAR_HEIGHT - require("../ProgressBar").PROGRESS_DOT_SIZE) / 2,
                   right: -require("../ProgressBar").PROGRESS_DOT_SIZE / 2,
                   borderRadius: require("../ProgressBar").PROGRESS_DOT_SIZE / 2,
-                  backgroundColor: theme['c-primary-light-100']
-                }]} /></_reactNative.View></_reactNative.View></_reactNative.View>, <_reactNative.View style={styles.morphProgressInfo}>{(0, _jsxRuntime.jsx)(_reactNative.Animated.Text, {
+                  backgroundColor: enterInkDot
+                }]} /></_reactNative.Animated.View></_reactNative.View></_reactNative.View>, <_reactNative.View style={styles.morphProgressInfo}>{(0, _jsxRuntime.jsx)(_reactNative.Animated.Text, {
               style: [styles.morphProgressTime, progressInfoTextStyle, {
-                color: glassColors.muted
-              }],
+                color: enterInkLabel
+              }, textShadowStyle],
               children: playerProgress.nowPlayTimeStr
             })}{(0, _jsxRuntime.jsx)(_reactNative.Animated.Text, {
               style: [styles.morphProgressTime, progressInfoTextStyle, {
-                color: glassColors.muted
-              }],
+                color: enterInkLabel
+              }, textShadowStyle],
               children: playerProgress.maxPlayTimeStr
             })}</_reactNative.View>]
         })}</>}{showCoverMorph && ['prev', 'play', 'next'].map(function (key) {
         var morph = controlMorphs[key];
         var iconName = key == 'play' ? isPlay ? 'pause' : 'play' : key == 'prev' ? 'prevMusic' : 'nextMusic';
+        // Icon 的 color 不是 Animated 属性（它只是个 Text），要淡变只能同位叠两份、各走一条互补的透明度曲线
         return (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
           pointerEvents: "none",
           style: [styles.morphControl, morph.style],
-          children: (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+          children: (0, _jsxRuntime.jsxs)(_reactNative.Animated.View, {
             style: [styles.morphControlIcon, {
               transform: [{
                 scale: morph.iconScale
               }]
             }],
-            children: (0, _jsxRuntime.jsx)(require("../../common/Icon").Icon, {
-              name: iconName,
-              color: glassColors.accent,
-              rawSize: morph.iconSize
-            })
+            children: [(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+              pointerEvents: "none",
+              style: [styles.morphIconLayer, {
+                opacity: enterIconCollapsed
+              }],
+              children: (0, _jsxRuntime.jsx)(require("../../common/Icon").Icon, {
+                name: iconName,
+                color: baseTheme['c-button-font'],
+                rawSize: morph.iconSize
+              })
+            }, 'bar'), (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
+              pointerEvents: "none",
+              style: [styles.morphIconLayer, {
+                opacity: enterIconExpanded
+              }],
+              children: (0, _jsxRuntime.jsx)(require("../../common/Icon").Icon, {
+                name: iconName,
+                color: glassColors.accent,
+                rawSize: morph.iconSize
+              })
+            }, 'cover')]
           })
         }, key);
-      })}<_reactNative.View pointerEvents={gestureEnabled ? 'auto' : 'box-none'} style={{
+      })}</_reactNative.Animated.View>)}<_reactNative.View pointerEvents={gestureEnabled ? 'auto' : 'box-none'} style={{
         position: 'absolute',
         left: source.bar.x,
         top: source.bar.y,
@@ -1322,7 +1501,7 @@ var PlayerOverlayProvider = exports.PlayerOverlayProvider = function PlayerOverl
       barSettled: barSettled
     };
   }, [barSettled, progress, sourceVisible]);
-  return <PlayerOverlayContext.Provider value={controller}>{children}<PlayerOverlay ref={overlayRef} progress={progress} onSourceVisibilityChange={handleSourceVisibilityChange} onBarSettledChange={handleBarSettledChange} /></PlayerOverlayContext.Provider>;
+  return <PlayerOverlayContext.Provider value={controller}>{children}<_CoverStageProvider.default initialStage={(0, require("./transition").getLastOverlayPage)() == LYRIC_PAGE ? 'lyric' : 'browse'}><_OnCoverThemeProvider.default><PlayerOverlay ref={overlayRef} progress={progress} onSourceVisibilityChange={handleSourceVisibilityChange} onBarSettledChange={handleBarSettledChange} /></_OnCoverThemeProvider.default></_CoverStageProvider.default></PlayerOverlayContext.Provider>;
 };
 var styles = (0, require("../../../utils/tools").createStyle)({
   root: {
@@ -1337,6 +1516,13 @@ var styles = (0, require("../../../utils/tools").createStyle)({
     position: 'absolute',
     left: 0,
     top: 0
+  },
+  // 只出那条下缘（高度挂在 progress 轴上，见 clipStyle）：卡片与 morph/ghost 层都从它里面出
+  clip: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    overflow: 'hidden'
   },
   transitionSeparator: {
     position: 'absolute',
@@ -1385,8 +1571,10 @@ var styles = (0, require("../../../utils/tools").createStyle)({
   morphProgress: {
     position: 'absolute'
   },
+  // 静态 Progress 的轨道由 paddingTop 定位（不是垂直居中），动画层必须用同样的 paddingTop 才能在切换时对齐
   progressTrackWrapper: Object.assign({}, _reactNative.StyleSheet.absoluteFillObject, {
-    justifyContent: 'center'
+    justifyContent: 'flex-start',
+    paddingTop: 10
   }),
   morphProgressInfo: {
     position: 'absolute',
@@ -1405,7 +1593,8 @@ var styles = (0, require("../../../utils/tools").createStyle)({
   },
   progressBar: {
     position: 'absolute',
-    height: require("../ProgressBar").PROGRESS_BAR_HEIGHT,
+    // PROGRESS_BAR_HEIGHT 已完成换算，不能经过 createStyle 二次缩放；轨道高度由外层轨道盒决定
+    height: '100%',
     left: 0,
     top: 0,
     borderRadius: 4
@@ -1420,18 +1609,32 @@ var styles = (0, require("../../../utils/tools").createStyle)({
     alignItems: 'center',
     justifyContent: 'center'
   }),
+  // 同一枚图标的两份墨色副本要重叠在同一位置：父容器是 flex，直接并排放两个子节点会左右排开
+  morphIconLayer: Object.assign({}, _reactNative.StyleSheet.absoluteFillObject, {
+    alignItems: 'center',
+    justifyContent: 'center'
+  }),
   morphTitle: {
     position: 'absolute'
   },
+  // 与 SynchronizedMarquee 的 mask 同构：外层裁切、内层按自然宽度排版，
+  // 这样长文本的最后一个字能像静态控制栏一样只露一半，
+  // 而不是被安卓的 ellipsizeMode:'clip' 整字丢掉、收尾时比静态栏少露一个字
+  morphClip: {
+    position: 'absolute',
+    overflow: 'hidden'
+  },
   morphText: {
-    width: '100%',
+    width: MORPH_TEXT_NATURAL_WIDTH,
     includeFontPadding: false
   },
+  // BTN_WIDTH 已完成屏幕换算，不能再经过 createStyle 二次缩放；
+  // 这里用百分比铺满外层容器（外层 width/height 为原始 BTN_WIDTH），与静态 MusicInfo 的按钮盒一致
   loveBtn: {
     alignItems: 'center',
-    height: _Btn.BTN_WIDTH,
+    height: '100%',
     justifyContent: 'center',
-    width: _Btn.BTN_WIDTH
+    width: '100%'
   },
   ghostHeader: {
     left: 0,

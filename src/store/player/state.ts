@@ -1,3 +1,8 @@
+export interface RandomList {
+  listId: string
+  musicIds: string[]
+}
+
 export interface InitState {
   playMusicInfo: {
     /**
@@ -23,6 +28,11 @@ export interface InitState {
 
   playedList: LX.Player.PlayMusicInfo[]
   tempPlayList: LX.Player.PlayMusicInfo[]
+
+  /**
+   * 随机播放队列（洗牌后的歌曲 id 顺序），非随机模式为 null
+   */
+  randomList: RandomList | null
 
   loadErrorPicUrl: string
 
@@ -71,6 +81,8 @@ const state: InitState = {
 
   playedList: [],
   tempPlayList: [],
+
+  randomList: null,
 
   progress: {
     nowPlayTime: 0,

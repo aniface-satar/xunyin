@@ -69,6 +69,37 @@ export interface CoverAnalysis {
   highlight: number
 }
 
+/** 闸门要看的那两个量，与"底色从哪来"无关。
+ *  ②「动态取色」（重度模糊封面铺底）只要这两个数：它不挑源色，官方量化整段不跑
+ *  （①那一路实测 143ms，其中 123ms 是量化，全在 JS 主线程）。
+ *  ① 经 analyzeArgbPixels 也量同一份，两档共用同一个定义，`MIN_CONTRAST` 那道闸才不会有第二个版本。 */
+export interface CoverFields {
+  average: number
+  highlight: number
+}
+
+/** 入参自洽校验 + 挑出不透明像素：measure 与 analyze 走同一道门，
+ *  两处各写一份的话"行宽错了判不判失败"就会有两种答案。 */
+const collectOpaque = (cover: CoverPixels | null | undefined): { opaque: number[], pixels: number[], width: number, height: number } | null => {
+  const pixels = cover?.pixels
+  // 入参来自 RN 原生桥，是个真实边界：`!pixels?.length` 会放过 { length: 3 } 这类 array-like，
+  // 然后 `for (const pixel of pixels)` 直接抛 TypeError —— 文档承诺的是"非法输入返回 null"，就得真做到。
+  if (!Array.isArray(pixels) || pixels.length === 0) return null
+  const width = cover!.width
+  const height = cover!.height
+  // 分块按行主序索引，行宽错了就会跨行取样（出来的"最亮块"是花屏不是亮度），所以不自洽直接判失败。
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) return null
+  if (pixels.length !== width * height) return null
+  const opaque: number[] = []
+  for (const pixel of pixels) {
+    const argb = pixel >>> 0
+    if ((argb >>> 24) < 255) continue
+    opaque.push(argb)
+  }
+  // 全透明（图标类图源）没有可用像素，判失败而不是交出一份 0/0 的 NaN 色
+  return opaque.length ? { opaque, pixels, width, height } : null
+}
+
 /** 封面的全图平均色（只用不透明像素，alpha 恒 255）。
  *  只要这一个数就绝不碰 QuantizerCelebi —— 实测 143ms 里有 123ms 是那一段量化，
  *  而"这张封面整体偏亮还是偏暗"用不着挑源色。
@@ -148,46 +179,45 @@ const blockHighlightArgb = (pixels: number[], width: number, height: number): nu
   return best
 }
 
-export const analyzeArgbPixels = (cover: CoverPixels | null | undefined): CoverAnalysis | null => {
-  const pixels = cover?.pixels
-  // 入参来自 RN 原生桥，是个真实边界：`!pixels?.length` 会放过 { length: 3 } 这类 array-like，
-  // 然后 `for (const pixel of pixels)` 直接抛 TypeError —— 文档承诺的是"非法输入返回 null"，就得真做到。
-  if (!Array.isArray(pixels) || pixels.length === 0) return null
-  const width = cover!.width
-  const height = cover!.height
-  // 分块按行主序索引，行宽错了就会跨行取样（出来的"最亮块"是花屏不是亮度），所以不自洽直接判失败。
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) return null
-  if (pixels.length !== width * height) return null
-  const opaque: number[] = []
+/** 闸门的那两个量：整幅平均色 + 最亮块。measure 与 analyze 共用，两支不会算出两个版本的输入。 */
+const fieldsOf = (collected: { opaque: number[], pixels: number[], width: number, height: number }): CoverFields => {
   let sumR = 0
   let sumG = 0
   let sumB = 0
-  for (const pixel of pixels) {
-    const argb = pixel >>> 0
-    if ((argb >>> 24) < 255) continue
-    opaque.push(argb)
+  for (const argb of collected.opaque) {
     sumR += (argb >> 16) & 0xff
     sumG += (argb >> 8) & 0xff
     sumB += argb & 0xff
   }
-  if (!opaque.length) return null
-
   const average = argbFromRgb(
-    Math.round(sumR / opaque.length),
-    Math.round(sumG / opaque.length),
-    Math.round(sumB / opaque.length),
+    Math.round(sumR / collected.opaque.length),
+    Math.round(sumG / collected.opaque.length),
+    Math.round(sumB / collected.opaque.length),
   ) >>> 0
-
   // 极扁的图（如 32×2 长条，cellH=0.25）里每一块都可能采不到像素，此时回落到平均色：
   // 少了这条回落，null 会一路传到 buildCoverSurface 的 isUsableArgb 守卫，整条取色被判死。
   // 见 tests/monet-source-color.mts 的"空块与回落"用例。
-  const highlight = blockHighlightArgb(pixels, width, height) ?? average
+  const highlight = blockHighlightArgb(collected.pixels, collected.width, collected.height) ?? average
+  return { average, highlight }
+}
+
+/** 只算闸门要看的那两个量：整幅平均色与最亮块。逐像素均值 + 每块一次 HCT，**不跑量化**。
+ *  ② blur 走这支（它不需要源色），① monet 经 analyzeArgbPixels 也量同一份实现。 */
+export const measureArgbPixels = (cover: CoverPixels | null | undefined): CoverFields | null => {
+  const collected = collectOpaque(cover)
+  return collected == null ? null : fieldsOf(collected)
+}
+
+export const analyzeArgbPixels = (cover: CoverPixels | null | undefined): CoverAnalysis | null => {
+  const collected = collectOpaque(cover)
+  if (collected == null) return null
+  const { average, highlight } = fieldsOf(collected)
 
   // 实测：Score.score 返回 number[]（不是 Map），且**永远至少给一个**：色度 < 5 的被
   // CUTOFF_CHROMA 全滤掉时（纯灰/近灰封面）它返回内置兜底色 Google Blue 0xFF4285F4，
   // 而不是空数组。灰封面被涂成蓝色是错的，所以用官方 options 把兜底色换成封面平均色。
   const ranked = withSeededRandom(() =>
-    Score.score(QuantizerCelebi.quantize(opaque, QUANTIZE_COLORS), { fallbackColorARGB: average }),
+    Score.score(QuantizerCelebi.quantize(collected.opaque, QUANTIZE_COLORS), { fallbackColorARGB: average }),
   )
   const source = ranked[0] >>> 0
 

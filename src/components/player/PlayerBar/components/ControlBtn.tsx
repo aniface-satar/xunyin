@@ -6,6 +6,7 @@ import { createStyle } from '@/utils/tools'
 import { useCallback, useRef } from 'react'
 import type { PlayerControlLayout, PlayerRect } from '@/components/player/PlayerOverlay'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
+import { useI18n } from '@/lang'
 
 const BTN_SIZE = 22
 const handlePlayPrev = () => {
@@ -17,6 +18,7 @@ const handlePlayNext = () => {
 
 const PlayPrevBtn = ({ onLayout }: { onLayout?: (layout: PlayerRect) => void }) => {
   const glassColors = useGlassColors()
+  const t = useI18n()
   const btnRef = useRef<View>(null)
   const handleLayout = useCallback(() => {
     btnRef.current?.measureInWindow((x, y, width, height) => {
@@ -26,7 +28,7 @@ const PlayPrevBtn = ({ onLayout }: { onLayout?: (layout: PlayerRect) => void }) 
 
   return (
     <View ref={btnRef} onLayout={handleLayout} collapsable={false}>
-      <TouchableOpacity style={styles.controlBtn} activeOpacity={0.5} onPress={handlePlayPrev} accessibilityRole="button" accessibilityLabel="上一首">
+      <TouchableOpacity style={styles.controlBtn} activeOpacity={0.5} onPress={handlePlayPrev} accessibilityRole="button" accessibilityLabel={t('play_prev')}>
         <Icon name='prevMusic' color={glassColors.accent} size={BTN_SIZE} />
       </TouchableOpacity>
     </View>
@@ -35,6 +37,7 @@ const PlayPrevBtn = ({ onLayout }: { onLayout?: (layout: PlayerRect) => void }) 
 
 const PlayNextBtn = ({ onLayout }: { onLayout?: (layout: PlayerRect) => void }) => {
   const glassColors = useGlassColors()
+  const t = useI18n()
   const btnRef = useRef<View>(null)
   const handleLayout = useCallback(() => {
     btnRef.current?.measureInWindow((x, y, width, height) => {
@@ -44,7 +47,7 @@ const PlayNextBtn = ({ onLayout }: { onLayout?: (layout: PlayerRect) => void }) 
 
   return (
     <View ref={btnRef} onLayout={handleLayout} collapsable={false}>
-      <TouchableOpacity style={styles.controlBtn} activeOpacity={0.5} onPress={handlePlayNext} accessibilityRole="button" accessibilityLabel="下一首">
+      <TouchableOpacity style={styles.controlBtn} activeOpacity={0.5} onPress={handlePlayNext} accessibilityRole="button" accessibilityLabel={t('play_next')}>
         <Icon name='nextMusic' color={glassColors.accent} size={BTN_SIZE} />
       </TouchableOpacity>
     </View>

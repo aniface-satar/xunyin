@@ -68,14 +68,13 @@ export default ({ isHome, onLayout }: PicProps) => {
 
   return (
     <View ref={picRef} onLayout={handleLayout}>
-      <TouchableOpacity onLongPress={handleLongPress} onPress={handlePress} activeOpacity={0.7} >
+      <TouchableOpacity onLongPress={handleLongPress} onPress={handlePress} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={global.i18n.t('open_play_detail')}>
         <Image
           url={musicInfo.pic}
           nativeID={NAV_SHEAR_NATIVE_IDS.playDetail_pic}
           style={{
             ...styles.image,
             backgroundColor: theme['c-content-background'],
-            elevation: 18,
             shadowColor: '#000',
             shadowOpacity: 0.34,
             shadowOffset: { width: 0, height: 8 },

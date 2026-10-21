@@ -53,6 +53,19 @@ export const useTempPlayList = () => {
   return value
 }
 
+export const useRandomList = () => {
+  const [value, update] = useState(state.randomList)
+
+  useEffect(() => {
+    global.state_event.on('playRandomListChanged', update)
+    return () => {
+      global.state_event.off('playRandomListChanged', update)
+    }
+  }, [])
+
+  return value
+}
+
 export const useStatusText = () => {
   const [value, update] = useState(state.statusText)
 
