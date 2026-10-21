@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { LISTEN_SECONDS } from '../src/core/musicRecognition/pcmSplitter.ts'
-import { SESSION_SECONDS, mergeSong, shouldStartAnotherRound } from '../src/core/musicRecognition/session.ts'
+import { SESSION_SECONDS, mergeSong, shouldResumeOnExit, shouldStartAnotherRound } from '../src/core/musicRecognition/session.ts'
 import type { RecognizedSong } from '../src/core/musicRecognition/types.ts'
 
 const song = (over: Partial<RecognizedSong> = {}): RecognizedSong => ({
@@ -74,4 +74,30 @@ test('同名同歌手但 id 不同，算两首', () => {
 test('歌名或歌手只差首尾空白，算同一首', () => {
   const list = [song({ name: ' Fade Away ', singer: ' The ' })]
   assert.equal(mergeSong(list, song({ name: 'Fade Away', singer: 'The' })), list)
+})
+
+// --- 退出识曲页时该不该把音乐接回去 ---
+// 面板传进来的 pausedFor / loaded 都是 musicInfo 对象引用：换了歌就是换了对象。
+const track = { id: '1' }
+
+test('为识曲按下了暂停、那首还停在播放器里 → 退出时接回去', () => {
+  assert.equal(shouldResumeOnExit(track, { isPlay: false, loaded: track }), true)
+})
+
+test('这一场没为识曲停过歌 → 不碰播放器', () => {
+  assert.equal(shouldResumeOnExit(null, { isPlay: false, loaded: track }), false)
+})
+
+test('用户在页内自己按了播放 → 别再替他按一次', () => {
+  assert.equal(shouldResumeOnExit(track, { isPlay: true, loaded: track }), false)
+})
+
+// play() 放的是「播放器里当前那一首」，不是当初按下暂停的那首。
+// 用户在页内点了识别结果播别的歌、又自己停了它，这时接回去等于擅自开播他没在听的东西。
+test('播放器里换成别的歌 → 不接管用户的新选择', () => {
+  assert.equal(shouldResumeOnExit(track, { isPlay: false, loaded: { id: '2' } }), false)
+})
+
+test('队列被清空 → 没东西可接', () => {
+  assert.equal(shouldResumeOnExit(track, { isPlay: false, loaded: null }), false)
 })

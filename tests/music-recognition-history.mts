@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { HISTORY_LIMIT, createHistory, groupByDay, sanitizeHistory, type HistoryItem } from '../src/core/musicRecognition/history.ts'
+import { HISTORY_LIMIT, SESSION_GAP_MS, createHistory, groupByDay, groupBySession, sanitizeHistory, type HistoryItem } from '../src/core/musicRecognition/history.ts'
 import type { RecognizedSong } from '../src/core/musicRecognition/types.ts'
 
 // 历史识曲的全部判断都压在这个纯模块里（存储与广播在外面接），所以这里能离线跑完。
@@ -226,4 +226,73 @@ test('跨月跨年要分成两组（日界按本地时区）', () => {
 
 test('空列表分不出组', () => {
   assert.deepEqual(groupByDay([]), [])
+})
+
+// --- 一天内切成「次」 ---
+// 历史页的标题要写「这一次是哪会儿听的」，切开的依据只能是相邻两条的间隔：
+// 按下一次只听一分钟，同一次内部的几条不会差太远。
+
+const MIN = 60 * 1000
+
+test('同一天里间隔在阈值内的算一次，超阈值另起一次（新→旧）', () => {
+  const base = new Date(2026, 9, 12, 13, 42, 0).getTime()
+  const sessions = groupBySession([
+    item({ key: 'a', recognizedAt: base }),
+    item({ key: 'b', recognizedAt: base - 8 * MIN }),
+    item({ key: 'c', recognizedAt: base - 25 * MIN }),
+  ])
+  assert.equal(sessions.length, 2)
+  assert.deepEqual(sessions[0].items.map(i => i.key), ['a', 'b'], '组内顺序照输入')
+  assert.deepEqual(sessions[1].items.map(i => i.key), ['c'])
+  assert.equal(sessions[0].at, base, '标题用这一次里最晚的那条')
+  assert.equal(sessions[1].at, base - 25 * MIN)
+})
+
+test('同一天切出来的两次 dayKey 相同，页面靠它只印一次年月日', () => {
+  const base = new Date(2026, 9, 12, 20, 0, 0).getTime()
+  const sessions = groupBySession([
+    item({ key: 'a', recognizedAt: base }),
+    item({ key: 'b', recognizedAt: base - 2 * SESSION_GAP_MS }),
+  ])
+  assert.equal(sessions.length, 2)
+  assert.equal(sessions[0].dayKey, '2026-10-12')
+  assert.equal(sessions[1].dayKey, '2026-10-12')
+})
+
+test('跨天即使挨得很近也切开', () => {
+  const before = new Date(2026, 9, 12, 23, 58, 0).getTime()
+  const after = new Date(2026, 9, 13, 0, 2, 0).getTime()
+  const sessions = groupBySession([
+    item({ key: 'a', recognizedAt: after }),
+    item({ key: 'b', recognizedAt: before }),
+  ])
+  assert.equal(sessions.length, 2, '只差 4 分钟，但不是同一天')
+  assert.equal(sessions[0].dayKey, '2026-10-13')
+  assert.equal(sessions[1].dayKey, '2026-10-12')
+})
+
+test('间隔正好等于阈值算同一次，多一毫秒就另起', () => {
+  const base = new Date(2026, 9, 12, 9, 0, 0).getTime()
+  assert.equal(groupBySession([
+    item({ key: 'a', recognizedAt: base }),
+    item({ key: 'b', recognizedAt: base - SESSION_GAP_MS }),
+  ]).length, 1)
+  assert.equal(groupBySession([
+    item({ key: 'a', recognizedAt: base }),
+    item({ key: 'b', recognizedAt: base - SESSION_GAP_MS - 1 }),
+  ]).length, 2)
+})
+
+test('间隔按绝对值算，列表顺序颠倒也不会多切一次', () => {
+  const base = new Date(2026, 9, 12, 9, 0, 0).getTime()
+  const sessions = groupBySession([
+    item({ key: 'b', recognizedAt: base - 3 * MIN }),
+    item({ key: 'a', recognizedAt: base }),
+  ])
+  assert.equal(sessions.length, 1)
+  assert.equal(sessions[0].at, base)
+})
+
+test('空列表切不出次', () => {
+  assert.deepEqual(groupBySession([]), [])
 })

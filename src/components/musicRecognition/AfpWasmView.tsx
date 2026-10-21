@@ -49,10 +49,10 @@ const bootScript = (assets: Assets): string => {
 /**
  * 隐藏 WebView：加载 afp.wasm 与打补丁的胶水，把 8kHz 样本换成指纹字符串。
  * 只负责算指纹，不碰麦克风、不联网。
- * 挂载位置：RecognizePanel 内，只在 implemented 的引擎标签打开时存在。
+ * 挂载位置：RecognizePanel 内，进面板就挂着（引擎标签已去掉，ncm 每轮都在跑）。
  * 代价是每次进页重注入一次（assets 有模块级缓存，省掉重复读 308KB）；换来的是从不进识曲页的
  * 设备不必常驻一个 WebView 和它的 wasm 堆。因此调用方必须先问 isWasmReady() 再开始录：
- * 桥没就绪时 provider 已经扣掉每日额度了，白录 8 秒还白花钱。
+ * 桥没就绪时白录 8 秒、白亮一次麦克风灯，才等到一句失败。
  */
 const AfpWasmView = () => {
   const webViewRef = useRef<WebView>(null)
@@ -93,7 +93,7 @@ const AfpWasmView = () => {
   }), [])
 
   // 上下文一没，在途请求必须当场结算。只 clearTimeout 的话 await 它的 Promise 永远不落，
-  // recognizeWithEngines 不返回，UI 停在「正在听」转个不停，而额度已经被 guard.onAttempt() 扣掉。
+  // recognizeWithEngines 不返回，UI 停在「正在听」转个不停，而那一笔请求其实已经发出去了。
   const rejectPending = useCallback((reason: string) => {
     for (const item of pending.current.values()) {
       clearTimeout(item.timer)

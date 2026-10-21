@@ -1,7 +1,7 @@
 import { fromByteArray } from 'react-native-quick-base64'
 import { httpFetch } from '@/utils/request'
 import { buildMatchForm, createSessionId, parseMatchResponse, unwrapMatchBody } from './ncmApi.ts'
-import { toLittleEndianBytes, WINDOW_LEN_SECONDS } from './pcmSplitter.ts'
+import { decimate, NCM_TARGET_RATE, toLittleEndianBytes, WINDOW_FROM_SECONDS, WINDOW_LEN_SECONDS } from './pcmSplitter.ts'
 import { fingerprintFromWasm } from './wasmBridge.ts'
 import { getNcmEndpoint } from './configStore.ts'
 import type { RecognizeEngine, RecognizedSong } from './types.ts'
@@ -10,14 +10,16 @@ import type { RecognizeEngine, RecognizedSong } from './types.ts'
 // 在外面再包一层 Promise.race 只会「让 await 提前失败」，请求本体照样在途，白泄漏一条连接。
 const REQUEST_TIMEOUT_MS = 9000
 
-// 入参 pcm 是 8kHz 识别窗口（见 types.ts 的契约），不要再降采样
-export const recognizeNcm = async(pcm: Int16Array): Promise<RecognizedSong | null> => {
+// 入参 pcm 是原生采集的原始窗口（48kHz），引擎自己抽成网易要的 8kHz 识别段。
+// 取样公式与窗口位置在 pcmSplitter 里锁死，改动会让 afp.wasm 静默变差。
+export const recognizeNcm = async(pcm: Int16Array, sampleRate: number): Promise<RecognizedSong | null> => {
   const endpoint = await getNcmEndpoint()
   // 空 endpoint 只有一个来源：ncm 这条被 sanitizeConfig 筛掉了（关停或非法域名），
   // 那是配置状态不是「没听到歌」，必须抛，让它落到 failed 而不是 no_match。
   if (!endpoint) throw new Error('ncm engine not configured')
 
-  const rawdata = await fingerprintFromWasm(fromByteArray(toLittleEndianBytes(pcm)))
+  const window8k = decimate(pcm, sampleRate, NCM_TARGET_RATE, WINDOW_FROM_SECONDS, WINDOW_LEN_SECONDS)
+  const rawdata = await fingerprintFromWasm(fromByteArray(toLittleEndianBytes(window8k)))
   if (__DEV__) console.log('[recognition] fingerprint:', (rawdata.length / 1024).toFixed(1) + 'KB')
 
   const form = buildMatchForm(rawdata, WINDOW_LEN_SECONDS, createSessionId())

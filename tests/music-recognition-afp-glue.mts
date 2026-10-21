@@ -6,9 +6,10 @@ import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 import {
   NCM_SAMPLE_RATE,
+  NCM_TARGET_RATE,
   WINDOW_FROM_SECONDS,
   WINDOW_LEN_SECONDS,
-  decimateTo8k,
+  decimate,
   toLittleEndianBytes,
 } from '../src/core/musicRecognition/pcmSplitter.ts'
 
@@ -120,7 +121,7 @@ test('RN 侧抽取 + base64 传输 + WebView 还原，与上游 Encode 产出逐
   assert.ok(expected.length > 200, '参照指纹过短，wasm 可能没跑起来')
 
   // 生产路径：TS 抽到 8k -> 小端字节 -> base64 -> WebView 内还原
-  const window8k = decimateTo8k(pcm, NCM_SAMPLE_RATE, WINDOW_FROM_SECONDS, WINDOW_LEN_SECONDS)
+  const window8k = decimate(pcm, NCM_SAMPLE_RATE, NCM_TARGET_RATE, WINDOW_FROM_SECONDS, WINDOW_LEN_SECONDS)
   const actual = await api.Encode8kB64(base64Of(toLittleEndianBytes(window8k)))
 
   assert.equal(actual, expected)

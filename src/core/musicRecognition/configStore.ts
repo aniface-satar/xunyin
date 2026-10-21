@@ -53,11 +53,11 @@ const loadConfig = async(): Promise<RecognitionConfig> => {
   return startFetch()
 }
 
-// 启用与端点是两件事，必须分开问（Task 8 用它决定引擎数组）：
+// 启用与端点是两件事，必须分开问（识曲面板用它决定引擎数组）：
 // 数组为空 -> provider 返回 unsupported（面板用 music_recognition_failed 那句「暂时没响应」）；
 // 数组非空但拿不到端点 -> 那是配置状态，ncmEngine 直接抛，让它落到 failed 而不是「没听到歌」。
 // 混成一件事会让运营方的紧急关停在读用户眼里变成「你的耳机里没歌」。
-const findNcmEngine = async(): Promise<EngineConfig | undefined> => {
+const findEngine = async(id: string): Promise<EngineConfig | undefined> => {
   let config: RecognitionConfig
   try {
     config = await loadConfig()
@@ -68,14 +68,16 @@ const findNcmEngine = async(): Promise<EngineConfig | undefined> => {
     config = DEFAULT_CONFIG
     if (__DEV__) console.log('[recognition] config load failed:', String(err))
   }
-  return config.engines.find(item => item.id == 'ncm' && item.enabled)
+  return config.engines.find(item => item.id == id && item.enabled)
 }
 
+// 只有 ncm 会真的用这个端点发请求；Shazam 的 URL 由 shazamApi 自己拼（带两个随机 tagId），
+// 配置里那条 shazam 的 endpoint 只起两个作用：过域名白名单、以及作为「有没有这一条」的载体。
 export const getNcmEndpoint = async(): Promise<string> => {
-  const engine = await findNcmEngine()
+  const engine = await findEngine('ncm')
   return engine?.endpoint ?? ''
 }
 
-export const isNcmEngineEnabled = async(): Promise<boolean> => {
-  return (await findNcmEngine()) != null
+export const isEngineEnabled = async(id: string): Promise<boolean> => {
+  return (await findEngine(id)) != null
 }

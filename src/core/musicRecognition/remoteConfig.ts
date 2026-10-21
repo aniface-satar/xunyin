@@ -1,4 +1,5 @@
 import { MATCH_ENDPOINT } from './ncmApi.ts'
+import { TAG_URL_PREFIX } from './shazamApi.ts'
 
 // 热更新只是从自家仓库的 CDN 拉一个静态 JSON，不是后端。
 // 正因为这个文件一改就全量生效，端点必须过域名白名单：
@@ -16,14 +17,19 @@ export interface RecognitionConfig {
 
 export type FetchImpl = (url: string) => Promise<{ ok: boolean, status: number, text: () => Promise<string> }>
 
-export const KNOWN_ENGINE_IDS = ['ncm']
+export const KNOWN_ENGINE_IDS = ['ncm', 'shazam']
 
 // 只允许 https + 识别服务的官方域（含其子域），其余一律丢
 const ALLOWED_HOSTS = ['interface.music.163.com', 'music.163.com', 'amp.shazam.com']
 
+// 兜底 = 客户端出厂能用的引擎全开。shazam 那条的 endpoint 只是白名单与「有没有这一条」的载体，
+// 真实 URL 由 shazamApi 自己拼（带两个随机 tagId），运营改这个值改不动请求去向。
 export const DEFAULT_CONFIG: RecognitionConfig = {
   version: 1,
-  engines: [{ id: 'ncm', enabled: true, endpoint: MATCH_ENDPOINT }],
+  engines: [
+    { id: 'ncm', enabled: true, endpoint: MATCH_ENDPOINT },
+    { id: 'shazam', enabled: true, endpoint: TAG_URL_PREFIX },
+  ],
 }
 
 const repository = 'aniface-satar/xunyin'

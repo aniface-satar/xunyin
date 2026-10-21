@@ -6,10 +6,9 @@ type LangKey = keyof Message
 
 export interface EngineInfo {
   id: EngineId
+  /** 结果分区的标题 */
   nameKey: LangKey
-  descKey: LangKey
-  tipKey: LangKey
-  /** 该引擎的识别链路是否已接通；未接通时面板保持「识别还没接入」 */
+  /** 该引擎的识别链路是否已接通；未接通时面板停在 not_ready 态（「这台手机用不了识曲」）且圆盘无动作 */
   implemented: boolean
 }
 
@@ -17,16 +16,12 @@ export const ENGINES: EngineInfo[] = [
   {
     id: 'ncm',
     nameKey: 'music_recognition_engine_ncm',
-    descKey: 'music_recognition_ncm_desc',
-    tipKey: 'music_recognition_ncm_tip',
     implemented: true,
   },
   {
     id: 'shazam',
     nameKey: 'music_recognition_engine_shazam',
-    descKey: 'music_recognition_shazam_desc',
-    tipKey: 'music_recognition_shazam_tip',
-    implemented: false,
+    implemented: true,
   },
 ]
 

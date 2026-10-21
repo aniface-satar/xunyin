@@ -5,25 +5,14 @@ export interface GuardStorage {
   set: (value: string) => Promise<void>
 }
 
-export type GuardResult = 'allow' | 'daily' | 'cooldown'
+export type GuardResult = 'allow' | 'cooldown'
 
 interface GuardState {
-  day: string
-  count: number
   fails: number
   blockedUntil: number
 }
 
-// 按本地自然日计数的闸门。计数存储与时钟都走注入，
-// 这样跨时区、跨日、退避序列都能在单测里确定性复现。
-const localDay = (now: number): string => {
-  const date = new Date(now)
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
-}
-
-const emptyState = (day: string): GuardState => ({ day, count: 0, fails: 0, blockedUntil: 0 })
+const emptyState = (): GuardState => ({ fails: 0, blockedUntil: 0 })
 
 const asNumber = (value: unknown): number => typeof value == 'number' && Number.isFinite(value) ? value : 0
 
@@ -33,42 +22,32 @@ const asRecord = (value: unknown): Record<string, unknown> => {
   return typeof value == 'object' && value != null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
-// 读出来的状态永远带上当天的 day：
-// - 跨日只清 count（每日预算归零重来），时间型的 fails/blockedUntil 原样保留，
-//   否则「昨晚被打爆」的冷却会被一次日历翻页白白抹掉。
-// - 写侧（onAttempt/onSuccess/onFailure）因此不可能再把昨天的 day 留在盘上，
-//   陈旧记录不会永久卡在旧的一天。
-const normalize = (state: Record<string, unknown>, today: string): GuardState => {
-  const sameDay = typeof state.day == 'string' && state.day == today
-  return {
-    day: today,
-    count: sameDay ? asNumber(state.count) : 0,
-    fails: asNumber(state.fails),
-    blockedUntil: asNumber(state.blockedUntil),
-  }
-}
-
-export const createGuard = (opts: { maxPerDay: number, storage: GuardStorage, now: () => number }) => {
+// 这里刻意没有「每天 N 次」的计数闸门（2026-10-11 用户裁定取消）：
+// 每日额度本质就是一种会过期的额度，与「永久免费」这条硬约束直接冲突。
+// 顶住「用户量涨了不能崩」的是另外两道：连续失败的 BACKOFF_MS 退避，
+// 以及运营侧的远端开关（remoteConfig）。所以本模块只剩时间型的冷却状态。
+// 旧记录里残留的 day/count 字段被当作脏数据忽略，不需要迁移。
+export const createGuard = (opts: { storage: GuardStorage, now: () => number }) => {
   const read = async(): Promise<GuardState> => {
-    const today = localDay(opts.now())
     let raw: string | null = null
     try {
       raw = await opts.storage.get()
     } catch {
-      return emptyState(today)
+      return emptyState()
     }
-    if (!raw) return emptyState(today)
+    if (!raw) return emptyState()
     let parsed: unknown
     try {
       parsed = JSON.parse(raw)
     } catch {
-      return emptyState(today)
+      return emptyState()
     }
-    return normalize(asRecord(parsed), today)
+    const state = asRecord(parsed)
+    return { fails: asNumber(state.fails), blockedUntil: asNumber(state.blockedUntil) }
   }
 
   // AsyncStorage 写失败（磁盘满、原生侧抛异常）不能打断识曲流程：
-  // 静默降级为「本轮内存里已经算出的判定」，读侧下一样会退回空状态而不是崩。
+  // 静默降级为「本轮不记账」，读侧下一样会退回空状态而不是崩。
   const persist = async(state: GuardState): Promise<void> => {
     try {
       await opts.storage.set(JSON.stringify(state))
@@ -78,23 +57,10 @@ export const createGuard = (opts: { maxPerDay: number, storage: GuardStorage, no
   return {
     async check(): Promise<GuardResult> {
       const state = await read()
-      // 这里不能再有「day 不是今天就放行」的短路：那会整体跳过冷却判定。
-      if (state.count >= opts.maxPerDay) return 'daily'
-      if (state.blockedUntil > opts.now()) return 'cooldown'
-      return 'allow'
-    },
-    async onAttempt(): Promise<void> {
-      const state = await read()
-      if (state.count < opts.maxPerDay) state.count += 1
-      // 已达上限也照样写回：count 冻结在上限不再累加，但 day 必须推进到当天。
-      // 盘上的记录停在旧一天，等于给任何按 day 判定的读侧逻辑留一颗哑弹。
-      await persist(state)
+      return state.blockedUntil > opts.now() ? 'cooldown' : 'allow'
     },
     async onSuccess(): Promise<void> {
-      const state = await read()
-      state.fails = 0
-      state.blockedUntil = 0
-      await persist(state)
+      await persist(emptyState())
     },
     async onFailure(): Promise<void> {
       const state = await read()

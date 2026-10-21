@@ -45,7 +45,7 @@ export const recordPcm = async(seconds: number): Promise<{ pcm: Int16Array, samp
   }
   const bytes = toByteArray(await audioRecordModule.start(seconds))
   // 设备做不到 48kHz 时，宁可在这里炸掉，也不能把错误采样率的音频当成 48kHz 交给
-  // decimateTo8k —— 降采样比一旦错位，识曲只会安静地返回「没听到歌」。
+  // decimate —— 降采样比一旦错位，识曲只会安静地返回「没听到歌」。
   const expectedBytes = seconds * SAMPLE_RATE * 2
   if (bytes.length !== expectedBytes) {
     throw new Error(`recordPcm: captured ${bytes.length} bytes but ${seconds}s at ${SAMPLE_RATE}Hz mono PCM16 needs ${expectedBytes}`)

@@ -21,11 +21,16 @@ test('配置源只有自家仓库的 CDN 地址，且没有可执行代码', () 
 
 // 默认方向：内置兜底配置必须是「能用」的，拉不到配置时识曲照常工作。
 // 没有这条断言的话，把 DEFAULT 改成 enabled:false 也能全绿。
-test('内置默认配置默认启用且指向自家识别接口', () => {
-  assert.equal(DEFAULT_CONFIG.engines.length, 1)
-  assert.equal(DEFAULT_CONFIG.engines[0].id, 'ncm')
-  assert.equal(DEFAULT_CONFIG.engines[0].enabled, true)
-  assert.equal(DEFAULT_CONFIG.engines[0].endpoint, 'https://interface.music.163.com/api/music/audio/match')
+// 注意「兜底全开」与「运营发出来的配置里缺席就是不启用」是两件事：前者只在读不出结构时用，
+// 后者见下面「读得出结构就尊重它」——把两者混了等于用兜底值把关停拨回 ON。
+test('内置默认配置把随客户端发布的引擎全开，端点指向自家识别接口', () => {
+  assert.equal(DEFAULT_CONFIG.engines.length, 2)
+  const ncm = DEFAULT_CONFIG.engines.find(e => e.id == 'ncm')
+  const shazam = DEFAULT_CONFIG.engines.find(e => e.id == 'shazam')
+  assert.equal(ncm?.enabled, true)
+  assert.equal(ncm?.endpoint, 'https://interface.music.163.com/api/music/audio/match')
+  assert.equal(shazam?.enabled, true)
+  assert.equal(shazam?.endpoint, 'https://amp.shazam.com/discovery/v5/zh/CN/android/-/tag/')
 })
 
 test('合法配置原样采用', () => {
@@ -74,9 +79,22 @@ test('未知引擎 id 与畸形条目被丢掉，第一条合法条目保留且�
     ],
   })
   assert.ok(KNOWN_ENGINE_IDS.includes('ncm'))
+  assert.ok(KNOWN_ENGINE_IDS.includes('shazam'), '新引擎没登记就永远进不了 sanitizeConfig')
   assert.equal(config.engines.length, 1)
   assert.equal(config.engines[0].enabled, true)
   assert.equal(config.engines[0].endpoint, 'https://interface.music.163.com/api/music/audio/match')
+})
+
+// 远端开关要按引擎分路：只关 Shazam 不该把网易一起关掉，反之亦然。
+test('shazam 一条 enabled:false 只关掉它自己，ncm 不受牵连', () => {
+  const config = sanitizeConfig({
+    version: 8,
+    engines: [
+      { id: 'ncm', enabled: true, endpoint: 'https://interface.music.163.com/api/music/audio/match' },
+      { id: 'shazam', enabled: false, endpoint: 'https://amp.shazam.com/discovery/v5/zh/CN/android/-/tag/' },
+    ],
+  })
+  assert.deepEqual(config.engines.map(e => [e.id, e.enabled]), [['ncm', true], ['shazam', false]])
 })
 
 // 两个方向相反的失败：读不出结构 = 退回默认（别瘫痪）；读得出结构 = 尊重关停（别拨回 ON）。
