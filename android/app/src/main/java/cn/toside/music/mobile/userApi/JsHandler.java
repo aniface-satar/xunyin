@@ -11,16 +11,19 @@ import java.util.Objects;
 
 public class JsHandler extends Handler {
   private final UtilsEvent utilsEvent;
+  private final String loadSeq;
 
-  JsHandler(Looper looper, UtilsEvent utilsEvent) {
+  JsHandler(Looper looper, UtilsEvent utilsEvent, String loadSeq) {
     super(looper);
     this.utilsEvent = utilsEvent;
+    this.loadSeq = loadSeq;
   }
 
   private void sendInitFailedEvent(String errorMessage) {
     WritableMap params = Arguments.createMap();
     params.putString("action", "init");
     params.putString("errorMessage", errorMessage);
+    params.putString("loadSeq", loadSeq);
     params.putString("data", "{ \"info\": null, \"status\": false, \"errorMessage\": \"Create JavaScript Env Failed\" }");
     this.utilsEvent.sendEvent(utilsEvent.API_ACTION, params);
     sendLogEvent(new Object[]{"error", errorMessage});

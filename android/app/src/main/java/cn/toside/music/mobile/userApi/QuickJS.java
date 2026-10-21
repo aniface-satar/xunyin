@@ -26,6 +26,10 @@ public class QuickJS {
   private QuickJSContext jsContext = null;
   final Handler timeoutHandler = new Handler();
   private boolean inited = false;
+  // 这次加载的序号：init 事件带上它，换脚本时旧加载晚到的事件才不会被算到新脚本头上
+  private String loadSeq = "";
+  // 被替换掉的实例：一个事件都不许再往 JS 发
+  private volatile boolean destroyed = false;
 
   public QuickJS(ReactApplicationContext context, Handler eventHandler) {
     this.reactContext = context;
@@ -52,6 +56,7 @@ public class QuickJS {
   }
 
   private void createEnvObj(QuickJSContext jsContext) {
+    jsContext.getGlobalObject().setProperty("__lx_load_seq__", this.loadSeq);
     jsContext.getGlobalObject().setProperty("__lx_native_call__", args -> {
       if (this.key.equals(args[0])) {
         callNative((String) args[1], (String) args[2]);
@@ -145,6 +150,7 @@ public class QuickJS {
   }
 
   private void callNative(String action, String data) {
+    if (this.destroyed) return;
     Message message = this.eventHandler.obtainMessage();
     message.what = HandlerWhat.ACTION;
     if ("init".equals(action)) {
@@ -159,6 +165,7 @@ public class QuickJS {
   public String loadScript(Bundle scriptInfo) {
     Log.d("UserApi", "UserApi Thread id: " + Thread.currentThread().getId());
     String script = scriptInfo.getString("script", "");
+    this.loadSeq = scriptInfo.getString("loadSeq", "");
     if (createJSEnv(scriptInfo.getString("id", ""),
       scriptInfo.getString("name", "Unknown"),
       scriptInfo.getString("description", ""),
@@ -194,6 +201,7 @@ public class QuickJS {
     return callJS(params);
   }
   public Object callJS(Object[] params) {
+    if (this.destroyed) return null;
     try {
       return this.jsContext.getGlobalObject().getJSFunction("__lx_native__").call(params);
     } catch (Exception e) {
@@ -213,8 +221,19 @@ public class QuickJS {
     }
   }
 
+  /**
+   * 从别的线程叫停这个实例（换脚本时用）：之后再发的事件、再跑的定时回调一律丢掉。
+   * 销毁上下文必须回自己的线程做，这里只负责让它闭嘴。
+   */
+  public void markDestroyed() {
+    this.destroyed = true;
+  }
+
   public void destroy () {
-    this.jsContext.destroy();
-    this.jsContext = null;
+    this.destroyed = true;
+    if (this.jsContext != null) {
+      this.jsContext.destroy();
+      this.jsContext = null;
+    }
   }
 }

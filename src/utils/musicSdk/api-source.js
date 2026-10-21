@@ -1,4 +1,5 @@
 import apiSourceInfo from './api-source-info'
+import { isUserApiSource } from '@/utils/userApiSource'
 
 // import temp_api_kw from './kw/api-temp'
 // import test_api_kg from './kg/api-test'
@@ -47,7 +48,7 @@ for (const api of apiSourceInfo) {
 const getAPI = source => apiList[`${settingState.setting['common.apiSource']}_api_${source}`]
 
 const apis = source => {
-  if (/^user_api/.test(settingState.setting['common.apiSource'])) return global.lx.apis[source]
+  if (isUserApiSource(settingState.setting['common.apiSource'])) return global.lx.apis[source]
   const api = getAPI(source)
   if (api) return api
   throw new Error('Api is not found')

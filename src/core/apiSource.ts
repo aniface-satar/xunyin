@@ -5,6 +5,7 @@ import { updateSetting } from './common'
 import settingState from '@/store/setting/state'
 import { destroyUserApi, setUserApi } from './userApi'
 import apiSourceInfo from '@/utils/musicSdk/api-source-info'
+import { isUserApiSource } from '@/utils/userApiSource'
 
 
 export const setApiSource = (apiId: string) => {
@@ -17,7 +18,7 @@ export const setApiSource = (apiId: string) => {
       }
     })
   }
-  if (/^user_api/.test(apiId)) {
+  if (isUserApiSource(apiId)) {
     setUserApi(apiId).catch(err => {
       if (!global.lx.apiInitPromise[1]) global.lx.apiInitPromise[2](false)
       console.log(err)

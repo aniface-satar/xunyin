@@ -53,7 +53,8 @@ public class UserApiModule extends ReactContextBaseJavaModule {
     if (this.javaScriptThread != null) destroy();
     Bundle info = Arguments.toBundle(data);
     this.javaScriptThread = new JavaScriptThread(this.reactContext, info);
-    this.javaScriptThread.prepareHandler(new JsHandler(this.reactContext.getMainLooper(), this.utilsEvent));
+    // 加载序号一路带到 init 事件里：JS 侧据此丢掉上一次加载迟到的事件
+    this.javaScriptThread.prepareHandler(new JsHandler(this.reactContext.getMainLooper(), this.utilsEvent, info.getString("loadSeq", "")));
     this.javaScriptThread.getHandler().sendEmptyMessage(HandlerWhat.INIT);
     this.javaScriptThread.setUncaughtExceptionHandler((thread, ex) -> {
       Handler jsHandler = javaScriptThread.getHandler();
@@ -82,6 +83,8 @@ public class UserApiModule extends ReactContextBaseJavaModule {
   public void destroy() {
     JavaScriptThread javaScriptThread = this.javaScriptThread;
     if (javaScriptThread == null) return;
+    // 先叫停再收线程：quit 后排在后面的 DESTROY 可能丢，但旧实例绝不能再往 JS 发事件
+    javaScriptThread.markDestroyed();
     javaScriptThread.getHandler().sendEmptyMessage(HandlerWhat.DESTROY);
     javaScriptThread.stopThread();
     this.javaScriptThread = null;

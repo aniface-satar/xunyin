@@ -2,9 +2,18 @@ import { NativeEventEmitter, NativeModules } from 'react-native'
 
 const { UserApiModule } = NativeModules
 
-let loadScriptInfo: LX.UserApi.UserApiInfo | null = null
-export const loadScript = (info: LX.UserApi.UserApiInfo & { script: string }) => {
+/**
+ * verify 只活在 JS 侧：更新流程换上新脚本后会先自己加载一次验证，
+ * 这次加载的成败不能算到应用级初始化头上（见 core/init/userApi 的 handleStateChange）。
+ */
+export type UserApiLoadInfo = LX.UserApi.UserApiInfo & { script: string, verify?: boolean }
+let loadScriptInfo: (LX.UserApi.UserApiInfo & { verify?: boolean }) | null = null
+// 每次加载一个序号：native 把它带在 init 事件里，用来分辨事件属于哪一次加载
+let loadSeqCounter = 0
+let currentLoadSeq = ''
+export const loadScript = (info: UserApiLoadInfo) => {
   loadScriptInfo = info
+  currentLoadSeq = `${++loadSeqCounter}`
   UserApiModule.loadScript({
     id: info.id,
     name: info.name,
@@ -13,6 +22,7 @@ export const loadScript = (info: LX.UserApi.UserApiInfo & { script: string }) =>
     author: info.author ?? '',
     homepage: info.homepage ?? '',
     script: info.script,
+    loadSeq: currentLoadSeq,
   })
 }
 
@@ -40,6 +50,8 @@ export interface InitParams {
   status: boolean
   errorMessage: string
   info: LX.UserApi.UserApiInfo
+  /** 脚本在 native 侧连编译都没过（区别于脚本自己报的初始化失败） */
+  loadFailed?: boolean
 }
 
 export interface ResponseParams {
@@ -82,10 +94,19 @@ export const onScriptAction = (handler: (event: ActionsEvent) => void): () => vo
   const eventListener = eventEmitter.addListener('api-action', event => {
     if (event.data) event.data = JSON.parse(event.data as string)
     if (event.action == 'init') {
+      // 换脚本（更新验证 / 回滚 / 切源）时，上一次加载可能还留着一个 init 事件在队列里。
+      // 带序号的必须对得上才算这次加载的结果；没带序号的是旧内核，照旧放行
+      const eventLoadSeq = (event as unknown as { loadSeq?: string }).loadSeq ?? (event.data as { loadSeq?: string } | null)?.loadSeq
+      if (eventLoadSeq != null && eventLoadSeq != currentLoadSeq) return
       if (event.data.info) event.data.info = { ...loadScriptInfo, ...event.data.info }
-      else event.data.info = { ...loadScriptInfo }
+      else {
+        // info 为空说明脚本在 native 侧连编译都没过（不是脚本自己报的初始化失败）：
+        // 补上来源信息好让上层认得这是哪次加载，同时留个标记，两种失败的提示语不一样
+        event.data.info = { ...loadScriptInfo }
+        event.data.loadFailed = true
+      }
     } else if (event.action == 'showUpdateAlert') {
-      if (!loadScriptInfo?.allowShowUpdateAlert) return
+      if (!loadScriptInfo?.allowShowUpdateAlert && !loadScriptInfo?.autoUpdate) return
     }
     handler(event as ActionsEvent)
   })
@@ -93,6 +114,17 @@ export const onScriptAction = (handler: (event: ActionsEvent) => void): () => vo
   return () => {
     eventListener.remove()
   }
+}
+
+export const getLoadScriptInfo = (): (LX.UserApi.UserApiInfo & { verify?: boolean }) | null => loadScriptInfo
+
+/**
+ * 设置页改了开关不需要重新加载脚本，但事件过滤和更新流程读的是这份加载快照；
+ * 不同步的话，刚关掉的弹窗要等到下次重启才真的关上。
+ */
+export const syncLoadScriptInfo = (id: string, patch: Partial<Pick<LX.UserApi.UserApiInfo, 'allowShowUpdateAlert' | 'autoUpdate'>>) => {
+  if (loadScriptInfo?.id !== id) return
+  loadScriptInfo = { ...loadScriptInfo, ...patch }
 }
 
 export const destroy = () => {

@@ -4,6 +4,11 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
   delete globalThis.lx_setup
   const _nativeCall = globalThis.__lx_native_call__
   delete globalThis.__lx_native_call__
+  // 这次加载的序号：init 事件带上它，换脚本时旧加载迟到的事件才不会被算到新脚本头上
+  const loadSeq = typeof globalThis.__lx_load_seq__ == 'string' ? globalThis.__lx_load_seq__ : ''
+  delete globalThis.__lx_load_seq__
+  // 序号为空（没给，或旧内核）就不带：JS 侧见到空串会把正常事件也一起丢掉
+  const withLoadSeq = (payload) => loadSeq ? { ...payload, loadSeq } : payload
   const checkLength = (str, length = 1048576) => {
     if (typeof str == 'string' && str.length > length) throw new Error('Input too long')
     return str
@@ -303,7 +308,7 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
    */
   const handleInit = (info) => {
     if (!info) {
-      nativeCall(NATIVE_EVENTS_NAMES.init, { info: null, status: false, errorMessage: 'Missing required parameter init info' })
+      nativeCall(NATIVE_EVENTS_NAMES.init, withLoadSeq({ info: null, status: false, errorMessage: 'Missing required parameter init info' }))
       // sendMessage(NATIVE_EVENTS_NAMES.init, false, null, typeof info.message === 'string' ? info.message.substring(0, 100) : '')
       return
     }
@@ -329,10 +334,10 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
       }
     } catch (error) {
       // console.log(error)
-      nativeCall(NATIVE_EVENTS_NAMES.init, { info: null, status: false, errorMessage: error.message })
+      nativeCall(NATIVE_EVENTS_NAMES.init, withLoadSeq({ info: null, status: false, errorMessage: error.message }))
       return
     }
-    nativeCall(NATIVE_EVENTS_NAMES.init, { info: sourceInfo, status: true })
+    nativeCall(NATIVE_EVENTS_NAMES.init, withLoadSeq({ info: sourceInfo, status: true }))
   }
   const handleShowUpdateAlert = (data, resolve, reject) => {
     if (!data || typeof data != 'object') return reject(new Error('parameter format error.'))

@@ -61,7 +61,12 @@ export interface UserApiEditModalType {
   show: () => void
 }
 
-export default forwardRef<UserApiEditModalType, {}>((props, ref) => {
+export interface UserApiEditModalProps {
+  /** custom：用户导入的源；builtin：随应用内置的源 */
+  scope?: 'custom' | 'builtin'
+}
+
+export default forwardRef<UserApiEditModalType, UserApiEditModalProps>(({ scope = 'custom' }, ref) => {
   const dialogRef = useRef<DialogType>(null)
   // const sourceSelectorRef = useRef<SourceSelectorType>(null)
   // const inputRef = useRef<UrlInputType>(null)
@@ -105,25 +110,35 @@ export default forwardRef<UserApiEditModalType, {}>((props, ref) => {
           <Dialog ref={dialogRef} bgHide={false}>
             <View style={styles.content}>
               {/* <UrlInput ref={inputRef} /> */}
-              <Text size={16} style={styles.title}>{t('user_api_title')}</Text>
-              <List />
+              <Text size={16} style={styles.title}>
+                {t(scope == 'builtin' ? 'builtin_source_title' : 'user_api_title')}
+              </Text>
+              <List scope={scope} />
               <View style={styles.tips}>
-                <Text style={styles.tipsText} size={12}>
-                  {t('user_api_readme')}
-                </Text>
-                <TouchableOpacity onPress={openFAQPage}>
-                  <Text style={{ ...styles.tipsText, textDecorationLine: 'underline' }} size={12} color={theme['c-primary-font']}>FAQ</Text>
-                </TouchableOpacity>
-                <View>
-                  <Text style={styles.tipsText} size={12}>{t('user_api_note')}</Text>
-                </View>
+                {
+                  scope == 'builtin'
+                    ? <Text style={styles.tipsText} size={12}>{t('builtin_source_note')}</Text>
+                    : (
+                        <>
+                          <Text style={styles.tipsText} size={12}>
+                            {t('user_api_readme')}
+                          </Text>
+                          <TouchableOpacity onPress={openFAQPage}>
+                            <Text style={{ ...styles.tipsText, textDecorationLine: 'underline' }} size={12} color={theme['c-primary-font']}>FAQ</Text>
+                          </TouchableOpacity>
+                          <View>
+                            <Text style={styles.tipsText} size={12}>{t('user_api_note')}</Text>
+                          </View>
+                        </>
+                      )
+                }
               </View>
             </View>
             <View style={styles.btns}>
-              <Button style={{ ...styles.btn, backgroundColor: theme['c-button-background'] }} onPress={handleCancel}>
+              <Button style={[styles.btn, scope == 'builtin' && styles.btnLast, { backgroundColor: theme['c-button-background'] }]} onPress={handleCancel}>
                 <Text size={14} color={theme['c-button-font']}>{t('close')}</Text>
               </Button>
-              <ImportBtn btnStyle={{ ...styles.btn, backgroundColor: theme['c-button-background'] }} />
+              { scope == 'custom' ? <ImportBtn btnStyle={{ ...styles.btn, backgroundColor: theme['c-button-background'] }} /> : null }
             </View>
           </Dialog>
         ) : null
@@ -170,6 +185,9 @@ const styles = createStyle({
     alignItems: 'center',
     borderRadius: 4,
     marginRight: 15,
+  },
+  btnLast: {
+    marginRight: 0,
   },
 })
 

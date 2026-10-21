@@ -100,7 +100,7 @@ export default forwardRef<ScriptImportOnlineType, {}>((props, ref) => {
       toast(t('user_api_import_failed_tip', { message: 'Too large script' }), 'long')
       return
     }
-    void handleImportScript(script)
+    void handleImportScript(script, url)
 
     alertRef.current?.setVisible(false)
   }

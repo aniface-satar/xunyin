@@ -22,11 +22,15 @@ export const addUserApi = (info: LX.UserApi.UserApiInfo) => {
 }
 
 
-export const setUserApiAllowShowUpdateAlert = (id: string, enable: boolean) => {
+const setUserApiField = <K extends 'updateUrl'>(id: string, key: K, value: LX.UserApi.UserApiInfo[K]) => {
   const targetIndex = state.list.findIndex(api => api.id == id)
   if (targetIndex < 0) return
-  state.list[targetIndex].allowShowUpdateAlert = enable
+  state.list[targetIndex][key] = value
   state.list.splice(targetIndex, 1, { ...state.list[targetIndex] })
 
   event.list_changed([...state.list])
+}
+
+export const setUserApiUpdateUrl = (id: string, url: string) => {
+  setUserApiField(id, 'updateUrl', url)
 }
