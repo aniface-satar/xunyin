@@ -19,7 +19,7 @@ const LB_SIMILAR_API = 'https://labs.api.listenbrainz.org/similar-artists/json'
 /** 实测缺省 algorithm 直接 400；这个参数是 ListenBrainz Labs 当前的会话共现算法。 */
 const LB_ALGORITHM = 'session_based_days_7500_session_300_contribution_3_threshold_10_limit_100_filter_True_skip_30'
 /** MB 要求可识别的 UA，用仓库地址而不是伪装浏览器。 */
-const MB_USER_AGENT = 'XunYin/1.1.0 (https://github.com/aniface-satar/xunyin)'
+const MB_USER_AGENT = 'XunYin/1.2.0 (https://github.com/aniface-satar/xunyin)'
 
 const metaBrainzPolicy: RequestPolicy = {
   timeoutMs: recommendationConfig.similarArtist.requestTimeoutMs,

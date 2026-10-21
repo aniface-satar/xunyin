@@ -8,6 +8,39 @@ Change log format is based on [Keep a Changelog](http://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.2.0](https://github.com/aniface-satar/xunyin/compare/v1.1.0...v1.2.0) - 2026-10-21
+
+### 新增
+
+- 听歌识曲：搜索页顶部入口，采 PCM 后分片算指纹上传，网易云（小芸）为主引擎、Shazam 兜底；结果按来源分区块展示，带识别历史（`src/core/musicRecognition/`、`src/screens/MusicRecognition/`）
+- 音乐下载：歌曲/歌单菜单入口 + 「下载」页统一管理，音质可选（含"全部按最高/最低"），支持暂停续传与重新下载；默认落系统音乐文件夹，走 SAF 可换目录，文件写入封面/歌词等标签（`src/core/download/`、`src/store/download/`）
+- 分享成图：播放页头部「分享」→「歌词卡片」，音乐卡与歌词卡两层结构，`view-shot` 3.8.0 抓取后经 FileProvider 保存或分享；歌词页长按进选择模式，可复制选中行或出歌词海报（`src/components/ShareCard/`、`src/utils/shareCard/`、`src/core/lyricCopy.ts`）
+- 播放页动态背景：底色由封面取色生成（纯色方案，纹理支已摘下），底色晚到时把屏幕上那一支原样喂回决策表走宽限期淡入；下一首预热直链与封面字节，判据抽成纯表（`src/utils/monet/`、`src/core/init/player/`）
+- 内置源：8 本地 + 3 在线，换源改成管理器行内勾选，当前源名加粗（`src/config/builtinSources/`、`src/utils/builtinSources.ts`）
+- 音源自动更新检查：可选每次启动/每天/每周，只升不降、多地址回退，换上之前过 acorn 语法闸门，load 失败自动退回原版本；本地源补 `@update_url` 与导入记址（`src/core/userApiUpdate/`）
+- 「我的歌单」自定义拖拽排序：≡ 拖动、浮行让位、边缘自动滚动、松手落库（`src/screens/Home/Views/Mylist/MusicList/customSort.ts`）
+- 三 tab 独立导航栈：切走保留多级页、返回逐级退、重点当前 tab 一次回最初页；机制是 `DetailPageActiveContext` 上升沿（详情页藏在 `display:none` 里从不卸载）
+- 外部歌单整张收进自建歌单；与爱心同认时不建第二份（`src/screens/SonglistDetail/listAction.ts`）
+- 推荐语种硬配额收口（批次窗口修好：10% 稳态下上限 3/20）、相似歌手通道（MusicBrainz + ListenBrainz，五源自有接口全锁）
+- 功能入口图标改用独立小字体 `feature-icons.ttf`（电台/探索/识曲），度量与 icomoon 对齐，不重建全站 53 枚图标
+- 关于页社区板块重排：小红书 + QQ 群，群号当主字段，配色仍走主题
+
+### 优化
+
+- 歌单一律从顶部打开：A/B/C 三种自动跳转全部清掉，定位只剩行尾浮窗按钮
+- 设置页 Basic 节重排：抽屉布局位置、允许进度条 seek、自动隐藏播放栏、显示返回按钮、显示退出按钮 5 个开关不再暴露，取值由默认值接管；`Setting/components/Slider.tsx` 重复实现删除，统一用 `@/components/common/Slider`
+- 全站可点元素补 `accessibilityRole`/`accessibilityLabel`；`createStyle` 换算契约与单花括号插值扫平
+- 歌词页 `PlayLine` 摘掉 `onPlayLine`，seek 统一走点击歌词行（横屏随之失去拖拽浮标 seek）
+
+### 修复
+
+- 下载「停在排队中」与「进度到不了 100%」：任务所有权落到执行者；`progress.ts` 不再在传输途中封顶
+- 音量均衡创建 audiofx 失败：补 `MODIFY_AUDIO_SETTINGS` 权限，并在 `dependencies-patch.js` 里把播放器的 audio session id 透出给 JS
+- 取色非确定：量化套固定种子，同一张封面不再每次跳出不同底色
+- 换过源的歌按播放路径同序取直链，音质变化即作废在途预热
+- 下载保存目录选择器补 `DocumentsContract.EXTRA_INITIAL_URI`，直接开在系统 Music（API 26+）
+- Metro 的 `blockList` 排掉 `lx-music-mobile/` 与 `lx-music-sync-server/` 两份历史副本，爬虫不再 traversing 它们的 node_modules
+
 ## [1.1.0](https://github.com/aniface-satar/xunyin/compare/v1.0.6...v1.1.0) - 2026-10-08
 
 ### 新增
