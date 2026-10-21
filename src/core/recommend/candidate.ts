@@ -8,7 +8,7 @@ import { themeAffinityFactor, themeNetWeight } from './feedback.ts'
 import { computePlayCountNumber, computeWeakThemeScore, normalizePlaylistKey, upsertObservedPlaylist, type PlaylistObservationInput } from './playlistIndex.ts'
 import { getCatalogCapabilities, getChartBoards, getChartTracks, getPlaylistDetailPage, getPlaylistTags, getPlaylistsByTag, searchMusic, searchPlaylists } from './sdkCatalog.ts'
 import { computeBucketDetailReserve, countPoolLang } from './languageQuota.ts'
-import { pickPlaylistSort, pickWeightedTag, planLangBucketFetch } from './tabSections.ts'
+import { normalizeLangTagId, pickPlaylistSort, pickWeightedTag, planLangBucketFetch } from './tabSections.ts'
 import type { LangTargets } from './languageQuota.ts'
 import type { ArtistLangTable, LangBucket } from './language.ts'
 import type { SortSummary, TagSummary } from './sdkCatalog.ts'
@@ -191,6 +191,44 @@ export const createArtistHitCandidates = (
   return candidates
 }
 
+export interface SimilarArtistContribution {
+  seedArtist: string
+  artistName: string
+  tracks: readonly LX.Music.MusicInfoOnline[]
+}
+
+/**
+ * 相似歌手通道 E：候选是 kg 按 MB 规范名搜来的热门歌，没有来源歌单可算分，
+ * 亲和度由种子歌手的画像权重传导（相似是间接信号，封顶 0.9）；
+ * 探索度固定偏低——E 的职责是画像延伸，撞新仍归 C/D。
+ */
+export const createSimilarArtistCandidates = (
+  contributions: readonly SimilarArtistContribution[],
+  params: CatalogRefreshParams,
+): PoolCandidate[] => {
+  const candidates: PoolCandidate[] = []
+  for (const contribution of contributions) {
+    const seedWeight = params.profile.topArtists.find(item => item.artist == contribution.seedArtist)?.weight ?? 0.3
+    const affinity = Math.max(0.3, Math.min(0.9, seedWeight * 0.8))
+    for (const musicInfo of contribution.tracks) {
+      if (isExcluded(musicInfo, params)) continue
+      candidates.push(createPoolCandidate({
+        musicInfo,
+        channel: 'E',
+        sourceId: `similar_artist:${contribution.seedArtist}`,
+        channels: ['E'],
+        affinity,
+        coOccurrence: 0,
+        exploration: 0.3,
+        confirmedSeedPlaylist: false,
+        reason: `similar_artist:${contribution.seedArtist}`,
+        now: params.now,
+      }))
+    }
+  }
+  return candidates
+}
+
 interface SummaryWithHints {
   id: string
   source: LX.OnlineSource
@@ -217,7 +255,7 @@ const pickListSort = (sorts: readonly SortSummary[], rotation: number): { sortId
 
 export const refreshExternalCandidates = async(params: CatalogRefreshParams): Promise<CatalogRefreshResult> => {
   const budget = params.budget ?? recommendationConfig.request.maxRequestsPerRefresh
-  const { discoveryBudget } = planRefreshBudget(budget, recommendationConfig.candidatePool.detailFetchesPerRefresh)
+  const { detailBudget, discoveryBudget } = planRefreshBudget(budget, recommendationConfig.candidatePool.detailFetchesPerRefresh)
   const reasons: string[] = []
   let requests = 0
   let discoveryRequests = 0
@@ -388,7 +426,7 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
       poolSize,
       windowSize: recommendationConfig.channels.windowSize,
       maxBuckets: recommendationConfig.candidatePool.bucketFetchesPerRefresh,
-      knownTagIds: catalogTags.length ? new Set(catalogTags.map(tag => String(tag.id))) : undefined,
+      knownTagIds: catalogTags.length ? new Set(catalogTags.map(tag => normalizeLangTagId(source, String(tag.id)))) : undefined,
     })
     for (const entry of plan) {
       if (params.signal?.cancelled) break
@@ -398,7 +436,7 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
         // 分类归属要用目录里的真名：summary.category 缺失时若写 `lang:en` 这种合成串，
         // 它会经 observedPlaylists.category 进到 behavior.ts 的点赞学习里，
         // 而这个键永远匹配不到任何目录分类名——等于把这次学习信号扔进一个死键。
-        const bucketTagName = catalogTags.find(tag => String(tag.id) == entry.tagId)?.name
+        const bucketTagName = catalogTags.find(tag => normalizeLangTagId(source, String(tag.id)) == entry.tagId)?.name
         const playlists = await getPlaylistsByTag(source, entry.tagId, sortId, 1 + (rotation % 3), { signal: params.signal })
         let added = 0
         for (const summary of playlists) {
@@ -422,11 +460,10 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
   // 5. 分批读取歌单详情，记录覆盖情况；只有读取详情后才确认是否包含种子歌曲。
   const playlistCandidates: PoolCandidate[] = []
   let detailFetches = 0
-  // 给 C 通道预留一个详情位：否则 4 个额度永远被已知/搜索摘要吃光，最新/低曝光池恒为空
+  // 给 C 通道预留一个详情位：否则详情额度永远被已知/搜索摘要吃光，最新/低曝光池恒为空
   // 语种桶召回同样要从这份常规份额里让位（bucketReserve），常规摘要永远至少留一格
-  const detailBudget = recommendationConfig.candidatePool.detailFetchesPerRefresh
   // 只预留真要用的格子：没召回到桶摘要时（问卷没滑语言的整轮、池里不缺货的整轮都算）预留必须是 0。
-  // 详情读是这个候选池唯一的进货口，白扣一格等于给**全体用户**（含没开配额的）砍掉 25% 吞吐，
+  // 详情读是这个候选池唯一的进货口，白扣一格等于给**全体用户**（含没开配额的）砍掉固定份额，
   // 而且桶只召回到 1 张时也要把没用完的格子还给常规摘要。
   const bucketReserve = bucketSummaries.length
     ? Math.min(bucketSummaries.length, computeBucketDetailReserve({
@@ -455,8 +492,20 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
   const orderedSummaries = bucketPicks.length && unknownShare > recommendationConfig.candidatePool.unknownShareEscalate
     ? [...bucketPicks, ...regularPicks]
     : [...regularPicks, ...bucketPicks]
+  // 空歌单不等于该桶无货：tx 闽南语/小语种的头部歌单就可能没有曲目。
+  // 把同桶的备选摘要留在队里，读空时排到队尾再试一张——只在还有详情额度时才真的发请求。
+  const summaryQueue = [...orderedSummaries]
+  const queuedSummaryIds = new Set(summaryQueue.map(summary => summary.id))
+  const bucketAlternates = new Map<LangBucket, SummaryWithHints[]>()
+  for (const summary of bucketSummaries) {
+    if (!summary.langHint) continue
+    const list = bucketAlternates.get(summary.langHint)
+    if (list) list.push(summary)
+    else bucketAlternates.set(summary.langHint, [summary])
+  }
   const observedList = Object.values(params.state.observedPlaylists)
-  for (const summary of orderedSummaries) {
+  for (let queueIndex = 0; queueIndex < summaryQueue.length; queueIndex++) {
+    const summary = summaryQueue[queueIndex]
     if (detailFetches >= detailBudget) break
     if (params.signal?.cancelled) break
     try {
@@ -487,7 +536,15 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
         seenTracks.add(key)
         uniqueTracks.push(track)
       }
-      if (!uniqueTracks.length && summary.langHint) reasons.push(`lang_playlist_empty:${summary.id}`)
+      if (!uniqueTracks.length && summary.langHint) {
+        reasons.push(`lang_playlist_empty:${summary.id}`)
+        const alternate = (bucketAlternates.get(summary.langHint) ?? [])
+          .find(item => !queuedSummaryIds.has(item.id))
+        if (alternate) {
+          queuedSummaryIds.add(alternate.id)
+          summaryQueue.push(alternate)
+        }
+      }
       const seedTrackKeys: string[] = []
       let seedOverlap = 0
       for (const track of uniqueTracks) {

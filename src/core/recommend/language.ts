@@ -65,7 +65,10 @@ export const mapTxLanguageCode = (code: string | number | null | undefined): Lan
   return TX_LANGUAGE_CODES[num] ?? null
 }
 
-/** 按源分派：mg 的语种是字符串列表（P2 接），其余源没有语种字段。 */
+/** 有逐曲语种字段（L1）的源：桶召回优先在它们身上花预算，抓回来的候选语种闭环最准。 */
+export const hasTrackLangField = (source: string | undefined) => source == 'kg' || source == 'tx'
+
+/** 按源分派：只有 kg/tx 有逐曲语种字段；其余源没有，落到 L2/L3/L4。 */
 export const bucketFromLangField = (
   source: string | undefined,
   lang: string | number | null | undefined,
@@ -158,12 +161,16 @@ export const bucketFromLyric = (lyric: string | null | undefined, name = ''): La
   return null
 }
 
-export type ArtistLangSource = 'lyric' | 'field'
+export type ArtistLangSource = 'lyric' | 'field' | 'relation'
 
-/** 强度：曲内语言表（歌词）< 接口语种字段。P2 的 MusicBrainz 关系链再往上加一档。 */
+/**
+ * 强度：曲内语言表（歌词）< 接口语种字段 < MusicBrainz 关系链。
+ * relation 是歌手级权威标签（mandopop/cantopop/j-pop 等），比单曲字段更能代表歌手整体。
+ */
 const ARTIST_LANG_STRENGTH: Record<ArtistLangSource, number> = {
   lyric: 1,
   field: 2,
+  relation: 3,
 }
 
 export interface ArtistLangEntry {

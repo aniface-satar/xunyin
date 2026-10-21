@@ -5,6 +5,7 @@ import {
   computeLangTargets,
   countLangUsed,
   computeLangCaps,
+  computeLangCapsForBatch,
   langWithinCap,
   consecutiveLangAllowed,
   instrumentalAllowed,
@@ -129,6 +130,15 @@ test('池内按桶计数：lang 优先，判不出退 langHint，再不行算 un
     {},
   ])
   assert.deepEqual(counts, { zh: 1, en: 1, ja: 1, unknown: 1 })
+})
+
+test('整批生成按未来窗口扣已用量：上一批整批滑出后不再占本轮名额', () => {
+  const targets = computeLangTargets({ zh: 10 })
+  const previousBatch = Array.from({ length: 20 }, () => 'zh' as const)
+  // 新一批 20 首播完后，最近 20 首全是新歌：旧批不该再扣额度，上限是目标 2 + 容差 1
+  assert.equal(computeLangCapsForBatch(targets, previousBatch, 20).caps.zh, 3)
+  // 对照：直接按"最近 20 首"扣（修之前的算法）只剩容差 1 首，这就是 10% 稳态掉到 1.5 首/20 的来源
+  assert.equal(computeLangCaps(targets, countLangUsed(previousBatch, 20)).caps.zh, 1)
 })
 
 test('停在 50% 的桶不冒充配额声明：读路径自己认这条契约', () => {

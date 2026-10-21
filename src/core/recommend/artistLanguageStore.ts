@@ -2,7 +2,7 @@
 import { getData, saveData, removeData } from '@/plugins/storage'
 import { recommendationConfig } from './config.ts'
 import { updateArtistLangTable } from './language.ts'
-import type { ArtistLangTable, LangBucket } from './language.ts'
+import type { ArtistLangSource, ArtistLangTable, LangBucket } from './language.ts'
 
 const ARTIST_LANG_KEY = 'xunyin_recommend_artist_lang_v1'
 
@@ -67,7 +67,7 @@ const scheduleSave = () => {
  * 桶能不能入库（unknown / instr 的排除）由 language.ts 的 updateArtistLangTable 入口把关，
  * 这里只挡"什么都不必写"的空观察，避免为一次无效观察起一次磁盘写。
  */
-const observe = (artists: readonly string[], bucket: LangBucket | null, source: 'lyric' | 'field') => {
+const observe = (artists: readonly string[], bucket: LangBucket | null, source: ArtistLangSource) => {
   if (!bucket || !artists.length) return
   // 写入只认此刻的模块级 table，不认 promise 带回来的那份对象：
   // 内存表可能被更晚完成的读盘替换，写进已被丢弃的对象就是一次静默丢失的观察。
@@ -90,6 +90,11 @@ export const observeArtistLyric = (artists: readonly string[], bucket: LangBucke
 
 export const observeArtistLangField = (artists: readonly string[], bucket: LangBucket | null) => {
   observe(artists, bucket, 'field')
+}
+
+/** MB 关系链是歌手级权威标签，强度高于单曲字段；调用方保证同一歌手的 aliases 一并传入。 */
+export const observeArtistRelation = (artists: readonly string[], bucket: LangBucket | null) => {
+  observe(artists, bucket, 'relation')
 }
 
 export const saveArtistLangTableNow = async() => {

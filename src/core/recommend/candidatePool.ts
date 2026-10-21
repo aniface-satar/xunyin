@@ -54,10 +54,34 @@ export const resolvePoolLang = (
 /**
  * 抓取预算分区：详情读取是候选的唯一来源，必须先给它留出固定份额，
  * 剩下的才给搜索/标签/榜单这类发现型请求；预算过小时对半分，避免任一边归零。
+ * 详情额度随总预算按常规刷新比例放大（idle crawl 的翻倍预算不能全花在发现请求上），
+ * 但不超过总预算的一半，且不低于配置的常规详情数。
  */
 export const planRefreshBudget = (budget: number, detailFetches: number) => {
-  const detailBudget = Math.min(detailFetches, Math.max(1, Math.floor(budget / 2)))
+  const baseBudget = Math.max(1, recommendationConfig.request.maxRequestsPerRefresh)
+  const scaled = Math.ceil(Math.max(0, budget) * Math.max(0, detailFetches) / baseBudget)
+  const detailBudget = Math.min(Math.max(detailFetches, scaled), Math.max(1, Math.floor(budget / 2)))
   return { detailBudget, discoveryBudget: Math.max(0, budget - detailBudget) }
+}
+
+/**
+ * 画像反馈攒够一批才补池：逐条反馈都重抓既费请求又拿不到新结果，
+ * 攒到阈值说明偏好分布已经挪动，值得按新画像重跑一轮召回。
+ * 冷却与「刷新在途」用来合并连续反馈；没有新反馈时再久也不触发（那是 idle crawl 的职责）。
+ */
+export const shouldRefreshForProfileChange = (
+  input: {
+    revision: number
+    lastRefreshRevision: number
+    lastRefreshAt: number
+    now: number
+    inFlight: boolean
+  },
+  policy: { revisionThreshold: number, minIntervalMs: number },
+) => {
+  if (input.inFlight) return false
+  if (input.revision - input.lastRefreshRevision < policy.revisionThreshold) return false
+  return input.now - input.lastRefreshAt >= policy.minIntervalMs
 }
 
 
@@ -327,6 +351,10 @@ const channelWeightsFor = (
       case 'D':
         raw = candidate.exploration * 0.35 + chartNovelty * 0.3 + lowExposure * 0.2 + candidate.affinity * 0.15
         break
+      case 'E':
+        // 相似歌手没有来源歌单分：以种子歌手传导的亲和度为主，叠加会话共现/音频品味与少量撞新
+        raw = candidate.affinity * 0.55 + candidate.exploration * 0.15 + sessionCoOcc * 0.12 + audioAffinity * 0.1 + candidate.coOccurrence * 0.08
+        break
     }
     // radio 模式下探索通道不做纯盲推：亲和度闸门让画像内候选优先于完全陌生的歌
     if ((channel == 'C' || channel == 'D') && options.mode != 'explore') {
@@ -386,7 +414,7 @@ export const buildFinalQueueItems = (
 }
 
 export const poolStats = (candidates: readonly PoolCandidate[], resolveBucket?: PoolCapOptions['resolveBucket']) => {
-  const byChannel: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0 }
+  const byChannel: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 }
   const byLang: Partial<Record<LangBucket, number>> = {}
   const bucketOf = resolveBucket ?? defaultPoolBucket
   for (const candidate of candidates) {

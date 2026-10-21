@@ -14,7 +14,7 @@ import { buildRadioProfile, selectProfileSeeds, buildPlaylistKeywords } from '..
 import { createRadioQueue } from '../src/core/recommend/queue.ts'
 import { migrateRecommendationState, createDefaultState } from '../src/core/recommend/stateSchema.ts'
 import { computeBackoffMs, runWithRetry, withTimeout } from '../src/core/recommend/requestPolicy.ts'
-import { mergePoolCandidates, createPoolCandidate, buildFinalQueueItems, filterPoolCandidates, planRefreshBudget } from '../src/core/recommend/candidatePool.ts'
+import { mergePoolCandidates, createPoolCandidate, buildFinalQueueItems, filterPoolCandidates, planRefreshBudget, shouldRefreshForProfileChange } from '../src/core/recommend/candidatePool.ts'
 import { upsertObservedPlaylist, computeWeakThemeScore } from '../src/core/recommend/playlistIndex.ts'
 import { computeSessionHealth, buildSessionPenalties, sessionPenaltyScore, sessionPenaltyFactor, shouldDeferQueuedItem, mapNegativeRateToFactor, resolveRadioExploration } from '../src/core/recommend/sessionHealth.ts'
 import { tokenizeTrackName } from '../src/core/recommend/tokenize.ts'
@@ -28,7 +28,7 @@ import { updateChannelBandit, thompsonMultiplier } from '../src/core/recommend/b
 import { buildSessionCoOccurrence } from '../src/core/recommend/similarity.ts'
 import { pickCardPlaylists, pickNewSongBoard, pickPlaylistSort, pickPlaylistTag, rankPlaylistTags, rankPlaylistsByProfile, rankTracksByProfile } from '../src/core/recommend/tabSections.ts'
 import type { FinalQueueItem } from '../src/core/recommend/diversity.ts'
-import type { ObservedPlaylist, PoolCandidate } from '../src/core/recommend/types.ts'
+import type { ChannelId, ObservedPlaylist, PoolCandidate } from '../src/core/recommend/types.ts'
 import { selectDeferredTrackKeys } from '../src/core/recommend/queueDeferral.ts'
 
 const mkMusic = (id: string, name: string, singer: string, source = 'kw', interval = '03:00') => ({
@@ -144,7 +144,7 @@ test('canonical key keeps Live/Remix versions distinct and same name across sour
 const mkFinalItem = (
   key: string,
   artist: string,
-  channel: 'A' | 'B' | 'C' | 'D',
+  channel: ChannelId,
   extra: Partial<FinalQueueItem> = {},
 ): FinalQueueItem => ({
   key,
@@ -160,10 +160,16 @@ const mkFinalItem = (
   ...extra,
 })
 
-test('channel quota defaults to 9/5/4/2 per 20 and redistributes missing channels', () => {
-  const full = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100 })
-  assert.deepEqual(full.quotas, { A: 9, B: 5, C: 4, D: 2 })
+test('channel quota defaults to 7/5/4/2/2 per 20 and redistributes missing channels', () => {
+  const full = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100, E: 100 })
+  assert.deepEqual(full.quotas, { A: 7, B: 5, C: 4, D: 2, E: 2 })
   assert.equal(full.total, 20)
+
+  // 相似歌手通道没货时，它的 2 个名额按 fallbackOrder 流入 C/D，并记下降级原因
+  const noSimilar = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100 })
+  assert.deepEqual(noSimilar.quotas, { A: 7, B: 5, C: 5, D: 3, E: 0 })
+  assert.equal(noSimilar.reasons.E, 'no_candidate')
+  assert.equal(noSimilar.total, 20)
 
   const cold = planChannelQuotas(20, [], { A: 100, B: 0, C: 100, D: 100 }, { coldStart: true })
   assert.equal(cold.quotas.B, 0)
@@ -177,9 +183,9 @@ test('channel quota defaults to 9/5/4/2 per 20 and redistributes missing channel
 })
 
 test('explore mode moves the window quota to low-exposure and chart channels', () => {
-  const radio = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100 })
-  const explore = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100 }, { mode: 'explore' })
-  assert.deepEqual(explore.quotas, { A: 3, B: 1, C: 9, D: 7 })
+  const radio = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100, E: 100 })
+  const explore = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100, E: 100 }, { mode: 'explore' })
+  assert.deepEqual(explore.quotas, { A: 3, B: 1, C: 9, D: 7, E: 0 })
   assert.equal(explore.total, 20)
   assert.ok(explore.quotas.C + explore.quotas.D > radio.quotas.C + radio.quotas.D)
 })
@@ -193,17 +199,17 @@ test('cold start spends the whole window on charts and low-exposure playlists', 
 
 test('final selection matches configured channel ratios when candidates are sufficient', () => {
   const candidates: FinalQueueItem[] = []
-  for (const channel of ['A', 'B', 'C', 'D'] as const) {
+  for (const channel of ['A', 'B', 'C', 'D', 'E'] as const) {
     for (let i = 0; i < 30; i++) {
       candidates.push(mkFinalItem(`${channel}${i}`, `artist-${channel}-${i}`, channel, {
         sourcePlaylistId: `pl-${channel}-${i}`,
       }))
     }
   }
-  const plan = planChannelQuotas(20, [], { A: 30, B: 30, C: 30, D: 30 })
+  const plan = planChannelQuotas(20, [], { A: 30, B: 30, C: 30, D: 30, E: 30 })
   const result = selectFinalQueue(candidates, { target: 20, channelPlan: plan, rng: seedRandom(7) })
   assert.equal(result.items.length, 20)
-  assert.deepEqual(result.pickedByChannel, { A: 9, B: 5, C: 4, D: 2 })
+  assert.deepEqual(result.pickedByChannel, { A: 7, B: 5, C: 4, D: 2, E: 2 })
 })
 
 test('final selection enforces artist gap and per-artist caps when alternatives exist', () => {
@@ -982,6 +988,34 @@ test('refresh budget splits discovery and detail reads so neither starves', () =
   assert.deepEqual(planRefreshBudget(1, 4), { detailBudget: 1, discoveryBudget: 0 })
 })
 
+test('idle crawl 的翻倍预算要分给详情读取，否则多出的预算只重复发现', () => {
+  const cfg = recommendationConfig
+  const idleBudget = cfg.request.maxRequestsPerRefresh * cfg.idleCrawl.budgetMultiplier
+  const plan = planRefreshBudget(idleBudget, cfg.candidatePool.detailFetchesPerRefresh)
+  assert.ok(plan.detailBudget > cfg.candidatePool.detailFetchesPerRefresh,
+    `idle detail budget stayed at ${plan.detailBudget}`)
+  // 详情读是唯一进货口，但不能反过来把发现预算吃到一半以下
+  assert.ok(plan.discoveryBudget >= plan.detailBudget, 'detail reads must not eat the discovery half')
+  assert.equal(plan.detailBudget + plan.discoveryBudget, idleBudget)
+})
+
+test('画像反馈攒够阈值且过了冷却才补池，刷新在途时不叠加', () => {
+  const policy = { revisionThreshold: 8, minIntervalMs: 15 * 60 * 1000 }
+  const base = { lastRefreshRevision: 0, lastRefreshAt: 0, now: 16 * 60 * 1000, inFlight: false }
+  assert.equal(shouldRefreshForProfileChange({ ...base, revision: 7 }, policy), false)
+  assert.equal(shouldRefreshForProfileChange({ ...base, revision: 8 }, policy), true)
+  // 刚补过 8 条，又攒到 16 条但只过了 14:59 —— 冷却期没到
+  assert.equal(shouldRefreshForProfileChange({
+    ...base, revision: 16, lastRefreshRevision: 8, lastRefreshAt: 1, now: 15 * 60 * 1000,
+  }, policy), false)
+  // 已经有一轮在跑时不叠加
+  assert.equal(shouldRefreshForProfileChange({ ...base, revision: 100, inFlight: true }, policy), false)
+  // 没有新反馈时等再久也不触发：定时补池是 idle crawl 的职责
+  assert.equal(shouldRefreshForProfileChange({
+    ...base, revision: 8, lastRefreshRevision: 8, now: 24 * 60 * 60 * 1000,
+  }, policy), false)
+})
+
 test('theme feedback amplifies dislikes stronger than likes', () => {
   const cfg = recommendationConfig.themeFeedback
   assert.ok(cfg.negativeFactor > cfg.positiveFactor, 'dislike must outweigh like')
@@ -1106,11 +1140,13 @@ test('negative rate maps linearly onto the exploration factor with a floor', () 
 })
 
 test('channel quotas shrink C/D and hand the room back to A/B under negative feedback', () => {
-  const full = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100 }, { explorationFactor: 1 })
-  assert.deepEqual(full.quotas, { A: 9, B: 5, C: 4, D: 2 }, 'factor=1 keeps the default 9/5/4/2')
-  const shrunk = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100 }, { explorationFactor: 0.25 })
-  assert.ok(shrunk.quotas.C + shrunk.quotas.D <= 3, `C/D should shrink, got ${JSON.stringify(shrunk.quotas)}`)
-  assert.ok(shrunk.quotas.A + shrunk.quotas.B >= 16, `A/B should absorb the quota, got ${JSON.stringify(shrunk.quotas)}`)
+  const full = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100, E: 100 }, { explorationFactor: 1 })
+  assert.deepEqual(full.quotas, { A: 7, B: 5, C: 4, D: 2, E: 2 }, 'factor=1 keeps the default 7/5/4/2/2')
+  const shrunk = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100, E: 100 }, { explorationFactor: 0.25 })
+  assert.ok(shrunk.quotas.C + shrunk.quotas.D < full.quotas.C + full.quotas.D,
+    `C/D should shrink, got ${JSON.stringify(shrunk.quotas)}`)
+  assert.ok(shrunk.quotas.A + shrunk.quotas.B > full.quotas.A + full.quotas.B,
+    `A/B should absorb the quota, got ${JSON.stringify(shrunk.quotas)}`)
   assert.equal(shrunk.total, 20)
 })
 
@@ -1396,8 +1432,8 @@ test('positive streak unlocks exploration expansion above 1', () => {
   assert.equal(mixed.safeMode, true)
   assert.ok(mixed.explorationFactor <= 1, `safe mode must suppress the boost, got ${mixed.explorationFactor}`)
   // 配额随 >1 的 factor 扩张 C/D
-  const expanded = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100 }, { explorationFactor: recommendationConfig.sessionHealth.positiveExplorationBoost })
-  const neutral = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100 })
+  const expanded = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100, E: 100 }, { explorationFactor: recommendationConfig.sessionHealth.positiveExplorationBoost })
+  const neutral = planChannelQuotas(20, [], { A: 100, B: 100, C: 100, D: 100, E: 100 })
   assert.ok(expanded.quotas.C + expanded.quotas.D > neutral.quotas.C + neutral.quotas.D,
     `positive streak should grow C/D quota: ${JSON.stringify(expanded.quotas)} vs ${JSON.stringify(neutral.quotas)}`)
   assert.equal(expanded.total, 20)

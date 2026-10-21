@@ -21,13 +21,14 @@ export const recommendationConfig = {
     /** radio 模式下 C/D 候选权重的亲和度闸门下限：affinity=0 的候选最多降到该比例。 */
     explorationAffinityFloor: 0.55,
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    targetPerWindow: { A: 9, B: 5, C: 4, D: 2 } as Record<'A' | 'B' | 'C' | 'D', number>,
-    /** 探索模式反过来：画像只留少量额度，主要靠低曝光与榜单撞新。 */
+    targetPerWindow: { A: 7, B: 5, C: 4, D: 2, E: 2 } as Record<'A' | 'B' | 'C' | 'D' | 'E', number>,
+    /** 探索模式反过来：画像只留少量额度，主要靠低曝光与榜单撞新；E 在探索模式不供货。 */
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    exploreTargetPerWindow: { A: 3, B: 1, C: 9, D: 7 } as Record<'A' | 'B' | 'C' | 'D', number>,
-    fallbackOrder: ['A', 'C', 'B', 'D'] as Array<'A' | 'B' | 'C' | 'D'>,
-    exploreFallbackOrder: ['C', 'D', 'A', 'B'] as Array<'A' | 'B' | 'C' | 'D'>,
-    coldStartFallbackOrder: ['C', 'D', 'A'] as Array<'A' | 'B' | 'C' | 'D'>,
+    exploreTargetPerWindow: { A: 3, B: 1, C: 9, D: 7, E: 0 } as Record<'A' | 'B' | 'C' | 'D' | 'E', number>,
+    fallbackOrder: ['A', 'C', 'B', 'D', 'E'] as Array<'A' | 'B' | 'C' | 'D' | 'E'>,
+    exploreFallbackOrder: ['C', 'D', 'A', 'B'] as Array<'A' | 'B' | 'C' | 'D' | 'E'>,
+    // 冷启动没有 topArtists 就没有种子歌手，E 必然空跑，别放进兜底顺序
+    coldStartFallbackOrder: ['C', 'D', 'A'] as Array<'A' | 'B' | 'C' | 'D' | 'E'>,
   },
 
   /**
@@ -327,6 +328,39 @@ export const recommendationConfig = {
   idleCrawl: {
     minIntervalMs: 30 * 60 * 1000,
     budgetMultiplier: 2,
+  },
+
+  /**
+   * 画像反馈补池：赞/踩/收藏/完播等反馈累计到阈值后，按新画像异步补一轮候选。
+   * 阈值太小时每首歌都重抓，太大则偏好已经变了池子还是旧的；冷却用于合并连续反馈。
+   */
+  profileRefresh: {
+    revisionThreshold: 8,
+    minIntervalMs: 15 * 60 * 1000,
+    budget: 6,
+  },
+
+  /**
+   * 相似歌手通道 E（MB 检索 → LB 相似 → MB 规范名 → kg 搜歌）。
+   * budgetPerRun 计入每轮总请求预算，不是额外额度；歌单召回永远先花，剩不足 minBudget 时整条链路跳过。
+   * MB/LB 全局 1 req/s 串行（实测超限直接 503 busy），所以一条 8 请求的链路必然跨刷新续跑。
+   */
+  similarArtist: {
+    budgetPerRun: 4,
+    minBudget: 2,
+    /** 每 3 次刷新起 1 位新种子歌手；在途任务优先续跑。 */
+    seedIntervalRefreshes: 3,
+    /** LB 前 N 位做 MB 规范名反查（LB 的名字繁简/拉丁混排，不能直接拿来搜歌）。 */
+    aliasLookups: 3,
+    /** 每轮最多给几位相似歌手搜歌。 */
+    songFetchesPerRun: 3,
+    songsPerArtist: 8,
+    cacheLimit: 200,
+    cacheTtlMs: 30 * 24 * 60 * 60 * 1000,
+    /** 同一批相似歌手刚搜过歌后，冷却期内不再重复花 kg 请求。 */
+    cacheReuseCooldownMs: 6 * 60 * 60 * 1000,
+    minRequestIntervalMs: 1000,
+    requestTimeoutMs: 12000,
   },
 
   session: {

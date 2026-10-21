@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { LANG_BUCKET_TAGS, planLangBucketFetch, pickWeightedTag } from '../src/core/recommend/tabSections.ts'
+import { LANG_BUCKET_TAGS, normalizeLangTagId, planLangBucketFetch, pickWeightedTag, prioritizeL1LangSources } from '../src/core/recommend/tabSections.ts'
 import { computeBucketDetailReserve, computeLangTargets, countPoolLang } from '../src/core/recommend/languageQuota.ts'
 import type { ThemePreference } from '../src/core/recommend/types.ts'
 
@@ -10,12 +10,29 @@ const theme = (name: string, positiveWeight: number, negativeWeight = 0): [strin
   { themeId: name, positiveWeight, negativeWeight, lastDecayTime: 1000, lastUsedTime: 1000 },
 ]
 
-test('kg 与 tx 的语种桶标签 id 齐备，其余源不参与', () => {
+test('五源都登记了语种桶标签，kw 的目录 id 带 digest 后缀要能归一到纯数字', () => {
   assert.deepEqual({ ...LANG_BUCKET_TAGS.kg }, { zh: '84', yue: '19', en: '20', ja: '21', ko: '23', other: '24' })
   assert.deepEqual({ ...LANG_BUCKET_TAGS.tx }, { zh: '1', yue: '146', en: '3', ja: '5', ko: '4', other: '6' })
-  assert.equal(LANG_BUCKET_TAGS.kw, undefined)
-  assert.equal(LANG_BUCKET_TAGS.wy, undefined)
-  assert.equal(LANG_BUCKET_TAGS.mg, undefined)
+  assert.deepEqual({ ...LANG_BUCKET_TAGS.kw }, { zh: '37', yue: '13', en: '35', ja: '1091', ko: '1093', other: '12' })
+  // wy 的分类 id 就是分类名本身；它没有单独的"小语种"桶
+  assert.deepEqual({ ...LANG_BUCKET_TAGS.wy }, { zh: '华语', yue: '粤语', en: '欧美', ja: '日语', ko: '韩语' })
+  assert.deepEqual({ ...LANG_BUCKET_TAGS.mg }, {
+    zh: '1000001762', yue: '1000001763', en: '1000001766', ja: '1000001767', ko: '1000001599', other: '1003449724',
+  })
+  // kw getTag 返回 `37-10000` 形态，但 getTagPlayList 只认纯数字
+  assert.equal(normalizeLangTagId('kw', '37-10000'), '37')
+  assert.equal(normalizeLangTagId('kw', '37'), '37')
+  assert.equal(normalizeLangTagId('wy', '华语'), '华语')
+  assert.equal(normalizeLangTagId('mg', '1000001762'), '1000001762')
+})
+
+test('unknown 占比超过阈值时把有逐曲语种字段的源提到最前，否则保持原序', () => {
+  const randomOrder: LX.OnlineSource[] = ['wy', 'tx', 'mg', 'kg', 'kw']
+  assert.deepEqual(prioritizeL1LangSources(randomOrder, 0.1, 0.3), randomOrder)
+  // 两个 L1 源之间的相对顺序也不能乱：仍按调用方给的随机序，避免永远同一个源先打
+  assert.deepEqual(prioritizeL1LangSources(randomOrder, 0.5, 0.3), ['tx', 'kg', 'wy', 'mg', 'kw'])
+  // 阈值是严格大于：正好 30% 时不重排
+  assert.deepEqual(prioritizeL1LangSources(randomOrder, 0.3, 0.3), randomOrder)
 })
 
 test('按池内比例折算目标数，只规划真正缺货的桶并按缺口降序', () => {
@@ -48,10 +65,9 @@ test('两个桶都缺货时只留缺口大的那个（maxBuckets=1）', () => {
   assert.equal(plan[0].tagId, '5')
 })
 
-test('问卷没滑语言 / 源没有语种标签 / 池已够货 时都不规划', () => {
+test('问卷没滑语言 / 池已够货 时都不规划', () => {
   const empty = computeLangTargets({})
   assert.deepEqual(planLangBucketFetch({ source: 'kg', targets: empty, poolCounts: {}, poolSize: 400, windowSize: 20, maxBuckets: 1 }), [])
-  assert.deepEqual(planLangBucketFetch({ source: 'kw', targets: computeLangTargets({ zh: 50 }), poolCounts: {}, poolSize: 400, windowSize: 20, maxBuckets: 1 }), [])
   assert.deepEqual(planLangBucketFetch({
     source: 'kg',
     targets: computeLangTargets({ zh: 10 }),

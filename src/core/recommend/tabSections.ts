@@ -1,5 +1,5 @@
 import { artistPriorFactor, type ArtistStatsMap } from './artistPrior.ts'
-import { QUOTA_LANG_BUCKETS } from './language.ts'
+import { hasTrackLangField, QUOTA_LANG_BUCKETS } from './language.ts'
 import type { LangBucket } from './language.ts'
 import type { LangTargets } from './languageQuota.ts'
 import { themeNetWeight } from './feedback.ts'
@@ -242,12 +242,44 @@ export const pickPlaylistSort = (sorts: readonly SortSummary[]): SortSummary | n
 }
 
 /**
- * 语种桶 → 该源分类目录里的标签 id。只登记有逐曲语种字段（L1）的两个源，
- * 桶召回抓回来的歌每首都带真语种，闭环才可信。
+ * 语种桶 → 该源分类目录里的标签 id。
+ * kg/tx 有逐曲语种字段（L1），桶召回抓回来的每首歌都带真语种，闭环最准；
+ * kw/wy/mg 没有逐曲字段，但歌单按语种分类，候选能拿到 L2 的 langHint，同样能兑配额。
+ * mg 的 `contentItemList[0]` 是空白占位模板，sdkCatalog 取列表时跳过它。
  */
 export const LANG_BUCKET_TAGS: Partial<Record<LX.OnlineSource, Partial<Record<LangBucket, string>>>> = {
   kg: { zh: '84', yue: '19', en: '20', ja: '21', ko: '23', other: '24' },
   tx: { zh: '1', yue: '146', en: '3', ja: '5', ko: '4', other: '6' },
+  kw: { zh: '37', yue: '13', en: '35', ja: '1091', ko: '1093', other: '12' },
+  // wy 的 getList 直接拿分类名当 cat 参数，目录里 id 也是分类名
+  wy: { zh: '华语', yue: '粤语', en: '欧美', ja: '日语', ko: '韩语' },
+  mg: { zh: '1000001762', yue: '1000001763', en: '1000001766', ja: '1000001767', ko: '1000001599', other: '1003449724' },
+}
+
+/**
+ * kw 的目录 tag id 形如 `37-10000`，getList 内部会拆成 id/type，
+ * 但 getTagPlayList 的 `id` 参数只接受纯数字（带后缀报 param error）。
+ * knownTagIds 比对与真正发请求都要用归一后的值。
+ */
+export const normalizeLangTagId = (source: LX.OnlineSource, tagId: string) => {
+  return source == 'kw' ? tagId.split('-')[0] : tagId
+}
+
+/**
+ * unknown 占比过高说明池里大量候选判不出语种，配额无法兑现。
+ * 此时把有 L1 字段的源提到候选顺序最前（各自内部仍保持调用方的随机序，不总打同一个源），
+ * 让桶召回抓回来的候选直接变成有标签的货。
+ */
+export const prioritizeL1LangSources = (
+  sources: readonly LX.OnlineSource[],
+  unknownShare: number,
+  threshold: number,
+): LX.OnlineSource[] => {
+  if (!(unknownShare > threshold)) return [...sources]
+  return [
+    ...sources.filter(source => hasTrackLangField(source)),
+    ...sources.filter(source => !hasTrackLangField(source)),
+  ]
 }
 
 /**

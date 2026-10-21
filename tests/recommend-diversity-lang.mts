@@ -161,6 +161,38 @@ test('用掉最后一个合法名额不算放开配额：线索必须能分清�
     `legal consumption must not look like a bypass, got ${result.reasons.join(',')}`)
 })
 
+test('池里只剩同一语种时，末档放宽连播而不是把队列截断到 2 首', () => {
+  const candidates = Array.from({ length: 8 }, (_, i) => mkItem(i, 'zh'))
+  const plan = planChannelQuotas(8, [], { A: 30, B: 0, C: 0, D: 0 })
+  const result = selectFinalQueue(candidates, {
+    target: 8,
+    channelPlan: plan,
+    rng: seedRandom(13),
+    langCaps: { enforced: true, caps: { zh: 20 } },
+  })
+  assert.equal(result.items.length, 8)
+  assert.ok(result.reasons.includes('lang_consecutive_relaxed'),
+    `expected lang_consecutive_relaxed, got ${result.reasons.join(',')}`)
+  let run = 1
+  let maxRun = 1
+  for (let i = 1; i < result.items.length; i++) {
+    run = result.items[i].item.lang == result.items[i - 1].item.lang ? run + 1 : 1
+    maxRun = Math.max(maxRun, run)
+  }
+  assert.ok(maxRun >= 3, 'relaxed queue must actually allow a third consecutive song')
+})
+
+test('还有别的语言能轮换时不会提前放宽连播', () => {
+  const candidates = [
+    ...Array.from({ length: 4 }, (_, i) => mkItem(i, 'zh', 3)),
+    ...Array.from({ length: 4 }, (_, i) => mkItem(100 + i, 'en', 2)),
+  ]
+  const plan = planChannelQuotas(8, [], { A: 30, B: 0, C: 0, D: 0 })
+  const result = selectFinalQueue(candidates, { target: 8, channelPlan: plan, rng: seedRandom(13) })
+  assert.equal(result.items.length, 8)
+  assert.equal(result.reasons.includes('lang_consecutive_relaxed'), false)
+})
+
 test('判不出语言的歌直接放行，不触发放开档', () => {
   const candidates = [
     ...Array.from({ length: 4 }, (_, i) => mkItem(i, 'unknown')),
@@ -177,3 +209,4 @@ test('判不出语言的歌直接放行，不触发放开档', () => {
   assert.equal(result.reasons.includes('lang_quota_relaxed'), false)
   assert.equal(result.maxRelaxLevel, 0)
 })
+

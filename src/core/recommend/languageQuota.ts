@@ -121,6 +121,24 @@ export const computeLangCaps = (
   return { enforced: true, caps }
 }
 
+/**
+ * 按"这一批播完后的窗口"算上限：新队列会顶掉窗口尾部 batchSize 首，
+ * 上一批里还会留在窗口中的只有最近 windowSize - batchSize 首。
+ * 若直接按最近 windowSize 首扣已用量，整批 20 首补货时会把已经滑出的上一批也算进来，
+ * 配额只能靠 1 首容差兑现（10% 目标 2 首，稳态掉到约 1.5 首/20）。
+ */
+export const computeLangCapsForBatch = (
+  targets: LangTargets,
+  recentLangs: ReadonlyArray<LangBucket | undefined>,
+  batchSize: number,
+  windowSize: number = recommendationConfig.channels.windowSize,
+  tolerance: number = recommendationConfig.language.capTolerance,
+): LangCaps => {
+  const window = Math.max(0, Math.floor(windowSize))
+  const overlap = Math.max(0, window - Math.max(0, Math.floor(batchSize)))
+  return computeLangCaps(targets, countLangUsed(recentLangs, overlap), tolerance)
+}
+
 /** 判不出语言的歌（unknown / undefined）放行：它既不能凑配额也不该被当成另一种语言卡住。 */
 export const langWithinCap = (lang: LangBucket | undefined, caps: Partial<Record<LangBucket, number>>): boolean => {
   if (!lang || lang == 'unknown') return true

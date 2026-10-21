@@ -244,6 +244,7 @@ export const getRadioStatus = () => {
     sessionHealth: engine.sessionHealth,
     recentArtistCounts: engine.recentArtistCounts,
     reasons: engine.reasons,
+    quality: engine.quality,
   }
 }
 

@@ -2,17 +2,18 @@
 import { AppState } from 'react-native'
 import playerState from '@/store/player/state'
 import { getPlayHistory } from '@/utils/data'
+import { log as writeLog } from '@/utils/log'
 
 import { getUserLists, userLists } from '@/utils/listManage'
 import { getDislikeInfo } from '@/utils/dislikeManage'
 import { buildTrackKey, getAlbumName, getArtistKeys, getPrimaryArtist } from './trackKey.ts'
 import { bucketFromLangField, bucketFromLyric, resolveLang } from './language.ts'
 import type { LangBucket } from './language.ts'
-import { computeLangCaps, computeLangTargets, computePoolBucketLimits, countLangUsed, countPoolLang } from './languageQuota.ts'
+import { computeLangCapsForBatch, computeLangTargets, computePoolBucketLimits, countPoolLang } from './languageQuota.ts'
 import { recommendationConfig as cfg } from './config.ts'
 import { loadState, getState, saveState, resetState, trimState, flushState } from './storage.ts'
 import { loadCandidateCache, setCandidateCache, saveCandidateCache, clearCandidateCache } from './candidateStore.ts'
-import { getArtistLangTable, loadArtistLangTable, observeArtistLangField, observeArtistLyric } from './artistLanguageStore.ts'
+import { getArtistLangTable, loadArtistLangTable, observeArtistLangField, observeArtistLyric, observeArtistRelation } from './artistLanguageStore.ts'
 import { ensureLibraryIndex, getLibraryTrackOrigins, refreshLibraryIndex } from './library.ts'
 import { buildTrackPlaylistIndex, buildSessionCoOccurrence } from './similarity.ts'
 import { selectPlaylistEvictions, normalizePlaylistKey } from './playlistIndex.ts'
@@ -21,11 +22,15 @@ import { createRadioQueue } from './queue.ts'
 import { createSession } from './session.ts'
 import { planChannelQuotas } from './channels.ts'
 import { selectFinalQueue, type FinalQueueItem } from './diversity.ts'
-import { buildFinalQueueItems, filterPoolCandidates, mergePoolCandidates, poolStats, resolvePoolLang } from './candidatePool.ts'
+import { buildQualityDiagnostics, formatQualityDiagnostics, type QualityDiagnosticsSummary } from './diagnostics.ts'
+import { buildFinalQueueItems, filterPoolCandidates, mergePoolCandidates, poolStats, resolvePoolLang, shouldRefreshForProfileChange } from './candidatePool.ts'
 import { computePlaylistAudioAffinity, enqueueAudioAnalysis } from './audioFeature.ts'
-import { refreshExternalCandidates, type CatalogRefreshParams, type KnownExternalPlaylist } from './candidate.ts'
+import { createSimilarArtistCandidates, refreshExternalCandidates, type CatalogRefreshParams, type KnownExternalPlaylist } from './candidate.ts'
+import { inferArtistLangFromTags, runSimilarArtistRefresh } from './similarArtist.ts'
+import type { SimilarArtistCache } from './similarArtist.ts'
+import { clearSimilarArtistCache, createSimilarArtistIo, loadSimilarArtistCache, setSimilarArtistCache } from './similarArtistStore.ts'
 import { getCatalogCapabilities, getChartBoards, getChartTracks, getPlaylistTags, type ChartSummary } from './sdkCatalog.ts'
-import { pickNewSongBoard, pickPlaylistSort, pickPlaylistTag, rankPlaylistsByProfile, rankTracksByProfile } from './tabSections.ts'
+import { pickNewSongBoard, pickPlaylistSort, pickPlaylistTag, prioritizeL1LangSources, rankPlaylistsByProfile, rankTracksByProfile } from './tabSections.ts'
 import { getLearnedStyleTokens } from './tokenFeedback.ts'
 import { applySeedWeights, computePreferenceKeywords, computeSeedWeights, mergePreferenceKeywords, revokeSeedWeights, sanitizeWeights } from './onboarding.ts'
 import { applyExplicitFeedback, applyPlaylistNotInterested, beginRadioPlay, creditImportedOrigins, finishRadioPlay, getPlayRecord, getRecentRadioTrackKeys, isSourceCoolingDown, removeTrackFromCandidates, setSourceCooldown } from './behavior.ts'
@@ -80,8 +85,18 @@ class RecommendationEngine {
   private pendingProvider: (() => readonly RecommendQueueItem[]) | null = null
   private lastDeferredView = { engineQueue: 0, handedOff: 0 }
   private profileRevision = 0
+  /** 上次成功补池时的画像版本；与当前 revision 的差值决定是否值得按新画像重抓。 */
+  private lastRefreshRevision = 0
+  private lastProfileRefreshAt = 0
   /** 推荐 tab 两个区块共用的定向化轮次：同分榜单/候选分类按它轮换，保证覆盖而不重样。 */
   private curatedRotation = 0
+  /** 相似歌手通道 E 的跨刷新状态：缓存、种子游标、刷新计数（每 N 次起一位新种子）。 */
+  private similarArtistCache: SimilarArtistCache | null = null
+  private similarArtistSeedCursor = 0
+  private similarArtistTick = 0
+  private readonly similarArtistIo = createSimilarArtistIo()
+  /** 最近一次生成队列的质量汇总：本地诊断用，不参与调度。 */
+  private lastQualityDiagnostics: QualityDiagnosticsSummary | null = null
   private readonly trackRemovalListeners: Array<(trackKey: string) => void> = []
   private readonly recentPlayed: Array<{ musicInfo: LX.Music.MusicInfo, channel?: ChannelId, playlistId?: string, seedKey?: string, groupId?: string, chartId?: string }> = []
 
@@ -99,6 +114,10 @@ class RecommendationEngine {
     await loadState()
     this.stateReady = true
     void loadArtistLangTable().catch(() => {})
+    // 只填一次：读盘回调晚于一次刷新时，别用旧对象覆盖刷新刚写回的新缓存
+    void loadSimilarArtistCache().then(loaded => {
+      this.similarArtistCache ??= loaded
+    }).catch(() => {})
     const cachedCandidates = await loadCandidateCache()
     if (cachedCandidates.length) {
       setCandidateCache(cachedCandidates)
@@ -261,10 +280,20 @@ class RecommendationEngine {
 
   /** 随机音源优先，失败立即降级到下一个可用音乐源（spec §11 第 1 步）。 */
   private async refreshPool(reason: string, budget = cfg.request.maxRequestsPerRefresh) {
-    const order = RecommendationEngine.shuffledSources().filter(item => !isSourceCoolingDown(item))
+    const state = getState()
+    let order = RecommendationEngine.shuffledSources().filter(item => !isSourceCoolingDown(item))
     if (!order.length) {
       recallLog('refreshSkip', { reason: 'all_sources_cooldown', sources: RecommendationEngine.SOURCES })
       return
+    }
+    // 池里判不出语种的候选太多时，配额根本兑不出来；把有 L1 字段的源提到最前，
+    // 让桶召回抓回来的货直接带语种。没开语言配额时不重排（没有桶召回，重排只是白丢音源多样性）。
+    if (state.onboarding && computeLangTargets(state.onboarding.weights, cfg.channels.windowSize).enforced && state.candidateCache.length) {
+      const counts = countPoolLang(state.candidateCache.map(candidate => ({
+        lang: resolvePoolLang(candidate, getArtistLangTable()).bucket,
+      })))
+      const unknownShare = (counts.unknown ?? 0) / state.candidateCache.length
+      order = prioritizeL1LangSources(order, unknownShare, cfg.candidatePool.unknownShareEscalate)
     }
     for (const source of order.slice(0, 2)) {
       try {
@@ -283,6 +312,7 @@ class RecommendationEngine {
   private async refreshPoolWithSource(source: LX.OnlineSource, reason: string, budget: number): Promise<boolean> {
     const state = getState()
     const token = this.queue.getVersion()
+    const revisionAtStart = this.profileRevision
     try {
       const [profile, library, blocked, knownExternalPlaylists] = await Promise.all([
         this.buildCurrentProfile(),
@@ -337,7 +367,22 @@ class RecommendationEngine {
       })
       // 用最新排除集重新过滤候选，避免抓取期间新增收藏或屏蔽的内容残留
       state.candidateCache = filterPoolCandidates(state.candidateCache, exclusion)
+      // 通道 E 只能花歌单召回用剩的额度（计入总预算），且失败静默缺席；必须排在落盘之前合并
+      const similarArtist = await this.runSimilarArtistChannel({
+        reason,
+        remainingBudget: budget - result.requests,
+        params,
+        poolLimits,
+        poolBucketOf,
+        exclusion,
+      })
+      if (similarArtist) {
+        result.requests += similarArtist.requests
+        result.reasons.push(...similarArtist.reasons)
+      }
       state.candidateCacheFetchedAt = Date.now()
+      // 只有真正进了新货才算消化了这批反馈；空手而归时保留差值，冷却后还能再试
+      if (result.candidates.length > 0) this.lastRefreshRevision = revisionAtStart
       setCandidateCache(state.candidateCache)
       saveCandidateCache(state.candidateCache)
       this.lastRefreshAt = Date.now()
@@ -355,6 +400,69 @@ class RecommendationEngine {
       const message = error instanceof Error ? error.message : String(error)
       recallLog('refreshError', { reason, source, message })
       throw error
+    }
+  }
+
+  /**
+   * 相似歌手通道 E：MB 检索 → LB 相似歌手 → MB 规范名 → kg 搜歌。
+   * 一位种子歌手全链路 8 次请求，单轮上限 4 次，所以必然跨刷新续跑；
+   * 慢队列 1 req/s，整段会等 4 秒以上，因此只在后台刷新里跑（启动/空队列补货直接跳过）。
+   * MB/LB/kg 任一环节失败都不抛给补池主流程：E 静默缺席，A 通道退回原样。
+   */
+  private async runSimilarArtistChannel(input: {
+    reason: string
+    remainingBudget: number
+    params: CatalogRefreshParams
+    poolLimits: Partial<Record<LangBucket, number>>
+    poolBucketOf: (candidate: PoolCandidate) => LangBucket
+    exclusion: ExclusionContext
+  }): Promise<{ requests: number, reasons: string[] } | null> {
+    const state = getState()
+    // 探索模式 E 目标为 0；启动与空队列补货是用户正在等的路径，别让慢队列拖住出队
+    if (this.radioMode != 'radio') return null
+    if (input.reason == 'initial' || input.reason == 'empty_queue' || input.reason == 'next_empty') return null
+    if (input.remainingBudget < cfg.similarArtist.minBudget) return null
+    if (state.candidateCache.length < cfg.candidatePool.minCacheForInstantStart) return null
+    const seedArtists = input.params.profile.topArtists
+      .map(item => item.artist)
+      .filter(artist => !!artist && !input.params.blocked.singerNames.has(artist))
+    if (!seedArtists.length) return null
+    const policy = cfg.similarArtist
+    // 只在真正跑 E 的刷新上推进计数：预算不足的轮次不该把"每 3 次起新种子"的节奏拖长
+    const startNewSeed = this.similarArtistTick % policy.seedIntervalRefreshes == 0
+    this.similarArtistTick += 1
+    try {
+      const cache = this.similarArtistCache ?? await loadSimilarArtistCache()
+      const run = await runSimilarArtistRefresh<LX.Music.MusicInfoOnline>({
+        cache,
+        seedArtists,
+        seedCursor: this.similarArtistSeedCursor,
+        startNewSeed,
+        budget: Math.min(policy.budgetPerRun, input.remainingBudget),
+        now: Date.now(),
+        policy,
+        // MB 的语种标签是歌手级权威证据，连 aliases 一起写进 L3（中文名/英文艺名都可能出现在曲目上）
+        onArtistFacts: facts => {
+          const bucket = inferArtistLangFromTags(facts.tags)
+          if (bucket) observeArtistRelation([facts.name, ...facts.aliases], bucket)
+        },
+      }, this.similarArtistIo)
+      this.similarArtistCache = run.cache
+      this.similarArtistSeedCursor = run.nextSeedCursor
+      setSimilarArtistCache(run.cache)
+      if (run.songs.length) {
+        const incoming = createSimilarArtistCandidates(run.songs, input.params)
+        state.candidateCache = mergePoolCandidates(state.candidateCache, incoming, cfg.candidatePool.maxSize, {
+          limits: input.poolLimits,
+          resolveBucket: input.poolBucketOf,
+        })
+        state.candidateCache = filterPoolCandidates(state.candidateCache, input.exclusion)
+        run.reasons.push(`similar_artist_songs:${run.songs.reduce((sum, item) => sum + item.tracks.length, 0)}`)
+      }
+      return { requests: run.requests, reasons: run.reasons }
+    } catch (error) {
+      recallLog('similarArtistError', { message: error instanceof Error ? error.message : String(error) })
+      return { requests: 0, reasons: ['similar_artist_failed'] }
     }
   }
 
@@ -518,7 +626,7 @@ class RecommendationEngine {
       artistLangTable: getArtistLangTable(),
     })
     if (!finalItems.length) return false
-    const availability: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0 }
+    const availability: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 }
     for (const item of finalItems) {
       for (const channel of item.channels) availability[channel] = (availability[channel] ?? 0) + 1
     }
@@ -543,7 +651,7 @@ class RecommendationEngine {
     })
     const recent = this.buildRecentSelectionItems()
     const langTargets = computeLangTargets(state.onboarding.weights, cfg.channels.windowSize)
-    const langCaps = computeLangCaps(langTargets, countLangUsed(recent.map(item => item.lang), cfg.channels.windowSize))
+    const langCaps = computeLangCapsForBatch(langTargets, recent.map(item => item.lang), target)
     const selection = selectFinalQueue(finalItems, {
       target,
       recent,
@@ -559,6 +667,7 @@ class RecommendationEngine {
     // 入选线索：优先歌手直采 > 歌单来源 > 榜单，filtered 类是排除记录不对外
     const pickReason = (reasons: readonly string[]) =>
       reasons.find(reason => reason.startsWith('artist_hits:')) ??
+      reasons.find(reason => reason.startsWith('similar_artist:')) ??
       reasons.find(reason => reason.startsWith('playlist:')) ??
       reasons.find(reason => reason.startsWith('chart')) ??
       reasons.find(reason => !reason.startsWith('filtered:'))
@@ -580,15 +689,31 @@ class RecommendationEngine {
     const poolLangCounts = countPoolLang(finalItems)
     // 池里对这个桶一首都没有，配额这轮注定兑现不了——和"被配额挡住"是两种问题，日志要分开
     // （目标 0 首的桶不算：它不是兑现不了，是用户明确不要）
-    const langUnmet = Object.keys(langTargets.targets)
-      .filter(bucket => (langTargets.targets[bucket as LangBucket] ?? 0) > 0)
-      .filter(bucket => (poolLangCounts[bucket as LangBucket] ?? 0) === 0)
-      .map(bucket => `lang_unmet:${bucket}`)
+    const langUnmetBuckets = (Object.keys(langTargets.targets) as LangBucket[])
+      .filter(bucket => (langTargets.targets[bucket] ?? 0) > 0)
+      .filter(bucket => (poolLangCounts[bucket] ?? 0) === 0)
+    const langUnmet = langUnmetBuckets.map(bucket => `lang_unmet:${bucket}`)
     const langLevels: Record<string, number> = {}
     for (const item of finalItems) {
       const key = `L${item.langLevel ?? 0}`
       langLevels[key] = (langLevels[key] ?? 0) + 1
     }
+    const quality = buildQualityDiagnostics({
+      requested: target,
+      channelPlan: plan.quotas,
+      selected: selection.items.map(selected => ({
+        channel: selected.channel,
+        lang: selected.item.lang,
+        exposureCount: selected.item.exposureCount ?? 0,
+      })),
+      langCaps,
+      langUnmet: langUnmetBuckets,
+      reasons: selection.reasons,
+      maxRelaxLevel: selection.maxRelaxLevel,
+      pool: { total: state.candidateCache.length, byLang: poolLangCounts },
+      negativeRate: health.negativeRate,
+    })
+    this.lastQualityDiagnostics = quality
     recallLog('generate', {
       requested: target,
       selected: queueItems.length,
@@ -603,6 +728,7 @@ class RecommendationEngine {
       langCaps: langCaps.caps,
       langUnmet,
       langLevels,
+      quality,
       health: {
         streak: health.negativeStreak,
         rate: health.negativeRate,
@@ -612,6 +738,8 @@ class RecommendationEngine {
       },
       pool: poolStats(state.candidateCache, candidate => resolvePoolLang(candidate, getArtistLangTable()).bucket),
     })
+    // release 包读不到 console：质量汇总同时落本地日志（设置-日志），不上传
+    try { writeLog.info(`[recommend-quality] ${formatQualityDiagnostics(quality)}`) } catch {}
     return accepted
   }
 
@@ -691,13 +819,13 @@ class RecommendationEngine {
   getRadioSummary() {
     if (!this.stateReady) {
       const idleHealth: SessionHealth = { negativeStreak: 0, positiveStreak: 0, negativeRate: 0, explorationNegativeRate: null, explorationFactor: 1, safeMode: false, sampleSize: 0 }
-      return { mode: this.radioMode, queueSize: 0, poolSize: 0, channels: { A: 0, B: 0, C: 0, D: 0 }, channelShare: { A: 0, B: 0, C: 0, D: 0 }, recentArtistCounts: {}, sessionTracks: 0, sessionHealth: idleHealth, lastRefreshAt: 0, reasons: [] }
+      return { mode: this.radioMode, queueSize: 0, poolSize: 0, channels: { A: 0, B: 0, C: 0, D: 0, E: 0 }, channelShare: { A: 0, B: 0, C: 0, D: 0, E: 0 }, recentArtistCounts: {}, sessionTracks: 0, sessionHealth: idleHealth, lastRefreshAt: 0, reasons: [], quality: this.lastQualityDiagnostics }
     }
     const state = getState()
     const snapshot = this.queue.snapshot()
-    const channels: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0 }
+    const channels: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 }
     for (const item of snapshot.items) channels[item.channel] = (channels[item.channel] ?? 0) + 1
-    const channelShare: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0 }
+    const channelShare: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 }
     for (const channel of (Object.keys(channels) as ChannelId[])) {
       channelShare[channel] = snapshot.size ? Math.round(channels[channel] / snapshot.size * 100) / 100 : 0
     }
@@ -717,6 +845,7 @@ class RecommendationEngine {
       sessionHealth: computeSessionHealth(state.session, new Set(Object.keys(state.dislikedTracks))),
       lastRefreshAt: this.lastRefreshAt,
       reasons: this.lastRefreshReasons.slice(-8),
+      quality: this.lastQualityDiagnostics,
     }
   }
 
@@ -759,6 +888,10 @@ class RecommendationEngine {
     const reason = item.reason
     if (reason?.startsWith('artist_hits:')) {
       return { kind: 'artist', param: reason.slice('artist_hits:'.length).split(',')[0] }
+    }
+    // 相似歌手由种子歌手引荐：对用户仍然显示成"因为你听过这位歌手"
+    if (reason?.startsWith('similar_artist:')) {
+      return { kind: 'artist', param: reason.slice('similar_artist:'.length).split(',')[0] }
     }
     if (reason?.startsWith('playlist:')) {
       const playlistId = reason.slice('playlist:'.length).split(',')[0]
@@ -1059,6 +1192,28 @@ class RecommendationEngine {
 
   private markProfileLearned() {
     this.profileRevision++
+    this.maybeRefreshForProfileChange()
+  }
+
+  /**
+   * 偏好反馈攒够一批后异步补池：赞/踩/收藏/完播都会让画像版本前进，
+   * 但逐条重抓既费请求又拿不到新结果，所以等阈值 + 冷却，并用单飞锁与在途刷新合并。
+   */
+  private maybeRefreshForProfileChange() {
+    if (!this.stateReady) return
+    const policy = cfg.profileRefresh
+    const now = Date.now()
+    const shouldRefresh = shouldRefreshForProfileChange({
+      revision: this.profileRevision,
+      lastRefreshRevision: this.lastRefreshRevision,
+      lastRefreshAt: this.lastProfileRefreshAt,
+      now,
+      inFlight: this.refreshPromise != null,
+    }, policy)
+    if (!shouldRefresh) return
+    this.lastProfileRefreshAt = now
+    recallLog('profileRefresh', { revision: this.profileRevision, lastRefreshRevision: this.lastRefreshRevision })
+    void this.triggerRefresh('profile_change', policy.budget).catch(() => {})
   }
 
   /** 首次进入问卷：UI 据此决定渲染问答还是正常内容，并用 weights 预填滑条。 */
@@ -1220,6 +1375,10 @@ class RecommendationEngine {
   async resetProfile() {
     await resetState()
     await clearCandidateCache()
+    await clearSimilarArtistCache()
+    this.similarArtistCache = null
+    this.similarArtistSeedCursor = 0
+    this.similarArtistTick = 0
     this.queue.invalidate()
     this.served.clear()
     this.currentItem = null
@@ -1227,6 +1386,7 @@ class RecommendationEngine {
     this.currentTrackKey = null
     this.lastRefreshAt = 0
     this.lastRefreshReasons = []
+    this.lastQualityDiagnostics = null
     this.lastSafeModeAt = 0
     this.lastIdleCrawlAt = 0
     this.curatedRotation = 0

@@ -174,10 +174,11 @@ const checkItemConstraints = (
   history: readonly FinalQueueItem[],
   relax: RelaxConfig,
   langGuard: LangGuardState,
+  ignoreConsecutiveLang = false,
 ) => {
   // 语种判定排在最前：它最便宜，且"连三四首中文"是用户最直接的感受，不该被后面的间隔检查稀释
   if (relax.langQuotaEnforced && langGuard.enforced && !langWithinCap(item.lang, langGuard.remaining)) return false
-  if (!consecutiveLangAllowed(langGuard.langs, item.lang)) return false
+  if (!ignoreConsecutiveLang && !consecutiveLangAllowed(langGuard.langs, item.lang)) return false
   // instrumentalAllowed 只在候选本身是纯音乐时调用：否则"池里已有 2 首纯音乐"会卡住所有歌
   if (item.lang == 'instr' && !instrumentalAllowed(langGuard.langs)) return false
   // 合唱需要检查全部可靠识别出的参与歌手。
@@ -231,7 +232,7 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
     langs: history.map(item => item.lang),
   }
   const picked: Array<SelectedFinalQueueItem<T>> = []
-  const pickedByChannel: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0 }
+  const pickedByChannel: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 }
   const reasons: string[] = []
   const unused = new Set(candidates)
   if (!unused.size && target > 0) reasons.push('no_candidate_after_relaxation')
@@ -324,7 +325,14 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
 
     if (!ladder) {
       const fallbackRelax = relaxConfigs[relaxConfigs.length - 1]
-      const pool = [...unused].filter(item => checkItemConstraints(item, history, fallbackRelax, langGuard))
+      let pool = [...unused].filter(item => checkItemConstraints(item, history, fallbackRelax, langGuard))
+      // 末档仍被连播规则卡死时，说明池里真的没有第二种语言可选。此时宁可连播同一语种
+      // 也不要把队列截断（旧行为：整池同语种只出 2 首）；其余约束（配额/歌手/歌单等）照旧生效。
+      let consecutiveRelaxed = false
+      if (!pool.length) {
+        pool = [...unused].filter(item => checkItemConstraints(item, history, fallbackRelax, langGuard, true))
+        consecutiveRelaxed = pool.length > 0
+      }
       if (!pool.length) {
         reasons.push('no_candidate_after_relaxation')
         break
@@ -335,6 +343,7 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
       }, temperature, rng)
       ladder = { chosen, channel: chosen?.channels[0], relaxLevel: relaxConfigs.length - 1 }
       reasons.push('fallback_channel')
+      if (consecutiveRelaxed && !reasons.includes('lang_consecutive_relaxed')) reasons.push('lang_consecutive_relaxed')
     }
 
     const { chosen, channel: chosenChannel, relaxLevel: chosenRelax } = ladder
@@ -369,7 +378,7 @@ export const selectFinalQueue = <T extends FinalQueueItem>(
 }
 
 export const countFinalChannels = (items: Array<{ channel?: ChannelId }>): Record<ChannelId, number> => {
-  const counts: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0 }
+  const counts: Record<ChannelId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 }
   for (const item of items) {
     if (item.channel) counts[item.channel] += 1
   }

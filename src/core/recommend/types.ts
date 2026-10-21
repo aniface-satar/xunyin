@@ -1,11 +1,11 @@
 import type { LangBucket } from './language.ts'
 
-export type ChannelId = 'A' | 'B' | 'C' | 'D'
+export type ChannelId = 'A' | 'B' | 'C' | 'D' | 'E'
 
 /** 电台模式：radio 按画像推荐，explore 主打低曝光与榜单。 */
 export type RadioMode = 'radio' | 'explore'
 
-export const CHANNEL_IDS: readonly ChannelId[] = ['A', 'B', 'C', 'D']
+export const CHANNEL_IDS: readonly ChannelId[] = ['A', 'B', 'C', 'D', 'E']
 
 export type PlayEndReason =
   | 'natural_end'

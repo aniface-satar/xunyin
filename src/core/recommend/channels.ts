@@ -9,7 +9,7 @@ export interface ChannelQuotaPlan {
   reasons: Partial<Record<ChannelId, string>>
 }
 
-export const emptyChannelCounts = (): Record<ChannelId, number> => ({ A: 0, B: 0, C: 0, D: 0 })
+export const emptyChannelCounts = (): Record<ChannelId, number> => ({ A: 0, B: 0, C: 0, D: 0, E: 0 })
 
 export const countChannels = (channels: ReadonlyArray<ChannelId | undefined>): Record<ChannelId, number> => {
   const counts = emptyChannelCounts()
@@ -40,7 +40,7 @@ const allocateByWeights = (total: number, weights: Record<ChannelId, number>): R
 
 /**
  * 滚动窗口配额缺口调度：
- * - 电台默认每 20 首 A9/B5/C4/D2，探索模式改用 A3/B1/C9/D7；
+ * - 电台默认每 20 首 A7/B5/C4/D2/E2，探索模式改用 A3/B1/C9/D7（E 不供货）；
  * - 按最近窗口的实际通道计数补缺口，再按目标占比填充剩余额度；
  * - explorationFactor < 1 时按比例收缩 C/D 目标份额（会话负反馈触发），让出的额度按占比流回 A/B；
  * - 某通道没有合格候选时把额度让给其他外部通道，并记录降级原因；
@@ -49,7 +49,7 @@ const allocateByWeights = (total: number, weights: Record<ChannelId, number>): R
 export const planChannelQuotas = (
   target: number,
   recentChannels: ReadonlyArray<ChannelId | undefined>,
-  availability: Record<ChannelId, number>,
+  availability: Partial<Record<ChannelId, number>>,
   options: {
     coldStart?: boolean
     mode?: RadioMode
@@ -83,15 +83,21 @@ export const planChannelQuotas = (
   const counts = countChannels(recent)
   const quotas = emptyChannelCounts()
   const reasons: Partial<Record<ChannelId, string>> = {}
+  // 调用方（含单测夹具）可能只给出实际有货的通道：缺席一律按 0 供货。
+  // 直接读 availability[channel] 会让 undefined 一路化成 NaN，把剩余额度分配整段静默跳过。
+  const available = (channel: ChannelId) => {
+    const value = availability[channel] ?? 0
+    return Number.isFinite(value) ? Math.max(0, value) : 0
+  }
 
   for (const channel of CHANNEL_IDS) {
     quotas[channel] = Math.max(0, baseAllocation[channel] - counts[channel])
   }
 
   for (const channel of CHANNEL_IDS) {
-    if (quotas[channel] <= availability[channel]) continue
-    quotas[channel] = Math.max(0, availability[channel])
-    reasons[channel] = availability[channel] <= 0
+    if (quotas[channel] <= available(channel)) continue
+    quotas[channel] = available(channel)
+    reasons[channel] = available(channel) <= 0
       ? (channel == 'B' && options.coldStart ? 'cold_start' : 'no_candidate')
       : 'insufficient_candidate'
   }
@@ -99,7 +105,7 @@ export const planChannelQuotas = (
   let remaining = totalTarget - CHANNEL_IDS.reduce((sum, channel) => sum + quotas[channel], 0)
   const fallbackOrder = explore
     ? cfg.exploreFallbackOrder
-    : options.coldStart && availability.B <= 0
+    : options.coldStart && available('B') <= 0
       ? cfg.coldStartFallbackOrder
       : cfg.fallbackOrder
   let guard = 0
@@ -112,8 +118,8 @@ export const planChannelQuotas = (
     const afterTotal = recent.length + CHANNEL_IDS.reduce((sum, channel) => sum + quotas[channel], 0)
     const weightsSum = CHANNEL_IDS.reduce((sum, channel) => sum + weights[channel], 0)
     for (const channel of fallbackOrder) {
-      if (availability[channel] <= quotas[channel]) continue
-      if (options.coldStart && channel == 'B' && availability.B <= 0) continue
+      if (available(channel) <= quotas[channel]) continue
+      if (options.coldStart && channel == 'B' && available('B') <= 0) continue
       const desiredShare = weights[channel] / weightsSum
       const currentShare = afterTotal > 0 ? after[channel] / afterTotal : 0
       const score = desiredShare - currentShare
@@ -124,7 +130,7 @@ export const planChannelQuotas = (
     }
     if (!best) {
       for (const channel of CHANNEL_IDS) {
-        if (availability[channel] > 0) continue
+        if (available(channel) > 0) continue
         reasons[channel] = channel == 'B' && options.coldStart ? 'cold_start' : 'no_candidate'
       }
       break
