@@ -117,7 +117,7 @@ test('字体读取器能按已知码点取到 icomoon 的字形（否则下面�
 const feature = readFont(readFileSync(path.join(FONT_DIR, FEATURE_ICON_FONT_FILE)))
 const historyTop = icomoon.bboxOf(icomoon.glyphIdFor(0xE900))!.yMax
 
-test('三枚入口字形都在字体里，且各有墨迹', () => {
+test('每枚入口字形都在字体里，且各有墨迹', () => {
   for (const [name, char] of Object.entries(featureIconGlyphs)) {
     const codePoint = char.codePointAt(0)!
     const id = feature.glyphIdFor(codePoint)

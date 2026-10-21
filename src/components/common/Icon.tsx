@@ -1,5 +1,6 @@
-import { createIconSetFromIcoMoon } from 'react-native-vector-icons'
+import { createIconSet, createIconSetFromIcoMoon } from 'react-native-vector-icons'
 import icoMoonConfig from '@/resources/fonts/selection.json'
+import { FEATURE_ICON_FONT_FAMILY, FEATURE_ICON_FONT_FILE, featureIconGlyphs, type FeatureIconName } from '@/resources/fonts/featureIcons'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { memo, type ComponentProps } from 'react'
 import { useTextShadow, useTheme } from '@/store/theme/hook'
@@ -23,6 +24,10 @@ import { StyleSheet, type StyleProp, type TextStyle } from 'react-native'
 
 const IcoMoon = createIconSetFromIcoMoon(icoMoonConfig)
 
+// 入口图标单独一个字体，不往 icomoon.ttf 里塞字形：那要重建全站 53 枚图标，一处度量出错就全站跟着崩。
+// 字形由 scripts/build-feature-icons.mjs 生成，度量与 icomoon 对齐，所以 22dp 下和「我喜欢 / 历史播放」同重量。
+const FeatureIconSet = createIconSet(featureIconGlyphs, FEATURE_ICON_FONT_FAMILY, FEATURE_ICON_FONT_FILE)
+
 
 // https://oblador.github.io/react-native-vector-icons/
 
@@ -33,7 +38,11 @@ interface IconProps extends Omit<ComponentProps<IconType>, 'style'> {
   rawSize?: number
 }
 
-export const Icon = memo(({ size = 15, rawSize, color, style, ...props }: IconProps) => {
+interface FeatureIconProps extends Omit<IconProps, 'name'> {
+  name: FeatureIconName
+}
+
+const makeIconComponent = <Props extends IconProps>(Set: IconType) => memo(({ size = 15, rawSize, color, style, ...props }: Props) => {
   const theme = useTheme()
   const textShadow = useTextShadow()
   const newStyle = textShadow ? StyleSheet.compose({
@@ -42,7 +51,7 @@ export const Icon = memo(({ size = 15, rawSize, color, style, ...props }: IconPr
     textShadowRadius: 2,
   }, style) : style
   return (
-    <IcoMoon
+    <Set
       size={rawSize ?? scaleSizeW(size)}
       color={color ?? theme['c-font']}
       // @ts-expect-error
@@ -51,6 +60,10 @@ export const Icon = memo(({ size = 15, rawSize, color, style, ...props }: IconPr
     />
   )
 })
+
+export const Icon = makeIconComponent<IconProps>(IcoMoon)
+
+export const FeatureIcon = makeIconComponent<FeatureIconProps>(FeatureIconSet)
 
 
 export {
