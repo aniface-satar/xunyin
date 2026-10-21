@@ -8,7 +8,7 @@ import SortTab, { type SortTabProps, type SortTabType } from './SortTab'
 import { createStyle } from '@/utils/tools'
 import { type Source } from '@/store/songlist/state'
 // import { useTheme } from '@/store/theme/hook'
-import Tag, { type TagType, TagProps } from './Tag'
+import Tag, { type TagType, type TagProps } from './Tag'
 // import { BorderWidths } from '@/theme'
 
 export interface HeaderBarProps {
