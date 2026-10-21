@@ -18,12 +18,14 @@ export interface CheckBoxProps {
   size?: number
   marginRight?: number
   marginBottom?: number
+  /** 多行标签时勾选框贴哪一边；默认居中 */
+  align?: 'center' | 'start'
 
   helpTitle?: string
   helpDesc?: string
 }
 
-export default ({ check, label, children, onChange, helpTitle, helpDesc, disabled = false, need = false, marginRight = 0, marginBottom = 0, size = 1 }: CheckBoxProps) => {
+export default ({ check, label, children, onChange, helpTitle, helpDesc, disabled = false, need = false, marginRight = 0, marginBottom = 0, size = 1, align = 'center' }: CheckBoxProps) => {
   const theme = useTheme()
   const [isDisabled, setDisabled] = useState(false)
   const tintColors = {
@@ -61,28 +63,28 @@ export default ({ check, label, children, onChange, helpTitle, helpDesc, disable
       })
     }
     return (helpTitle ?? helpDesc) ? (
-      <TouchableOpacity style={styles.helpBtn} onPress={handleShowHelp}>
+      <TouchableOpacity style={styles.helpBtn} onPress={handleShowHelp} accessibilityRole="button" accessibilityLabel={global.i18n.t('help')}>
         <Icon size={15 * size} name="help" />
       </TouchableOpacity>
     ) : null
   }, [helpTitle, helpDesc, size])
 
 
-  const contentStyle = { ...styles.content, marginBottom: scaleSizeH(marginBottom) }
+  const contentStyle = { ...styles.content, marginBottom: scaleSizeH(marginBottom), alignItems: align == 'start' ? 'flex-start' as const : 'center' as const }
   const labelStyle = { ...styles.label, marginRight: scaleSizeW(marginRight) }
 
   return (
     disabled
       ? (
           <View style={contentStyle}>
-            <CheckBox status={check ? 'checked' : 'unchecked'} disabled={true} tintColors={disabledTintColors} size={size} />
+            <CheckBox status={check ? 'checked' : 'unchecked'} disabled={true} accessibilityLabel={label} tintColors={disabledTintColors} size={size} />
             <View style={labelStyle}>{label ? <Text style={styles.name} color={theme['c-500']} size={15 * size}>{label}</Text> : children}</View>
             {helpComponent}
           </View>
         )
       : (
           <View style={contentStyle}>
-            <CheckBox status={check ? 'checked' : 'unchecked'} disabled={isDisabled} onPress={handleLabelPress} tintColors={tintColors} size={size} />
+            <CheckBox status={check ? 'checked' : 'unchecked'} disabled={isDisabled} accessibilityLabel={label} onPress={handleLabelPress} tintColors={tintColors} size={size} />
             <TouchableOpacity style={labelStyle} activeOpacity={0.3} onPress={handleLabelPress}>
               {label ? <Text style={styles.name} size={15 * size}>{label}</Text> : children}
             </TouchableOpacity>

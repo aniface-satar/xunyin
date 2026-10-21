@@ -8,6 +8,7 @@ import { usePlayerMusicInfo, usePlayMusicInfo } from '@/store/player/hook'
 import { useIsLove } from '@/store/player/useIsLove'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import SynchronizedMarquee, { useSynchronizedMarquee } from '@/components/common/SynchronizedMarquee'
+import SheetThemeProvider from '@/components/player/SheetThemeProvider'
 import { createStyle } from '@/utils/tools'
 import { collectMusic, uncollectMusic } from '@/core/player/player'
 import { useStatusbarHeight } from '@/store/common/hook'
@@ -146,6 +147,8 @@ export default ({
             activeOpacity={0.7}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 4 }}
             onPress={handleToggleLove}
+            accessibilityRole="button"
+            accessibilityLabel={global.i18n.t(isLove ? 'love_remove' : 'love_add')}
             style={actionStyles.loveBtn}
           >
               <LoveIcon filled={isLove} size={BTN_ICON_SIZE} color={isLove ? glassColors.accent : glassColors.muted} />
@@ -155,6 +158,8 @@ export default ({
             activeOpacity={0.7}
             hitSlop={{ top: 10, bottom: 10, left: 4, right: 10 }}
             onPress={() => moreSheetRef.current?.show()}
+            accessibilityRole="button"
+            accessibilityLabel={global.i18n.t('more_actions')}
             style={actionStyles.moreBtn}
           >
             <Icon
@@ -167,7 +172,9 @@ export default ({
         </View>
       </View>
       <LyricPreview onLayout={(event) => { handleLayout('lyricY', event) }} />
-      <MusicMoreSheet ref={moreSheetRef} />
+      <SheetThemeProvider>
+        <MusicMoreSheet ref={moreSheetRef} />
+      </SheetThemeProvider>
     </View>
   )
 }

@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useMemo, forwardRef, useImperativeHandle, type Ref } from 'react'
-import { StyleSheet, View, Animated } from 'react-native'
+import { View, Animated } from 'react-native'
+import { createStyle } from '@/utils/tools'
 // import PropTypes from 'prop-types'
 // import { AppColors } from '@/theme'
 import { useTheme } from '@/store/theme/hook'
@@ -122,7 +123,7 @@ const Component = <T extends ItemT<T>>({ onPressBg = noop, ...props }: SearchTip
 export default forwardRef(Component) as
   <T,>(p: SearchTipListProps<T> & { ref?: Ref<SearchTipListType<T>> }) => JSX.Element | null
 
-const styles = StyleSheet.create({
+const styles = createStyle({
   anima: {
     position: 'absolute',
     left: 0,

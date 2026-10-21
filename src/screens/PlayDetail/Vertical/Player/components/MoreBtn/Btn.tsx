@@ -9,15 +9,16 @@ export const BTN_ICON_SIZE = 24
 // The dots-vertical glyph is drawn at the left edge of its font advance.
 export const DOTS_VERTICAL_ALIGNMENT_OFFSET = scaleSizeW(BTN_ICON_SIZE) * 384 / 1024
 
-export default ({ icon, color, onPress, onLongPress }: {
+export default ({ icon, label, color, onPress, onLongPress }: {
   icon: string
+  label?: string
   color?: string
   onPress: () => void
   onLongPress?: () => void
 }) => {
   const glassColors = useGlassColors()
   return (
-    <TouchableOpacity style={{ ...styles.cotrolBtn, width: BTN_WIDTH, height: BTN_WIDTH }} activeOpacity={0.5} onPress={onPress} onLongPress={onLongPress}>
+    <TouchableOpacity style={{ ...styles.cotrolBtn, width: BTN_WIDTH, height: BTN_WIDTH }} activeOpacity={0.5} onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={label}>
       <Icon name={icon} color={color ?? glassColors.muted} size={BTN_ICON_SIZE} />
     </TouchableOpacity>
   )

@@ -9,6 +9,7 @@ import { usePlayerMusicInfo, usePlayMusicInfo } from '@/store/player/hook'
 import { useIsLove } from '@/store/player/useIsLove'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import SynchronizedMarquee, { useSynchronizedMarquee } from '@/components/common/SynchronizedMarquee'
+import SheetThemeProvider from '@/components/player/SheetThemeProvider'
 import { collectMusic, uncollectMusic } from '@/core/player/player'
 import { createStyle } from '@/utils/tools'
 import { scaleSizeH, scaleSizeW, setSpText } from '@/utils/pixelRatio'
@@ -86,7 +87,9 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
           />
         </TouchableOpacity>
       </View>
-      <MusicMoreSheet ref={moreSheetRef} />
+      <SheetThemeProvider>
+        <MusicMoreSheet ref={moreSheetRef} />
+      </SheetThemeProvider>
     </View>
   )
 })

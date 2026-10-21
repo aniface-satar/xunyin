@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useCallback, useMemo, useState, useEffect, type LayoutChangeEvent } from 'react'
 import { View } from 'react-native'
 
 import { createStyle } from '@/utils/tools'
@@ -14,12 +14,21 @@ import { BorderWidths } from '@/theme'
 import { useTheme } from '@/store/theme/hook'
 
 
+export interface CoverLayout {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export default ({
   onMusicInfoLayout,
   marqueeActive = true,
+  onCoverLayout,
 }: {
   onMusicInfoLayout?: (layout: MusicInfoLayout) => void
   marqueeActive?: boolean
+  onCoverLayout?: (layout: CoverLayout) => void
 } = {}) => {
   const musicInfo = usePlayerMusicInfo()
   const theme = useTheme()
@@ -37,9 +46,18 @@ export default ({
     statusBarHeight + HEADER_HEIGHT,
   ), [statusBarHeight, winHeight, winWidth])
 
+  // 上报封面在 Pic 容器内的实际布局值：onLayout 是 Yoga 像素取整后的结果，
+  // 动画层用它做端点才能和静态封面逐像素对齐（相对坐标不受转场 transform 影响）
+  const handleCoverLayout = useCallback((event: LayoutChangeEvent) => {
+    const { x, y, width, height } = event.nativeEvent.layout
+    onCoverLayout?.({ x, y, width, height })
+  }, [onCoverLayout])
+
   return (
     <View style={styles.container}>
       <View
+        onLayout={handleCoverLayout}
+        collapsable={false}
         style={{
           ...styles.content,
           marginTop: coverGap,

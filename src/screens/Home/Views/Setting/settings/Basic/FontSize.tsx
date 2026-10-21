@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react'
 
-import { StyleSheet, View } from 'react-native'
+import { View } from 'react-native'
+import { createStyle } from '@/utils/tools'
 
 import SubTitle from '../../components/SubTitle'
 import CheckBox from '@/components/common/CheckBox'
@@ -84,7 +85,7 @@ export default memo(() => {
   )
 })
 
-const styles = StyleSheet.create({
+const styles = createStyle({
   preview: {
     justifyContent: 'center',
     // paddingTop: 3,

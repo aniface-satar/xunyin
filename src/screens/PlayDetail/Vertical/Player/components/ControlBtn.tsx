@@ -5,6 +5,7 @@ import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { playNext, playPrev, togglePlay } from '@/core/player/player'
 import { useIsPlay } from '@/store/player/hook'
 import { createStyle } from '@/utils/tools'
+import { useI18n } from '@/lang'
 import { useCallback, useMemo, useRef } from 'react'
 import { scaleSizeH } from '@/utils/pixelRatio'
 import { useWindowSize } from '@/utils/hooks'
@@ -15,6 +16,7 @@ import Btn, { BTN_WIDTH } from './MoreBtn/Btn'
 import PlayModeBtn from './MoreBtn/PlayModeBtn'
 import TimeoutExitBtn from './MoreBtn/TimeoutExitBtn'
 import CommentBtn from './MoreBtn/CommentBtn'
+import SheetThemeProvider from '@/components/player/SheetThemeProvider'
 import PlaylistSheet, { type PlaylistSheetType } from './PlaylistSheet'
 import type { PlayerControlLayout, PlayerRect } from '@/components/player/PlayerOverlay'
 
@@ -27,8 +29,10 @@ const MusicListBtn = () => {
 
   return (
     <>
-      <Btn icon="list-order" onPress={handleShowPlaylist} />
-      <PlaylistSheet ref={playlistSheetRef} />
+      <Btn icon="list-order" label={global.i18n.t('play_detail_playlist_title')} onPress={handleShowPlaylist} />
+      <SheetThemeProvider>
+        <PlaylistSheet ref={playlistSheetRef} />
+      </SheetThemeProvider>
     </>
   )
 }
@@ -44,9 +48,10 @@ const PrevBtn = ({ size, onLayout }: { size: number, onLayout?: (layout: PlayerR
   const handlePlayPrev = () => {
     void playPrev()
   }
+  const t = useI18n()
   return (
     <View ref={btnRef} onLayout={handleLayout} collapsable={false}>
-      <TouchableOpacity style={{ ...styles.cotrolBtn, width: size, height: size }} activeOpacity={0.5} onPress={handlePlayPrev}>
+      <TouchableOpacity style={{ ...styles.cotrolBtn, width: size, height: size }} activeOpacity={0.5} onPress={handlePlayPrev} accessibilityRole="button" accessibilityLabel={t('play_prev')}>
         <Icon name='prevMusic' color={glassColors.accent} rawSize={size * 0.7} />
       </TouchableOpacity>
     </View>
@@ -63,9 +68,10 @@ const NextBtn = ({ size, onLayout }: { size: number, onLayout?: (layout: PlayerR
   const handlePlayNext = () => {
     void playNext()
   }
+  const t = useI18n()
   return (
     <View ref={btnRef} onLayout={handleLayout} collapsable={false}>
-      <TouchableOpacity style={{ ...styles.cotrolBtn, width: size, height: size }} activeOpacity={0.5} onPress={handlePlayNext}>
+      <TouchableOpacity style={{ ...styles.cotrolBtn, width: size, height: size }} activeOpacity={0.5} onPress={handlePlayNext} accessibilityRole="button" accessibilityLabel={t('play_next')}>
         <Icon name='nextMusic' color={glassColors.accent} rawSize={size * 0.7} />
       </TouchableOpacity>
     </View>
@@ -81,9 +87,10 @@ const TogglePlayBtn = ({ size, onLayout }: { size: number, onLayout?: (layout: P
     })
   }, [onLayout])
   const isPlay = useIsPlay()
+  const t = useI18n()
   return (
     <View ref={btnRef} onLayout={handleLayout} collapsable={false}>
-      <TouchableOpacity style={{ ...styles.cotrolBtn, width: size, height: size }} activeOpacity={0.5} onPress={togglePlay}>
+      <TouchableOpacity style={{ ...styles.cotrolBtn, width: size, height: size }} activeOpacity={0.5} onPress={togglePlay} accessibilityRole="button" accessibilityLabel={isPlay ? t('pause') : t('play')}>
         <Icon name={isPlay ? 'pause' : 'play'} color={glassColors.accent} rawSize={size * 0.7} />
       </TouchableOpacity>
     </View>

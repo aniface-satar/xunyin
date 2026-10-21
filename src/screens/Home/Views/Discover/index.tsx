@@ -3,6 +3,7 @@ import { TouchableOpacity, View } from 'react-native'
 
 import Leaderboard, { type LeaderboardType } from '../Leaderboard'
 import SongList, { type SongListType } from '../SongList'
+import Recommend from '../Recommend'
 import SourceSelector, { type SourceSelectorType } from '@/components/SourceSelector'
 import Text from '@/components/common/Text'
 import { useTheme } from '@/store/theme/hook'
@@ -14,6 +15,7 @@ import { createStyle } from '@/utils/tools'
 import { BorderRadius, BorderWidths } from '@/theme'
 
 const DISCOVER_TABS = [
+  'recommend',
   'leaderboard',
   'songlist',
 ] as const
@@ -22,7 +24,7 @@ type DiscoverTabId = typeof DISCOVER_TABS[number]
 type LeaderboardSources = Readonly<LeaderboardState['sources']>
 type DiscoverSources = LeaderboardSources
 
-const ROOT_DISCOVER_TAB: DiscoverTabId = 'leaderboard'
+const ROOT_DISCOVER_TAB: DiscoverTabId = 'recommend'
 
 let lastActiveTabId: DiscoverTabId = ROOT_DISCOVER_TAB
 
@@ -33,7 +35,8 @@ const discoverSources = leaderboardState.sources.filter(
 const Discover = () => {
   const [activeId, setActiveId] = useState<DiscoverTabId>(lastActiveTabId)
   const [mountedTabs, setMountedTabs] = useState<Record<DiscoverTabId, boolean>>({
-    leaderboard: true,
+    recommend: true,
+    leaderboard: lastActiveTabId != 'recommend',
     songlist: lastActiveTabId == 'songlist',
   })
   const theme = useTheme()
@@ -96,6 +99,7 @@ const Discover = () => {
               <TouchableOpacity
                 key={id}
                 style={{ ...styles.tabButton, backgroundColor: active ? theme['c-primary-background-active'] : 'transparent' }}
+                hitSlop={{ top: 5, bottom: 5, left: 4, right: 4 }}
                 onPress={() => { changeTab(id) }}
               >
                 <Text size={14} color={active ? theme['c-primary-font-active'] : theme['c-font-label']}>{t(`discover_${id}`)}</Text>
@@ -103,7 +107,7 @@ const Discover = () => {
             )
           })
         }
-        <View style={styles.sourceSelector}>
+        <View style={{ ...styles.sourceSelector, display: activeId == 'recommend' ? 'none' : 'flex' }}>
           <SourceSelector
             ref={sourceSelectorRef}
             fontSize={14}
@@ -112,6 +116,9 @@ const Discover = () => {
         </View>
       </View>
       <View style={styles.content}>
+        <View style={{ ...styles.tabPage, display: activeId == 'recommend' ? 'flex' : 'none' }}>
+          <Recommend />
+        </View>
         <View style={{ ...styles.tabPage, display: activeId == 'leaderboard' ? 'flex' : 'none' }}>
           <Leaderboard ref={leaderboardRef} />
         </View>

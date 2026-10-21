@@ -25,6 +25,11 @@ export interface Props {
    */
   onPress?: (e: GestureResponderEvent) => void
 
+  /**
+   * Accessible name announced by TalkBack/VoiceOver.
+   */
+  accessibilityLabel?: string
+
   size?: number
 
   /**

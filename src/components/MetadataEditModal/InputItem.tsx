@@ -1,6 +1,7 @@
 import { memo } from 'react'
 
-import { StyleSheet, View } from 'react-native'
+import { View } from 'react-native'
+import { createStyle } from '@/utils/tools'
 import type { InputProps } from '@/components/common/Input'
 import Input from '@/components/common/Input'
 import { useTheme } from '@/store/theme/hook'
@@ -28,7 +29,7 @@ export default memo(({ value, label, onChanged, ...props }: InputItemProps) => {
   )
 })
 
-const styles = StyleSheet.create({
+const styles = createStyle({
   container: {
     // paddingLeft: 25,
     marginBottom: 15,

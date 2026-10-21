@@ -80,7 +80,7 @@ export default forwardRef<HistorySearchType, HistorySearchProps>((props, ref) =>
           <View>
             <View style={styles.titleContent}>
               <Text size={16}>{t('search_history_search')}</Text>
-              <TouchableOpacity onPress={handleClear} style={styles.titleBtn}>
+              <TouchableOpacity onPress={handleClear} style={styles.titleBtn} accessibilityRole="button" accessibilityLabel={global.i18n.t('clear')}>
                 <Icon name="eraser" color={theme['c-300']} size={14} />
               </TouchableOpacity>
             </View>

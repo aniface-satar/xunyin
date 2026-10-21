@@ -83,7 +83,7 @@ export default forwardRef<PopupType, PopupProps>(({
   }))
 
   const closeBtnComponent = useMemo(() => closeBtn
-    ? <TouchableOpacity style={styles.closeBtn} onPress={() => modalRef.current?.setVisible(false)}>
+    ? <TouchableOpacity style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => modalRef.current?.setVisible(false)} accessibilityRole="button" accessibilityLabel={global.i18n.t('close')}>
         <Icon name="close" style={{ color: theme['c-font-label'] }} size={12} />
       </TouchableOpacity>
     : null, [closeBtn, theme])
@@ -169,7 +169,7 @@ export default forwardRef<PopupType, PopupProps>(({
   }, [position, statusBarHeight])
 
   return (
-    <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(50,50,50,.2)" ref={modalRef}>
+    <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(0,0,0,0.35)" ref={modalRef}>
       <View style={{ ...styles.centeredView, ...centeredViewStyle, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
         <View style={{ ...styles.modalView, ...modalViewStyle, backgroundColor: theme['c-content-background'] }} onStartShouldSetResponder={() => true}>
           <View style={styles.header}>

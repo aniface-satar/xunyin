@@ -124,7 +124,7 @@ export default forwardRef<TipListType, TipListProps>(({ onSearch }, ref) => {
 
 const styles = createStyle({
   item: {
-    height: ITEM_HEIGHT,
+    height: 36,
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 15,

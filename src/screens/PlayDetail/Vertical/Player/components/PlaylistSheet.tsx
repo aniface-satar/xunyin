@@ -17,7 +17,8 @@ import Text from '@/components/common/Text'
 import { getListMusics, removeListMusics, updateListMusicPosition } from '@/core/list'
 import { playList, playTempPlayList } from '@/core/player/player'
 import { removeTempPlayList } from '@/core/player/tempPlayList'
-import { usePlayInfo, usePlayMusicInfo, useTempPlayList } from '@/store/player/hook'
+import { usePlayInfo, usePlayMusicInfo, useRandomList, useTempPlayList } from '@/store/player/hook'
+import { useSettingValue } from '@/store/setting/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { LIST_ITEM_HEIGHT } from '@/config/constant'
@@ -26,6 +27,7 @@ import { createStyle } from '@/utils/tools'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
 import { overlayModalGesture } from '@/components/player/PlayerOverlay/overlayModalGesture'
+import { getRadioMode, getRadioTrackHint, isRadioActive, isRadioQueuedMusicInfo } from '@/core/recommend/radio'
 import { buildPlaylistQueue, getDragTargetSourceIndex, type PlaylistQueueItem } from './playlistQueue'
 
 export interface PlaylistSheetType {
@@ -66,8 +68,20 @@ const PlaylistRow = memo(({
   onLongPress,
 }: PlaylistRowProps) => {
   const glassColors = useGlassColors()
+  const t = useI18n()
   const musicInfo = item.musicInfo
   const singer = musicInfo.singer ? `${musicInfo.source.toUpperCase()} · ${musicInfo.singer}` : musicInfo.source.toUpperCase()
+  // 电台曲目把“来源平台 · 歌手”换成推荐理由，让用户知道这首歌为什么出现
+  const isRadioTrack = isRadioQueuedMusicInfo(musicInfo)
+  let reasonText: string | null = null
+  if (isRadioTrack) {
+    const hint = getRadioTrackHint(musicInfo)
+    if (hint?.kind == 'artist' && hint.param) reasonText = t('recommend_reason_artist', { artist: hint.param })
+    else if (hint?.kind == 'playlist') reasonText = hint.param ? t('recommend_reason_playlist', { name: hint.param }) : t('recommend_reason_playlist_generic')
+    else if (hint?.kind == 'chart') reasonText = t('recommend_reason_chart')
+    else if (hint?.kind == 'search') reasonText = t('recommend_reason_search')
+    else if (hint?.kind == 'radio') reasonText = t('recommend_reason_radio')
+  }
 
   return (
     <View style={{ ...styles.row, opacity: dragging ? 0 : 1 }}>
@@ -97,7 +111,7 @@ const PlaylistRow = memo(({
             {musicInfo.name}
           </Text>
           <Text numberOfLines={1} size={11} color={active ? glassColors.accent : glassColors.muted} style={styles.singer}>
-            {singer}
+            {isRadioTrack && reasonText ? reasonText : singer}
           </Text>
         </View>
         {
@@ -106,7 +120,7 @@ const PlaylistRow = memo(({
             : null
         }
       </TouchableOpacity>
-      <TouchableOpacity style={styles.removeButton} activeOpacity={0.7} onPress={() => {
+      <TouchableOpacity style={styles.removeButton} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={global.i18n.t('delete')} onPress={() => {
         onRemove(item)
       }}>
         <Icon name="close" size={15} color={glassColors.muted} />
@@ -122,6 +136,8 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
   const playInfo = usePlayInfo()
   const playMusicInfo = usePlayMusicInfo()
   const tempPlayList = useTempPlayList()
+  const randomList = useRandomList()
+  const togglePlayMethod = useSettingValue('player.togglePlayMethod')
   const listId = playInfo.playerListId ?? playMusicInfo.listId
 
   const [mounted, setMounted] = useState(false)
@@ -138,6 +154,7 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
   const viewportRef = useRef({ top: 0, left: 0, width: 0 })
   const viewportViewRef = useRef<View>(null)
   const currentMusicId = playMusicInfo.musicInfo?.id ?? null
+  const isRandomQueue = togglePlayMethod == 'random' && randomList != null && randomList.listId == listId
 
   const dragTop = useMemo(() => new Animated.Value(0), [])
   const dragLeft = useMemo(() => new Animated.Value(0), [])
@@ -199,7 +216,7 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
   }, [dragTop])
 
   const startDrag = useCallback((item: PlaylistQueueItem, index: number, event: GestureResponderEvent) => {
-    if (dragInfoRef.current != null || listIdRef.current == null) return
+    if (dragInfoRef.current != null || listIdRef.current == null || isRandomQueue) return
     const rowView = event.currentTarget as unknown as View | null
     rowView?.measureInWindow((x, y, width) => {
       dragInfoRef.current = {
@@ -216,7 +233,7 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
       dragWidth.setValue(width)
       setDragId(item.musicInfo.id)
     })
-  }, [dragLeft, dragTop, dragWidth])
+  }, [dragLeft, dragTop, dragWidth, isRandomQueue])
 
   const panResponder = useRef(PanResponder.create({
     onStartShouldSetPanResponderCapture: () => dragInfoRef.current != null,
@@ -246,11 +263,37 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
     }
   }, [refreshList])
 
+  const { orderedItems, indexMap } = useMemo(() => {
+    if (!isRandomQueue) return { orderedItems: playlistItems, indexMap: undefined }
+    const posMap = new Map(playlistItems.map((musicInfo, index) => [musicInfo.id, index]))
+    const orderedItems: LX.Music.MusicInfo[] = []
+    const indexMap: number[] = []
+    for (const id of randomList.musicIds) {
+      const pos = posMap.get(id)
+      if (pos == undefined) continue
+      posMap.delete(id)
+      orderedItems.push(playlistItems[pos])
+      indexMap.push(pos)
+    }
+    for (const pos of posMap.values()) {
+      orderedItems.push(playlistItems[pos])
+      indexMap.push(pos)
+    }
+    return { orderedItems, indexMap }
+  }, [isRandomQueue, playlistItems, randomList])
+
+  const radioActive = isRadioActive()
+  const radioStatusText = radioActive
+    ? t(getRadioMode() == 'explore' ? 'recommend_radio_status_explore' : 'recommend_radio_status_familiar')
+    : null
+
   const derivedItems = useMemo(() => buildPlaylistQueue(
-    playlistItems,
+    radioActive ? [] : orderedItems,
     tempPlayList,
-    currentMusicId,
-  ), [playlistItems, tempPlayList, currentMusicId])
+    radioActive ? null : currentMusicId,
+    radioActive ? undefined : indexMap,
+    radioActive ? { hideRadioTracks: true, isRadioTrack: isRadioQueuedMusicInfo } : undefined,
+  ), [orderedItems, indexMap, tempPlayList, currentMusicId, radioActive])
 
   const items = draggingItems ?? derivedItems
 
@@ -377,7 +420,7 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
                 </Text>
                 <TouchableOpacity onPress={() => {
                   hide()
-                }} style={styles.closeBtn}>
+                }} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel={global.i18n.t('close')}>
                   <Icon
                     name="chevron-right-2"
                     size={14}
@@ -409,13 +452,28 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
                         onScroll={event => {
                           scrollOffsetRef.current = event.nativeEvent.contentOffset.y
                         }}
+                        ListFooterComponent={
+                          radioStatusText
+                            ? (
+                              <View style={styles.radioStatus}>
+                                <Text size={12} color={glassColors.muted}>{radioStatusText}</Text>
+                              </View>
+                              )
+                            : null
+                        }
                       />
                       )
-                    : (
-                      <View style={styles.empty}>
-                        <Text size={13} color={glassColors.muted}>{t('play_detail_playlist_empty')}</Text>
-                      </View>
-                      )
+                    : radioStatusText
+                      ? (
+                        <View style={styles.radioStatus}>
+                          <Text size={12} color={glassColors.muted}>{radioStatusText}</Text>
+                        </View>
+                        )
+                      : (
+                        <View style={styles.empty}>
+                          <Text size={13} color={glassColors.muted}>{t('play_detail_playlist_empty')}</Text>
+                        </View>
+                        )
                 }
               </View>
             </View>
@@ -502,10 +560,14 @@ const styles = createStyle({
     justifyContent: 'center',
     height: 140,
   },
+  radioStatus: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: ITEM_HEIGHT,
+    height: LIST_ITEM_HEIGHT,
   },
   rowMain: {
     flex: 1,
@@ -536,14 +598,14 @@ const styles = createStyle({
     marginRight: 6,
   },
   removeButton: {
-    height: ITEM_HEIGHT,
+    height: LIST_ITEM_HEIGHT,
     width: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dragItem: {
     position: 'absolute',
-    height: ITEM_HEIGHT,
+    height: LIST_ITEM_HEIGHT,
     shadowColor: '#000',
     shadowOpacity: 0.22,
     shadowRadius: 8,

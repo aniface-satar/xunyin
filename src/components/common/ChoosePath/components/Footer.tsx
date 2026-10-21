@@ -1,5 +1,6 @@
 import { memo } from 'react'
-import { View, StyleSheet } from 'react-native'
+import { View } from 'react-native'
+import { createStyle } from '@/utils/tools'
 import Button from '@/components/common/Button'
 import Text from '@/components/common/Text'
 import { useTheme } from '@/store/theme/hook'
@@ -28,7 +29,7 @@ export default memo(({ onConfirm, onHide, dirOnly }: {
   )
 })
 
-const styles = StyleSheet.create({
+const styles = createStyle({
   footer: {
     flexGrow: 0,
     flexShrink: 0,

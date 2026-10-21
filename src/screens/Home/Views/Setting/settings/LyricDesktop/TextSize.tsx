@@ -2,7 +2,7 @@ import { memo, useCallback, useState } from 'react'
 import { View } from 'react-native'
 
 import SubTitle from '../../components/SubTitle'
-import Slider, { type SliderProps } from '../../components/Slider'
+import Slider, { type SliderProps } from '@/components/common/Slider'
 import { useI18n } from '@/lang'
 import { useSettingValue } from '@/store/setting/hook'
 import { useTheme } from '@/store/theme/hook'

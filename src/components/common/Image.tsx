@@ -4,7 +4,6 @@ import { createStyle } from '@/utils/tools'
 import { type ComponentProps, memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { View, type ViewProps, StyleSheet, Image as FastImage } from 'react-native'
 // import FastImage, { type FastImageProps } from 'react-native-fast-image'
-import Text from './Text'
 import { useLayout } from '@/utils/hooks'
 // export type { OnLoadEvent } from 'react-native-fast-image'
 
@@ -25,11 +24,19 @@ const EmptyPic = memo(({ style, nativeID }: { style: ImageProps['style'], native
   const theme = useTheme()
   const { onLayout, width } = useLayout()
   const size = width * 0.36
+  const discColor = theme['c-primary-light-900-alpha-200']
+  const grooveColor = theme['c-primary-light-400-alpha-200']
+  const holeColor = theme['c-primary-light-100-alpha-200']
 
   return (
-    <View style={StyleSheet.compose({ ...styles.emptyPic, backgroundColor: theme['c-primary-light-900-alpha-200'], gap: size * 0.1 }, style)} onLayout={onLayout} nativeID={nativeID}>
-      <Text size={size} color={theme['c-primary-light-400-alpha-200']}>L</Text>
-      <Text size={size} color={theme['c-primary-light-400-alpha-200']} style={styles.text}>X</Text>
+    <View style={StyleSheet.compose({ ...styles.emptyPic, backgroundColor: discColor }, style)} onLayout={onLayout} nativeID={nativeID}>
+      <View style={styles.discContainer}>
+        <View style={[styles.groove, { width: size * 0.95, height: size * 0.95, borderColor: grooveColor }]} />
+        <View style={[styles.groove, { width: size * 0.78, height: size * 0.78, borderColor: grooveColor }]} />
+        <View style={[styles.groove, { width: size * 0.62, height: size * 0.62, borderColor: grooveColor }]} />
+        <View style={[styles.label, { width: size * 0.35, height: size * 0.35, backgroundColor: grooveColor }]} />
+        <View style={[styles.hole, { backgroundColor: holeColor }]} />
+      </View>
     </View>
   )
 })
@@ -85,11 +92,26 @@ export default Image
 const styles = createStyle({
   emptyPic: {
     borderRadius: BorderRadius.normal,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  text: {
-    paddingLeft: 2,
+  discContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groove: {
+    borderRadius: 9999,
+    borderWidth: 1,
+    position: 'absolute',
+  },
+  label: {
+    borderRadius: 9999,
+    position: 'absolute',
+  },
+  hole: {
+    width: 6,
+    height: 6,
+    borderRadius: 9999,
+    position: 'absolute',
   },
 })

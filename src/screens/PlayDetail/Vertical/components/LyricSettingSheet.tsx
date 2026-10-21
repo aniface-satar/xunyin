@@ -86,7 +86,7 @@ const LyricSettingSheet = forwardRef<LyricSettingSheetType>((_, ref) => {
                 <Text size={15} style={styles.title} numberOfLines={1} color={glassColors.text}>
                   {t('play_detail_setting_title')}
                 </Text>
-                <TouchableOpacity onPress={hide} style={styles.closeBtn}>
+                <TouchableOpacity onPress={hide} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel={global.i18n.t('close')}>
                   <Icon name="close" size={14} color={glassColors.muted} />
                 </TouchableOpacity>
               </View>

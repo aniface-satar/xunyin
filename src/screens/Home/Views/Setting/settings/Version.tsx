@@ -1,5 +1,6 @@
 import { memo, useState, useEffect } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { View } from 'react-native'
+import { createStyle } from '@/utils/tools'
 
 import Section from '../components/Section'
 import SubTitle from '../components/SubTitle'
@@ -81,7 +82,7 @@ export default memo(() => {
   )
 })
 
-const styles = StyleSheet.create({
+const styles = createStyle({
   desc: {
     marginBottom: 8,
   },

@@ -122,7 +122,7 @@ export default forwardRef<InputType, InputProps>(({ onChangeText, onClearText, c
         onChangeText={changeText}
         autoComplete="off"
         style={StyleSheet.compose({ ...styles.input, color: theme['c-font'], fontSize: setSpText(size) }, style)}
-        placeholderTextColor={theme['c-primary-dark-100-alpha-600']}
+        placeholderTextColor={theme['c-font-label']}
         selectionColor={theme['c-primary-light-100-alpha-300']}
         onFocus={handleFocus}
         ref={inputRef} {...props} />
@@ -130,7 +130,7 @@ export default forwardRef<InputType, InputProps>(({ onChangeText, onClearText, c
       <Animated.View style={{ ...styles.clearBtnContent, transform: [{ scale: scaleClearBtn }] }}> */}
         {clearBtn
           ? <View style={styles.clearBtnContent}>
-              <TouchableOpacity style={styles.clearBtn} onPress={clearText}>
+              <TouchableOpacity style={styles.clearBtn} hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }} onPress={clearText} accessibilityRole="button" accessibilityLabel={global.i18n.t('clear')}>
                 <Icon name="remove" color={theme['c-primary-dark-100-alpha-500']} size={11} />
               </TouchableOpacity>
             </View>

@@ -91,14 +91,14 @@ export default forwardRef<DialogType, DialogProps>(({
 
   const closeBtnComponent = useMemo(() => {
     return closeBtn
-      ? <TouchableHighlight style={{ ...styles.closeBtn, width: scaleSizeH(HEADER_HEIGHT) }} underlayColor={theme['c-primary-dark-200-alpha-600']} onPress={() => modalRef.current?.setVisible(false)}>
+      ? <TouchableHighlight style={{ ...styles.closeBtn, width: scaleSizeH(HEADER_HEIGHT) }} hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }} underlayColor={theme['c-primary-dark-200-alpha-600']} onPress={() => modalRef.current?.setVisible(false)} accessibilityRole="button" accessibilityLabel={global.i18n.t('close')}>
           <Icon name="close" color={theme['c-primary-dark-500-alpha-500']} size={10} />
         </TouchableHighlight>
       : null
   }, [closeBtn, theme])
 
   return (
-    <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(50,50,50,.3)" ref={modalRef}>
+    <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(0,0,0,0.35)" ref={modalRef}>
       <View style={{ ...styles.centeredView, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
         <View style={{ ...styles.modalView, height, backgroundColor: theme['c-content-background'] }} onStartShouldSetResponder={() => true}>
           <View style={{ ...styles.header, backgroundColor: theme['c-primary-light-100-alpha-100'] }}>

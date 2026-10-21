@@ -8,16 +8,17 @@ import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
-import { useBackHandler } from '@/utils/hooks/useBackHandler'
 import { BorderRadius, BorderWidths } from '@/theme'
 import { setSettingDetailId, useSettingDetailId } from '../detailId'
 
 
 const SETTING_ITEMS: Array<{ id: SettingScreenIds, icon: string }> = [
   { id: 'basic', icon: 'setting' },
+  { id: 'appearance', icon: 'slider' },
   { id: 'player', icon: 'play' },
   { id: 'lyric_desktop', icon: 'lyric-on' },
   { id: 'search', icon: 'search-2' },
+  { id: 'recommend', icon: 'thumbs-up' },
   { id: 'list', icon: 'list-order' },
   { id: 'sync', icon: 'home' },
   { id: 'backup', icon: 'download-2' },
@@ -136,16 +137,6 @@ export default () => {
   const handleSelect = useCallback((id: SettingScreenIds) => {
     setSettingDetailId(id)
   }, [])
-
-  const handleBack = useCallback(() => {
-    setSettingDetailId(null)
-  }, [])
-
-  useBackHandler(useCallback(() => {
-    if (activeId == null) return false
-    handleBack()
-    return true
-  }, [activeId, handleBack]))
 
   if (activeId == null) return <ParentList onPress={handleSelect} />
 

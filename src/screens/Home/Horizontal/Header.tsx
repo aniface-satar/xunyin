@@ -5,7 +5,6 @@ import { View } from 'react-native'
 import { useNavActiveId, useStatusbarHeight } from '@/store/common/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
-import { MylistSearchBar, MylistSearchButton, useMylistSearch } from '@/screens/Home/Views/Mylist/Search'
 import Text from '@/components/common/Text'
 import StatusBar from '@/components/common/StatusBar'
 import { useSettingValue } from '@/store/setting/hook'
@@ -26,7 +25,6 @@ const HEADER_HEIGHT = _HEADER_HEIGHT * 0.8
 // }
 const LeftHeader = () => {
   const id = useNavActiveId()
-  const { isSearchMode } = useMylistSearch()
   const t = useI18n()
   const statusBarHeight = useStatusbarHeight()
 
@@ -36,18 +34,10 @@ const LeftHeader = () => {
       height: scaleSizeH(HEADER_HEIGHT) + statusBarHeight,
       paddingTop: statusBarHeight,
     }}>
-      {
-        id == 'nav_love' && isSearchMode
-          ? <MylistSearchBar />
-          : (
-              <>
-                <View style={styles.left}>
-                  <Text style={styles.leftTitle} size={18}>{t(id)}</Text>
-                </View>
-                {id == 'nav_love' ? <MylistSearchButton /> : headerComponents[id] ?? null}
-              </>
-            )
-      }
+      <View style={styles.left}>
+        <Text style={styles.leftTitle} size={18}>{t(id)}</Text>
+      </View>
+      {headerComponents[id] ?? null}
 
       {/* <TouchableOpacity style={styles.btn} onPress={openSetting}>
         <Icon style={{ ...styles.btnText, color: theme['c-font'] }} name="setting" size={styles.btnText.fontSize} />
@@ -66,7 +56,6 @@ const LeftHeader = () => {
 const RightHeader = () => {
   const t = useI18n()
   const id = useNavActiveId()
-  const { isSearchMode } = useMylistSearch()
   const statusBarHeight = useStatusbarHeight()
 
   return (
@@ -75,18 +64,10 @@ const RightHeader = () => {
       height: scaleSizeH(HEADER_HEIGHT) + statusBarHeight,
       paddingTop: statusBarHeight,
     }}>
-      {
-        id == 'nav_love' && isSearchMode
-          ? <MylistSearchBar />
-          : (
-              <>
-                <View style={styles.left}>
-                  <Text style={styles.rightTitle} size={18}>{t(id)}</Text>
-                </View>
-                {id == 'nav_love' ? <MylistSearchButton /> : headerComponents[id] ?? null}
-              </>
-            )
-      }
+      <View style={styles.left}>
+        <Text style={styles.rightTitle} size={18}>{t(id)}</Text>
+      </View>
+      {headerComponents[id] ?? null}
       {/* <TouchableOpacity style={styles.btn} onPress={openSetting}>
         <Icon style={{ ...styles.btnText, color: theme['c-font'] }} name="setting" size={styles.btnText.fontSize} />
       </TouchableOpacity> */}

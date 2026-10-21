@@ -1,6 +1,7 @@
 import { memo } from 'react'
 
-import { StyleSheet, View } from 'react-native'
+import { View } from 'react-native'
+import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import Text from '@/components/common/Text'
 import ButtonPrimary from '@/components/common/ButtonPrimary'
@@ -45,7 +46,7 @@ export default memo(({ fileName, onNameChanged, onSingerChanged }: ParseNameProp
   )
 })
 
-const styles = StyleSheet.create({
+const styles = createStyle({
   container: {
     // paddingLeft: 25,
     marginBottom: 15,

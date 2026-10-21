@@ -1,22 +1,24 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { Fragment, forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Animated, Modal, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native'
 
 import GlassBackdrop from '@/components/common/GlassBackdrop'
 import Image from '@/components/common/Image'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
+import { BorderWidths } from '@/theme'
 import MusicAddModal, { type MusicAddModalType } from '@/components/MusicAddModal'
 import MusicToggleModal, { type MusicToggleModalType } from '@/screens/Home/Views/Mylist/MusicList/MusicToggleModal'
-import { addListMusics } from '@/core/list'
+import DownloadQualitySheet, { type DownloadQualitySheetType } from '@/components/DownloadQualitySheet'
 import { dislikeMusic } from '@/core/player/player'
 import { addTempPlayList } from '@/core/player/tempPlayList'
+import { hasDislike } from '@/core/dislikeList'
 import { LIST_IDS } from '@/config/constant'
 import musicSdk from '@/utils/musicSdk'
-import settingState from '@/store/setting/state'
-import { usePlayerMusicInfo, usePlayInfo, usePlayMusicInfo } from '@/store/player/hook'
+import { usePlayerMusicInfo, usePlayMusicInfo } from '@/store/player/hook'
 import { useTheme } from '@/store/theme/hook'
+import { useI18n } from '@/lang'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
-import { createStyle } from '@/utils/tools'
+import { assertApiSupport, createStyle, toast } from '@/utils/tools'
 
 export interface MusicMoreSheetType {
   show: () => void
@@ -26,6 +28,10 @@ type AlbumInfoApi = (id: string | number) => Promise<{ publishDate?: string | nu
 
 const getRawMusicInfo = (rawMusicInfo: NonNullable<LX.Player.PlayMusicInfo['musicInfo']>) => {
   return 'progress' in rawMusicInfo ? rawMusicInfo.metadata.musicInfo : rawMusicInfo
+}
+
+const canDownloadMusicInfo = (musicInfo: LX.Music.MusicInfo) => {
+  return musicInfo.source != 'local' && assertApiSupport(musicInfo.source)
 }
 
 const getAlbumInfoApi = (source: string) => {
@@ -38,23 +44,32 @@ const formatInfoValue = (value: string | null | undefined) => {
 }
 
 const ACTIONS = [
-  { key: 'playNext', icon: 'list-order', label: '添加到下一首' },
-  { key: 'playlist', icon: 'add-music', label: '添加到播放列表' },
-  { key: 'userList', icon: 'add_folder', label: '添加到我的歌单' },
-  { key: 'toggleSource', icon: 'search-2', label: '歌曲换源' },
-  { key: 'dislike', icon: 'remove', label: '不喜欢' },
+  { key: 'playNext', icon: 'list-order', label: 'music_more_play_next' },
+  { key: 'dislike', icon: 'remove', label: 'dislike' },
+  { key: 'userList', icon: 'add_folder', label: 'music_more_add_to_mylist' },
+  { key: 'toggleSource', icon: 'search-2', label: 'toggle_source' },
+  { key: 'download', icon: 'download-2', label: 'download_menu' },
 ] as const
+
+// 头部封面与下方操作行共用这组横向度量：图标中心对封面中心，文字左缘对歌名/歌手左缘
+const SHEET_PADDING_HORIZONTAL = 16
+const SHEET_COVER_SIZE = 58
+const SHEET_COVER_TO_INFO_GAP = 14
 
 const MusicMoreSheet = forwardRef<MusicMoreSheetType>((_, ref) => {
   const theme = useTheme()
+  const t = useI18n()
   const musicInfo = usePlayerMusicInfo()
   const playMusicInfo = usePlayMusicInfo()
-  const playInfo = usePlayInfo()
+  const isDisliked = hasDislike(playMusicInfo.musicInfo)
+  const rawMusicInfo = playMusicInfo.musicInfo ? getRawMusicInfo(playMusicInfo.musicInfo) : null
+  const canDownload = rawMusicInfo != null && canDownloadMusicInfo(rawMusicInfo)
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
   const [publishDate, setPublishDate] = useState<string | null>(null)
   const musicAddModalRef = useRef<MusicAddModalType>(null)
   const musicToggleModalRef = useRef<MusicToggleModalType>(null)
+  const downloadQualitySheetRef = useRef<DownloadQualitySheetType>(null)
   const slide = useSheetSlideAnimation()
 
   useImperativeHandle(ref, () => ({
@@ -108,13 +123,10 @@ const MusicMoreSheet = forwardRef<MusicMoreSheetType>((_, ref) => {
       return
     }
 
-    if (key == 'playlist') {
+    if (key == 'dislike') {
       hide()
-      void addListMusics(
-        playInfo.playerListId ?? LIST_IDS.DEFAULT,
-        [rawMusicInfo],
-        settingState.setting['list.addMusicLocationType'],
-      )
+      toast(global.i18n.t('lists_dislike_music_add_tip'))
+      void dislikeMusic()
       return
     }
 
@@ -136,8 +148,14 @@ const MusicMoreSheet = forwardRef<MusicMoreSheetType>((_, ref) => {
       return
     }
 
-    hide()
-    void dislikeMusic()
+    if (key == 'download') {
+      const downloadMusicInfo = rawMusicInfo.source == 'local' ? [] : [rawMusicInfo]
+      hide(() => {
+        requestAnimationFrame(() => {
+          downloadQualitySheetRef.current?.show(downloadMusicInfo)
+        })
+      })
+    }
   }
 
   if (!mounted) return null
@@ -185,22 +203,29 @@ const MusicMoreSheet = forwardRef<MusicMoreSheetType>((_, ref) => {
                     <Text numberOfLines={1} size={13} color={theme['c-font-label']}>{formatInfoValue(publishDate)}</Text>
                   </View>
                 </View>
-                <View style={[styles.separator, { backgroundColor: theme['c-border-background'] }]} />
+                <View style={[styles.separator, { borderBottomColor: theme['c-border-background'] }]} />
                 <View style={styles.actions}>
                   {
-                    ACTIONS.map(({ key, icon, label }) => (
-                      <TouchableOpacity
-                        key={key}
-                        style={styles.action}
-                        activeOpacity={0.6}
-                        accessibilityRole="button"
-                        onPress={() => {
-                          handleAction(key)
-                        }}
-                      >
-                        <Icon name={icon} size={20} color={theme['c-primary']} style={styles.actionIcon} />
-                        <Text numberOfLines={1} size={14} color={theme['c-font']} style={styles.actionText}>{label}</Text>
-                      </TouchableOpacity>
+                    ACTIONS.map(({ key, icon, label }, index) => (
+                      <Fragment key={key}>
+                        <TouchableOpacity
+                          style={[styles.action, (key == 'dislike' && isDisliked) || (key == 'download' && !canDownload) ? styles.actionDisabled : null]}
+                          activeOpacity={0.6}
+                          accessibilityRole="button"
+                          disabled={(key == 'dislike' && isDisliked) || (key == 'download' && !canDownload)}
+                          onPress={() => {
+                            handleAction(key)
+                          }}
+                        >
+                          <Icon name={icon} size={20} color={theme['c-primary']} style={styles.actionIcon} />
+                          <Text numberOfLines={1} size={14} color={theme['c-font']} style={styles.actionText}>{t(label)}</Text>
+                        </TouchableOpacity>
+                        {
+                          index < ACTIONS.length - 1 && (
+                            <View style={[styles.separator, { borderBottomColor: theme['c-border-background'] }]} />
+                          )
+                        }
+                      </Fragment>
                     ))
                   }
                 </View>
@@ -211,6 +236,7 @@ const MusicMoreSheet = forwardRef<MusicMoreSheetType>((_, ref) => {
       </Modal>
       <MusicAddModal ref={musicAddModalRef} />
       <MusicToggleModal ref={musicToggleModalRef} />
+      <DownloadQualitySheet ref={downloadQualitySheetRef} />
     </>
   )
 })
@@ -225,7 +251,7 @@ const styles = createStyle({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '82%',
+    // 勿加百分比 maxHeight：自动高度的绝对定位节点上 Yoga 会按内容自身高度解析百分比，面板会被裁掉一截
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
     overflow: 'hidden',
@@ -236,41 +262,50 @@ const styles = createStyle({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: SHEET_PADDING_HORIZONTAL,
     paddingVertical: 18,
   },
   cover: {
-    width: 58,
-    height: 58,
+    width: SHEET_COVER_SIZE,
+    height: SHEET_COVER_SIZE,
     borderRadius: 6,
   },
   info: {
     flex: 1,
-    marginLeft: 14,
+    marginLeft: SHEET_COVER_TO_INFO_GAP,
   },
   name: {
-    fontWeight: '700',
+    fontWeight: 'bold',
     marginBottom: 3,
   },
+  // 分隔线直接照歌单列表的行线：borderBottom + BorderWidths.normal 不经过 createStyle 的尺寸换算。
+  // 别再写成 height: 1 —— scaleSizeH 会在高密度屏（如 1260×2800 @3.5）把它算成 0dp，线整条消失。
   separator: {
-    height: 1,
+    borderBottomWidth: BorderWidths.normal,
   },
   actions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
   },
   action: {
     alignItems: 'center',
     flexDirection: 'row',
+    justifyContent: 'flex-start',
     height: 54,
-    paddingHorizontal: 12,
-    width: '50%',
+    paddingHorizontal: SHEET_PADDING_HORIZONTAL,
+    width: '100%',
   },
   actionIcon: {
-    width: 30,
+    // 和封面同宽并居中：图标中心 = 左内边距 + 封面宽度 / 2
+    width: SHEET_COVER_SIZE,
+    textAlign: 'center',
   },
   actionText: {
-    marginLeft: 10,
+    // 与头部歌名/歌手左缘对齐：左内边距 + 封面宽度 + 封面到文字间距
+    marginLeft: SHEET_COVER_TO_INFO_GAP,
+    flex: 1,
+  },
+  actionDisabled: {
+    opacity: 0.35,
   },
 })
 

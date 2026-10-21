@@ -16,7 +16,7 @@ export default memo(() => {
 
   return (
     <>
-      <Btn icon="music_time" color={timeInfo.active ? glassColors.accent : glassColors.text} onPress={handleShow} />
+      <Btn icon="music_time" label={global.i18n.t('timeout_exit_tip_off')} color={timeInfo.active ? glassColors.accent : glassColors.text} onPress={handleShow} />
       <TimeoutExitEditModal ref={modalRef} timeInfo={timeInfo} />
     </>
   )

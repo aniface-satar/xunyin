@@ -1,10 +1,12 @@
 import { memo } from 'react'
+import { Platform } from 'react-native'
 
 import Section from '../../components/Section'
 import IsSavePlayTime from './IsSavePlayTime'
 import PlayHighQuality from './PlayHighQuality'
 import IsHandleAudioFocus from './IsHandleAudioFocus'
 import IsEnableAudioOffload from './IsEnableAudioOffload'
+import VolumeBalancer from './VolumeBalancer'
 import IsAutoCleanPlayedList from './IsAutoCleanPlayedList'
 import IsShowBluetoothLyric from './IsShowBluetoothLyric'
 import IsShowBluetoothFullLyric from './IsShowBluetoothFullLyric'
@@ -27,6 +29,7 @@ export default memo(() => {
       <IsAutoCleanPlayedList />
       <IsHandleAudioFocus />
       <IsEnableAudioOffload />
+      {Platform.OS === 'android' ? <VolumeBalancer /> : null}
       <IsShowBluetoothLyric />
       <IsShowBluetoothFullLyric />
       <IsShowNotificationImage />

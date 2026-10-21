@@ -70,13 +70,13 @@ export default memo(({
           <Text style={styles.subTitle} color={theme['c-primary-font']} size={13} numberOfLines={1}>{path}</Text>
         </View>
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={openStorage}>
+          <TouchableOpacity style={styles.actionBtn} onPress={openStorage} accessibilityRole="button" accessibilityLabel={global.i18n.t('open_storage_select_path')}>
             <Icon name="sd-card" color={theme['c-primary-font']} size={22} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={handleShowNewFolderModal}>
+          <TouchableOpacity style={styles.actionBtn} onPress={handleShowNewFolderModal} accessibilityRole="button" accessibilityLabel={global.i18n.t('create_new_folder')}>
             <Icon name="add_folder" color={theme['c-primary-font']} size={22} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={refresh}>
+          <TouchableOpacity style={styles.actionBtn} onPress={refresh} accessibilityRole="button" accessibilityLabel={global.i18n.t('refresh')}>
             <Icon name="available_updates" color={theme['c-primary-font']} size={22} />
           </TouchableOpacity>
         </View>

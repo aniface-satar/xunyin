@@ -2,7 +2,8 @@ import { updateSetting } from '@/core/common'
 import { setDesktopLyricColor } from '@/core/desktopLyric'
 import { useI18n } from '@/lang'
 import { memo } from 'react'
-import { StyleSheet, View, TouchableOpacity } from 'react-native'
+import { View, TouchableOpacity } from 'react-native'
+import { createStyle } from '@/utils/tools'
 
 import SubTitle from '../../components/SubTitle'
 
@@ -19,12 +20,14 @@ const themes = [
 ] as const
 type Theme = typeof themes[number]
 
-const ThemeItem = ({ color, change }: {
+const ThemeItem = ({ color, index, change }: {
   color: Theme
+  index: number
   change: (color: Theme) => void
 }) => {
+  const t = useI18n()
   return (
-    <TouchableOpacity style={styles.item} activeOpacity={0.5} onPress={() => { change(color) }}>
+    <TouchableOpacity style={styles.item} activeOpacity={0.5} onPress={() => { change(color) }} hitSlop={{ top: 5, bottom: 0, left: 6, right: 8 }} accessibilityRole="button" accessibilityLabel={`${t('setting_lyric_desktop_theme')} ${index + 1}`}>
       <View style={styles.colorContent}>
         <View style={{ ...styles.image, backgroundColor: color[0] }}></View>
       </View>
@@ -46,14 +49,14 @@ export default memo(() => {
     <SubTitle title={t('setting_lyric_desktop_theme')}>
       <View style={styles.list}>
         {
-          themes.map((c, i) => <ThemeItem key={i.toString()} color={c} change={setThemeDesktopLyric} />)
+          themes.map((c, i) => <ThemeItem key={i.toString()} color={c} index={i} change={setThemeDesktopLyric} />)
         }
       </View>
     </SubTitle>
   )
 })
 
-const styles = StyleSheet.create({
+const styles = createStyle({
   list: {
     flexDirection: 'row',
     flexWrap: 'wrap',

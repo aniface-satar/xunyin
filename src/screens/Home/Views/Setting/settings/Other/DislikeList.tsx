@@ -1,11 +1,11 @@
 import { memo, useRef } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { View } from 'react-native'
 
 // import { gzip, ungzip } from 'pako'
 
 import SubTitle from '../../components/SubTitle'
 import Button from '../../components/Button'
-import { toast } from '@/utils/tools'
+import { toast, createStyle } from '@/utils/tools'
 import { useI18n } from '@/lang'
 import Text from '@/components/common/Text'
 import { state, useRuleNum } from '@/store/dislikeList'
@@ -40,7 +40,7 @@ export default memo(() => {
   )
 })
 
-const styles = StyleSheet.create({
+const styles = createStyle({
   ruleNum: {
     marginBottom: 5,
   },

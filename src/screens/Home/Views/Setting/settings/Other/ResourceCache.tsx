@@ -1,11 +1,11 @@
 import { memo, useState, useEffect } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { View } from 'react-native'
 
 // import { gzip, ungzip } from 'pako'
 
 import SubTitle from '../../components/SubTitle'
 import Button from '../../components/Button'
-import { toast, resetNotificationPermissionCheck, confirmDialog, resetIgnoringBatteryOptimizationCheck } from '@/utils/tools'
+import { toast, resetNotificationPermissionCheck, confirmDialog, resetIgnoringBatteryOptimizationCheck, createStyle } from '@/utils/tools'
 import { getAppCacheSize, clearAppCache } from '@/utils/nativeModules/cache'
 import { getCacheSize, clearCache } from '@/plugins/player/utils'
 import { sizeFormate } from '@/utils'
@@ -70,7 +70,7 @@ export default memo(() => {
   )
 })
 
-const styles = StyleSheet.create({
+const styles = createStyle({
   cacheSize: {
     marginBottom: 5,
   },
