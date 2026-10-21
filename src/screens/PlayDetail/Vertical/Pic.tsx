@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState, useEffect, type LayoutChangeEvent } from 'react'
-import { View } from 'react-native'
+import { useCallback, useMemo, useState, useEffect } from 'react'
+import { View, type LayoutChangeEvent } from 'react-native'
 
 import { createStyle } from '@/utils/tools'
 import { useWindowSize } from '@/utils/hooks'

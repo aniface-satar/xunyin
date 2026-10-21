@@ -18,7 +18,7 @@ import ListMusicSort, { type ListMusicSortType } from '../MyList/ListMusicSort'
 import DuplicateMusic, { type DuplicateMusicType } from '../MyList/DuplicateMusic'
 import ListImportExport, { type ListImportExportType } from '../MyList/ListImportExport'
 import { handleRemove, handleSync } from '../MyList/listAction'
-import OpenListModal from '../../SongList/HeaderBar/OpenList/Modal'
+import OpenListModal, { type ModalType as OpenListModalType } from '../../SongList/HeaderBar/OpenList/Modal'
 import homeDetailActions from '@/store/homeDetail/action'
 import songlistState from '@/store/songlist/state'
 
@@ -209,7 +209,7 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
   }, [loadMeta])
 
   const listMenuRef = useRef<ListMenuType>(null)
-  const openListModalRef = useRef<InstanceType<typeof OpenListModal>>(null)
+  const openListModalRef = useRef<OpenListModalType>(null)
   const listNameEditRef = useRef<ListNameEditType>(null)
   const listMusicSortRef = useRef<ListMusicSortType>(null)
   const duplicateMusicRef = useRef<DuplicateMusicType>(null)
