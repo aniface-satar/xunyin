@@ -261,6 +261,7 @@ Task 1–10 执行完 = **代码 14 笔**（`a6c1744..01680db`），其后的整
   两轮红的都是既有的 `tests/monet-texture.mts:68`（`c9970d8` 上这次实测 `正文区 tone 89.84 越界（带 72~88）`，纹理支故意红，2026-10-15 预加载 spec §9.1 记的是同一条），
   本功能既没把它改绿也没让它更红。本功能 5 个文件单独跑（`52e1f28` 上实测，本笔收尾时再跑一遍仍是这个数）：
   `share-card-fit-lyric-block` 12、`share-card-theme` 7、`monet-cover-average` 5、`share-card-file-name` 7、`share-card-save-target` 11 = **42 条全绿**（修复轮前 37）。
+  **这一串是 `52e1f28` 的快照**：§11.11 那轮往 `share-card-fit-lyric-block` 里加了 4 条（12 → 16），当下这五个文件的数是 **46 条全绿**，见 §11.11-7。
 - `npx tsc --noEmit`：**137 条 = 本机基线，一条没涨**（`52e1f28` 之后本笔收尾又复跑过一遍：还是 137，命中面没变）。
   **数法记死**：137 是 `grep -c "error TS"` 的数，**不是 `wc -l`** —— 本轮同一次输出 `wc -l` 是 **161**，因为 TS 的"原因说明"各占一行，照 161 对号会把人吓一跳。
   判据是"本功能创建的文件在输出里 0 次命中"——拿本分支提交里的全部 ts/tsx 路径 grep 过 tsc 输出，
@@ -431,11 +432,13 @@ Task 6 的铺底层与 Task 9 的状态栏留白都是**按"探针全过"写的*
   `EXTRA_SUBJECT` 早就过时，`EXTRA_TEXT` 在图片意图上会被部分收端当正文显示（有的邮箱会把它写进正文）——**要不要摘掉是产品判断，本轮没动 Java**（硬约束：文档轮不改代码），留给下一次带设备的改动一起裁。
   ② **Java 注释的两处措辞还没修**：`dfadbb8` 只删掉了"shareText 用 `Uri.fromFile`"那句，`UtilsModule.java:273` 那句"**收端**抛 `FileUriExposedException`"仍然说反（实际是暴露方 `startActivity` 时 StrictMode 抛，见 §5 的落地更正），
   同段 `:275-276` 的"**下面** cache-path 与 external-cache-path 两条声明"里的"下面"指的其实是**另一个文件** `res/xml/file_paths.xml`，在本文件里往下看什么都没有。这两条都在 `android/` 下 ⇒ 本轮按约束只记账、没改。
-- **合并卫生**：`ShareModeSheet` 现在在（仍未跟踪的）`src/components/player/SheetThemeProvider.tsx` 之外，两边都改 `Header` 的渲染区 ⇒
-  玻璃那支合进主干时**要把 `<ShareModeSheet>` 包进那个 provider**，否则在动态封面上会读成"半透明黑纱浮在糊图上"。
+- ~~**合并卫生**：`ShareModeSheet` 现在在（仍未跟踪的）`src/components/player/SheetThemeProvider.tsx` 之外，两边都改 `Header` 的渲染区 ⇒
+  玻璃那支合进主干时**要把 `<ShareModeSheet>` 包进那个 provider**，否则在动态封面上会读成"半透明黑纱浮在糊图上"。~~
+  → **已收掉**（2026-10-18，动态背景 spec §28）：`Header.tsx` 里 `<ShareModeSheet>` 已与 `LyricSettingSheet` 同挂进一个 `SheetThemeProvider`；
+  静态侧由 `tests/cover-sheet-theme-source.mts` 钉住（那条把"五个挂载点 + 分享这一层"一起管起来）。真机项 28-1 仍待用户对着屏幕判。
 - **"单独 checkout 能不能编译"至今只是静态判定**（评审做了四项闭合）。要真验得 `git worktree add` 出一份干净树跑 tsc，那要再装一份 `node_modules`（本机磁盘空闲不足），留给对外发布前。
 
-### 11.7 提交链（任务范围 `a6c1744..01680db` = 代码 14 笔 + docs 11 笔；代码收口 `a6c1744..52e1f28` = 代码 18 笔 + docs 12 笔；文档轮 `c9970d8` = docs 第 13 笔、`c6b110f` = 第 14 笔；字形返工 `a09204b` = 代码第 19 笔、`b7ab854` = docs 第 15 笔，含本笔 = docs 16 笔）
+### 11.7 提交链（任务范围 `a6c1744..01680db` = 代码 14 笔 + docs 11 笔；代码收口 `a6c1744..52e1f28` = 代码 18 笔 + docs 12 笔；文档轮 `c9970d8` = docs 第 13 笔、`c6b110f` = 第 14 笔；字形返工 `a09204b` = 代码第 19 笔、`b7ab854` = docs 第 15 笔、`8341feb` = docs 第 16 笔；染色与字号轮 `8a393a8` = 代码第 20 笔，含本笔 = docs 17 笔）
 
 代码（任务范围）：`2410e79` spike 装 view-shot 3.8.0 + 探针 · `5b8a56a` `fitLyricBlock` + `cardTheme`（Task 2/3 合笔，代价：将来不能单独 revert）·
 `9147879` `getCoverAverageArgb` + `averageArgbOfPixels` · `59a908b` `CoverImage` · `cff62d0` `6e65168` 就绪上报两轮修 ·
@@ -456,7 +459,9 @@ docs（回改，不计入代码数）：`e2eff3f` `1452958` `7d0a6ea` `f904374` 
 **注意 `2410e79..01680db` 这种写法是错的**（那个 range 不含 `2410e79` 本身，跑出来 24 笔 = 13 代码 + 11 docs，与本节少一笔）。
 **上面那句"代码到此为止"已经作废**：真机看过图之后又开了一轮代码 —— `a09204b`（代码第 19 笔，§11.10 的落款字形抠底 + 圆角收小，4 个文件：3 个 tsx + 那张 PNG）。
 本笔是 docs 第 15 笔 ⇒ `a6c1744..本笔` 应为 **34 = 19 + 15**；**那一笔提交之后实跑过：`git log --oneline a6c1744..HEAD | wc -l` = 34、`grep -c '^docs(分享图)'` = 15，成立**。
-本轮（重建包之后补 §11.4/§11.10 的构建事实与"字形进包怎么验"）是 docs 第 16 笔 ⇒ 应为 35 = 19 + 16，**自指的数本笔写完不跑**，下轮照例实跑再落数。
+本轮（重建包之后补 §11.4/§11.10 的构建事实与"字形进包怎么验"）是 docs 第 16 笔 ⇒ `8341feb`，**提交后实跑过：`git log --oneline a6c1744..HEAD | wc -l` = 35、`grep -c '^docs(分享图)'` = 16，成立**。
+**§11.11 那一轮（落款染色 + 字号判据）= `8a393a8`，代码第 20 笔**（5 个文件：4 个 src + 1 个测试），**提交后实跑：`a6c1744..HEAD` = 36 = 20 代码 + 16 docs**。
+回写它的那笔（**本笔**，docs 第 17 笔 ⇒ 应为 37 = 20 + 17）自指，照例**本笔写完不跑**，下轮实跑再落数。
 执行现场与逐条裁定见 `.superpowers/sdd/2026-10-16-share-card-image/progress.md` 及同目录各 `task-N-report.md`。
 
 ### 11.8 卫生（读历史时别误判）
@@ -558,3 +563,107 @@ Task 11 的回写（`f586df3`）之后对本分支做了一次**整分支终审*
    五支 release ABI 落在 16:11，并把 arm64 那支**拆开验过字形确实进包**（判据见 §11.4 开头那段：`res/UN.png`、218×204、`opaque-white = 0`）。
 8. **真机证据：本轮为零** —— 包在磁盘上，装之前设备从无线 adb 掉了（`adb connect` 得到"主动拒绝"，安卓的无线调试端口每会话一变），
    所以第 5 条那句细纹判定、以及 20/12 这两档圆角到底要不要再收，全部挂在 §11.4 第 19 条。
+
+### 11.11 落款染色 + 音乐卡字号判据（2026-10-17，接着真机看过 a09204b 那版之后）
+
+用户提的两条（原话）：**"将图标颜色和 Music 的颜色保持一致"**、**"可以调小歌名歌手名字体使得一行最长长度为最多容纳 26 个英文字母的长度"**。
+第二条给了一个可以量化的判据（26 个字母/行），所以这一轮的字号不是手挑的，是推出来的。
+
+1. **染色走 `tintColor`**（`BrandLine.tsx:18`）。这一条把 §11.10 之前那句"不加 tintColor —— 染色就不是 App 图标了"当场推翻：
+   用户要的是**品牌行整体一种颜色**，落款青让位给 `theme.subtitleColor`。机制是查过源码才敢写的 ——
+   `ReactImageManager.java:219-224` 把 `tintColor` 落成 `view.setColorFilter(tintColor, Mode.SRC_IN)`，
+   **`SRC_IN` 只替换 RGB、源图的 alpha 通道整个保留** ⇒ §11.10 辛苦抠出来的墨迹渐变边缘和透明刻线都不会被压平。
+   代价要说清：亮卡上唱片变成深色墨、深卡上变成浅色，**出厂图标那支品牌青在卡里不再出现**（字形本体资源本身没动，仍是 `a31072c6…` 那一份）。
+2. **字宽 0.5em 是量出来的，不是拍的**：用 PIL 在 `arial.ttf` 1000px 字号下取 `getlength / 字符数` ——
+   小写 a–z 平均 **0.489em**、真实歌名那种混合大小写 **0.507em**、带空格 **0.441em**、**全大写 0.660em**。
+   取 **0.5em**，所以这条判据的口径是"平均英文字母"，**不是"任何 26 个字符"**：全大写标题一行装不下 26 个，那是判据的口径边界，不是 bug。
+3. **判据本体**（`src/components/ShareCard/cardTypography.ts`，纯函数、不 import RN，node 测试直接载得动 —— 和 `fitLyricBlock` 同一个套路）：
+   `title = textWidth / 26 / 0.5`，再夹在 **[14, 24]** 之间。
+   **上限 24 钉在改动前那枚手写字号**：这条规则是"往小调"，不是双向缩放，卡再宽也不把字放回更大。
+   **下限 14** 是小屏地板：屏宽 <285dp 时按判据会算到 14 以下，那时宁可一行多装几个字母，也不能让歌名小到读不动。
+   派生值不动层级：**歌手 = title × 0.75**（旧 18:24）、**行高 = title × 1.25**（旧 30:24）。
+   字号先四舍五入到 **0.1dp** 再派生 —— 不落的话 18.523076923… 会一路抖进那两个派生值里（测试就是被这一条绊了一次才加的）。
+4. **接线**：`index.tsx:113` `cardTextWidth = max(0, cardWidth − CARD_PADDING×2)`（**文字列只受卡宽管**，跟封面那档 `coverSize` 的高度预算无关），
+   作为必填 prop 交给 `MusicCard`；`MusicCard.tsx` 从此不再出现字面字号（有一条测试就是扫源码钉这个：`doesNotMatch(/fontSize:\s*\d/)`）。
+   360dp 屏 ⇒ 卡宽 280.8 ⇒ 文字列 **240.8dp** ⇒ **标题 18.5 / 行高 23.1 / 歌手 13.9**（改动前是 24/30/18）。
+   `NaN`/`Infinity` 走上限那档而不是传到底 —— `Math.min` 会把 NaN 一路送到 `fontSize`，和 §11.6 记的 `fitLyricBlock` 是同一类漏子。
+5. **两处刻意没跟着动，都是裁过的，不是漏的**：
+   - **歌词卡落款那两行（16/14）不动** —— 用户指的是音乐卡那一大块；歌词卡的歌名挂在分隔线下面的小封面行里，宽度另有 `LYRIC_FOOTER_RESERVE` 记账。
+   - **`MUSIC_CARD_TEXT_RESERVE` 仍是 200**：它当初是按 24/30/18 那档凑的（`index.tsx:25`），字号降下来后文字块实际只需约 150 ⇒ 现在**多留了约 50dp 余量**。
+     多留的方向是安全的（不会顶穿），只会在"高度吃紧"的小屏上让封面比可能的尺寸小一点；真机看到卡底空一截再回来收这一档，别现在凭猜改。
+6. **一个观感后果，等真机裁定**：标题 18.5dp 和落款 `Music` 的 17dp 现在几乎一样大，**层级被压平了一档**。
+   要么把 26 改成更小的字母数（字号回升），要么把 `Music` 那枚降到 15dp 以下。本轮按用户给的判据（26）实现，不自作主张改口径。
+7. **本轮闸门（现跑）**：本功能 5 个用例文件 **46 pass / 0 fail**（`share-card-fit-lyric-block.mts` 从 12 条涨到 16 条，新增 4 条钉住第 3、4 条的数字与"不写死字号"）；
+   整仓 `npm test` **694 / pass 693 / fail 1** —— 比 §11.1 那串的 690 正好多我这 4 条，红的仍是既有的 `tests/monet-texture.mts`（这次报在第 80 行，同一句"正文区 tone 89.84 越界"）；
+   `npx tsc --noEmit` **137**（基线），命中 `ShareCard` 的 **0** 条 —— 新加的必填 `textWidth` prop 与 `tintColor` 的类型都过；
+   4 个改动文件 + 测试文件 eslint **exit 0、零行输出**（测试文件里那条 `import/first` 是把 `cardTextSizes` 的 import 从函数体挪到文件头之后清掉的）。
+   打包：`assembleRelease` exit 0（16:25 → 16:36，约 11 分钟；§11.10 那次同样只动 JS 是 2m54s —— **这次为什么慢没查**，只记下这个数，别当下次构建的 ETA）。
+   **只拆了 arm64 那一支**（`xunyin-v1.1.0-arm64-v8a.apk`，20,842,640 B）验新代码进包 ——
+   生产 bundle 里没有模块路径可 grep（`grep "ShareCard/"` 0 命中），所以拿**只有这一轮才有的属性名**当探针：
+   `titleLineHeight` 与 `cardTextSizes` 各 **1 次**命中（terser 默认不 mangle 属性名）。装到 vivo16 为 `Success`（`install -r -d`；**数据在不在没实测打开验证**，只是 `-r` 的常规语义）。
+8. **桌面小样（`shots/typography-mock.png`，脚本 `.superpowers/sdd/.../mock_typography.py`）**：四格 = 改前/改后 × 亮卡/深卡，落款按 `SRC_IN` 的语义在 PIL 里换 RGB 留 alpha。
+   对着看成立的两点：**染色后字形与 `Music` 完全同色**（亮卡灰墨、深卡浅灰），**盒 13.1dp 与 `M` 顶对齐**不再显小。
+   顺带把判据量了一遍：`Blinding Lights` 那档 18.5dp 下，26 个小写字母 = **236.6dp**，占 240.8dp 文字列的 **98%** —— 数字对得上第 3 条的推导。
+   **小样替代不了设备**：PIL 用的是 Arial，安卓用的是 Roboto，两套字宽差几个百分点；"改前"那一格画的也是**抠好后的**字形（白方片原图没重画），所以它只比尺寸不比底色。
+9. **真机证据：本轮为零** —— 第 1 条的染色在安卓上到底是不是"只换 RGB"、`SRC_IN` 会不会把 §11.10 那 4.4× 缩放的细纹糊成一团实色，
+   以及第 6 条那句层级，都得看设备像素；判据同 §11.4 第 19 条那一行，本轮没有新条目要加进去。
+
+### 11.12 分享预览页的控件层重排（2026-10-17，frontend-design 一轮）
+
+用户原话：**"再用frontdesign总体优化一下这个图片分享界面"**。改的是**预览 Modal 的控件层**（`ShareCardModal.tsx`），
+被拍层（`ShareCard/` 两张卡）一行未动；这一节按设计轮的顺序记：方向、落地、没动的、闸门。
+
+1. **原来的问题（对着真机截图 `.superpowers/sdd/.../shots/03-after-tap-share-image.png` 看）**：
+   右上角两枚纯图标圆钮（`download-2` / `share`，`rgba(0,0,0,0.35)`，无标签、无关闭钮）；禁用时**没有任何视觉反馈**（§11.6 记过的 minor）；
+   等待期用户只看到一张空白的卡（§11.4 第 20 条那个窗口）；拍摄进行中关 Modal → `captureRef` reject → 在身后那层弹错误 toast（§11.6 的另一条 old debt）。
+2. **重排后的形态**：
+   - **动作到底部**：两枚 44dp 药丸、底部居中、带标签 —— `保存图片`（`share_card_save`）/ `分享图片`（`share_mode_image`，a11y label 也换成它，
+     顺手收掉 §11.6 那条"名词当 label"）。**同权重**：不设"主按钮"，保存和分享谁都不是陪衬（用户自己决定去处）。
+   - **关闭到左上**：✕ 44dp 圆钮，跟随本仓 PlayDetail 头部"收起/返回在左"的约定；这是整个屏上唯一的常驻顶部控件。
+   - **状态具象化**：`!ready` 时两枚药丸 45% 幽灵态（原来禁用看不出来）；等超过 **600ms** 才浮出一条 `正在生成图片...` 状态条
+     （热缓存几百毫秒就绪时**根本不出现**，不给快路径添噪声；冷像素缓存下它解释 §11.4 第 20 条那个空窗）；
+     `busy` 时按下的那枚换成 `ActivityIndicator`、其余压到 35%；**拍摄/落盘进行中不接受关闭**（`handleClose` 与 `onRequestClose` 同一道闸，
+     把 §11.6 "拍摄中关 Modal → 错误 toast"那条旧账的一半收掉）。
+   - **表面色**：`rgba(0,0,0,0.35)` → `rgba(28,28,30,0.62)`（与卡的深色主题 `#1C1C1E` 同族）。0.62 是算出来的最坏情况：
+     糊底纯白时合成面 ≈ `(114,114,114)`，白字仍有 **4.8:1**；刻意**不吃主题色** —— 这一层对着的底是用户封面，不是 App 主题。
+   - **动效一个时刻**：控件层进场（Modal 自己 fade 先走 90ms，然后 260ms 淡入 + 上浮 12dp）＋就绪交叉淡入（200ms）。
+     **只动控件层，一帧都不碰被拍视图** —— 进场动效若落在 `shotRef` 那一层，半透明中间帧会被烘进成品图（`view.draw` 拍的是当帧）。
+     系统"减少动画"开着时（`AccessibilityInfo.isReduceMotionEnabled`）全部直接落位。
+3. **两处刻意没动**：`ShareModeSheet`（入口面板）与 `exportCard` / `saveCard` / `shareImage` 链路一行未动 —— 这轮的问题是预览页的控件层，
+   入口面板与全仓其它 Sheet（`MusicMoreSheet` 等）同语言，单改它反而破一致性。i18n 只 +1 枚 key（`share_card_creating`，三语言同笔）。
+4. **闸门（写这段时现跑）**：`npx tsc --noEmit` **137 = 基线**、命中 `ShareCard` **0** 条（新 key 的三语言齐全由 `keyof Message` 交集在编译期判定）；
+   `npx eslint src/components/ShareCard/ShareCardModal.tsx` **exit 0、零行输出**；本功能 5 个用例文件 **46/46**（这轮没动被测的那三张卡，数不变）。
+   桌面小样 `shots/share-ui-mock.png`（脚本 `.superpowers/sdd/.../mock_share_ui.py`）：四格 = 亮/暗封面 × 就绪/等待，等待格带状态条与 45% 幽灵药丸。
+   **小样替代不了设备**（PIL 画的图标与 Roboto 字形都不是真渲染，同 §11.10-5 的口径）；真机上看的是：底部药丸与手势条的距离、
+   0.62 的玻璃在亮/暗封面上的观感、以及 ✕ 与状态条的位置 —— 顺路记进 §11.4 第 19/20 条那两行一起上机，本轮不另立条目。
+5. **提交状态**：本轮（连同 §11.11 的 docs 回写）**只落工作区、未提交** —— 三份 lang 文件里带着别的会话的 WIP（各 134/15 行），
+   要按本仓的"HEAD + 本次改动"定向入索引的规矩提交，需要单独的提交轮；硬约束不变（不推送）。
+6. **构建（用户："构建"）**：`assembleRelease` **BUILD SUCCESSFUL in 2m 12s**（exit 0，17:11 落盘），日志
+   `.superpowers/sdd/2026-10-16-share-card-image/build-ui.log`；五支 release ABI 照旧（arm64 19.88MB / armeabi-v7a 18.79MB / x86 20.54MB /
+   x86_64 20.60MB / universal 39.06MB）。进包探针（按 §11.4 开头那条"按只有这一轮才有的字符串认"的口径，读 arm64 包的 `assets/index.android.bundle`）：
+   `share_card_creating` / `noticeChip` / `isReduceMotionEnabled` **各 1 次命中**，`正在生成图片` 以 UTF-16-LE 存储、1 次命中 —— 新控件层确实进包。
+   （`pillOpacity` 0 命中是**正常**：那是局部变量名，被 terser 改名；上面三个是字符串字面量/属性名，默认不 mangle。）
+   注意这支包和以前一样**只用于验证**：它把别的会话那批未提交 WIP 一起打进去了（§11.8），不是发布候选。
+
+### 11.13 按钮回到全局按钮语言（2026-10-17，用户看过 §11.12 的真机效果之后）
+
+用户原话：**"将图片分享页面的各个按钮ui与全局统一"**。§11.12 第一版用的是"中性深玻璃 + 硬编码白字"（对着任意封面都最稳），
+这一轮按要求换成**全站按钮的语言**，立刻盖上第一版的两条取舍（它们是为"任意封面观感"服务的，不是用户要的）：
+
+1. **两枚动作 = 全局填充按钮**：`common/Button`（自带主题 ripple、禁用 0.3）+ `backgroundColor: theme['c-button-background']` +
+   `Text size={14} color={theme['c-button-font']}` —— 与「歌词工具条」的复制/海报按钮同一套（`Lyric.tsx` 的 `toolBar`/`toolBtn`）：
+   **flex:1、高 44、`BorderRadius.normal`(4)、gap 12、左右 padding 20、底 15**。图标拿掉：全局动作按钮是文本型标签（MultipleActions / MusicToggleModal / Onboarding 全是）。
+2. **✕ = 播放页头部那一套**：裸图标（无底色）+ `glassColors.text`，`size={20}`，48×48 命中区挂左上（与 Header 的 sideBtn 同宽）。busy 时 0.3（= Button 的全局禁用值）。
+3. **状态条**：`glassColors.muted`（`c-font-label`）纯文本，去掉第一版的深玻璃胶囊。
+4. **控件层改走 `createStyle`**（第一版刻意用原始 dp，理由见 §11.12-2 的注释）：全站按钮都随 App 字号设置缩放，统一就包括缩放行为；
+   `borderRadius` 不缩放（4 恒 4）也照全局。被拍层（ShareCard/两张卡）不受影响，那里仍是原始 dp + 固定色。
+5. **交互一个没丢**：!ready 与进行中 = 全局禁用态 0.3；进行中的那一枚换 `common/Loading`（`c-button-font` 色）并**压过**禁用透明度（`busyBtn: { opacity: 1 }`，
+   靠 `Button` 的 `StyleSheet.compose` 里 style 在后的规则），另一枚保持 0.3；busy 期间仍不接受关闭；进场动效与 `正在生成图片...`（`share_card_creating`，i18n 不变）照旧。
+6. **一个既定代价写清楚**：默认绿主题的 `c-button-background` = `rgba(182,222,201,0.30)`（浅色 30% 透明）、`c-button-font` = `rgba(77,175,124,0.90)`，
+   叠在糊底上的对比度天然弱于第一版的中性深底 0.62 —— 这就是"与全局统一"的外观（歌词工具条在糊底上也是这个样子）。
+   真机观感以用户设备主题为准；若之后觉得太淡，两个退回点：①把底换回 `rgba(28,28,30,0.62)`；②加 `borderColor: theme['c-border-background']` 描边（`selectBtn` 那一档）。
+7. **闸门（现跑）**：`npx tsc --noEmit` **137 = 基线**、命中 `ShareCard` 0 条；`npx eslint ShareCardModal.tsx` exit 0、零行输出；5 个用例文件 **46/46**。
+   小样 `shots/share-ui-mock.png` 已出 **v2**（脚本同名，覆盖 §11.12-4 那张：两枚按钮按全局软色画、✕ 无底色）——`§11.12-4` 里"45% 幽灵药丸"的描述从此只算 v1 的历史。
+8. **提交/构建**：仍与 §11.12-5/6 同一状态 —— 工作区未提交。构建（用户："构建"）：`assembleRelease` **BUILD SUCCESSFUL in 5m 43s**（exit 0，五支 ABI 落在 17:33，
+   日志 `.superpowers/sdd/2026-10-16-share-card-image/build-ui2.log`）。进包探针（读 arm64 的 `assets/index.android.bundle`）：
+   `busyBtn`/`actionBtn`/`noticeLayer`/`share_card_creating` 各 1 次命中，**第一版的 `noticeChip` 0 命中**（证明包里是这一版而不是 17:11 那支），`c-button-background` 3 次命中。
