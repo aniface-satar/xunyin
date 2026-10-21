@@ -3,7 +3,7 @@ import { Animated, Modal, TouchableOpacity, TouchableWithoutFeedback, View } fro
 
 import GlassBackdrop from '@/components/common/GlassBackdrop'
 import Text from '@/components/common/Text'
-import { Icon } from '@/components/common/Icon'
+import { FeatureIcon } from '@/components/common/Icon'
 import { useI18n } from '@/lang'
 import { useTheme } from '@/store/theme/hook'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
@@ -20,8 +20,8 @@ interface ShareModeSheetProps {
 }
 
 const ACTIONS = [
-  { key: 'text', icon: 'comment', label: 'share_mode_text' },
-  { key: 'image', icon: 'share', label: 'share_mode_image' },
+  { key: 'text', icon: 'link-variant', label: 'share_mode_text' },
+  { key: 'image', icon: 'music-box-outline', label: 'share_mode_image' },
 ] as const
 
 const ShareModeSheet = forwardRef<ShareModeSheetType, ShareModeSheetProps>(({ onSelect }, ref) => {
@@ -123,7 +123,7 @@ const ShareModeSheet = forwardRef<ShareModeSheetType, ShareModeSheetProps>(({ on
                         handleSelect(key)
                       }}
                     >
-                      <Icon name={icon} size={20} color={theme['c-primary']} style={styles.actionIcon} />
+                      <FeatureIcon name={icon} size={20} color={theme['c-primary']} style={styles.actionIcon} />
                       <Text numberOfLines={1} size={14} color={theme['c-font']} style={styles.actionText}>{t(label)}</Text>
                     </TouchableOpacity>
                   ))

@@ -2,24 +2,24 @@ import { forwardRef, useEffect, useRef, useState } from 'react'
 import { ImageBackground, StyleSheet, View, type ViewStyle } from 'react-native'
 
 import { defaultHeaders } from '@/components/common/Image'
-import { getCoverAverageArgb } from '@/utils/monet'
+import { useTheme } from '@/store/theme/hook'
 import LyricCard from './LyricCard'
 import MusicCard from './MusicCard'
 import { normalizeCoverUri } from './CoverImage'
-import { LYRIC_CARD_THEME, pickMusicCardTheme, type CardTheme } from './cardTheme'
+import { pickCardTheme, type CardTheme } from './cardTheme'
+import { CARD_MAX_HEIGHT_RATIO, CARD_WIDTH_RATIO, cardScale } from './cardScale'
 import { type LyricBlockLine } from './fitLyricBlock'
 
-export const CARD_WIDTH_RATIO = 0.78
-export const CARD_MAX_HEIGHT_RATIO = 0.62
 export const CARD_PADDING = 20
-// 播放页那一支模糊底有两个半径：src/components/player/CoverBackdrop/index.tsx:13 的 WASH_BLUR_RADIUS=90
-// （① 莫奈档，糊到只剩大块起伏）与 :17 的 COVER_BLUR_RADIUS=5（②「动态取色」，要隐隐看出是封面）。
-// 分享卡的底对着的是 ① 那一支（spec §1 的"虚化封面铺底"），所以是 90，不要跟着 ② 改成 5。
+// 20dp 是分享卡自己的一档，不是抄播放页：播放页那两个半径是 src/components/player/CoverBackdrop/index.tsx:14
+// 的 WASH_BLUR_RADIUS=90（① 莫奈档，糊到只剩大块起伏）与 :18 的 COVER_BLUR_RADIUS=9（②「封面模糊」，要隐隐看出是封面）。
+// 卡底落在两者之间、离 ② 更近：卡上压着 scrimColor 蒙版和不透明卡底，糊底只是氛围，别让封面图案抢字。
 // 已知代价：Fresco 的框糊会在边缘读到图外面，留一圈发暗的边 —— 播放页用 OVERSCAN=1.25 的 GPU 变换躲开，
-// 这一支整屏铺满、那条边正好落在导出图的屏幕上沿。Task 11 真机清单要看这一条，别看漏就照着播放页加外扩。
-export const BLUR_RADIUS = 90
+// 这一支整屏铺满、那条边正好落在导出图的屏幕上沿（半径变小只是让边更窄，没有消失）。真机清单要看这一条。
+export const BLUR_RADIUS = 20
 
-// 歌词卡底部那一坨，最坏情况：省略号一行 22×1.5=33 + 分隔线（14+1+14=29）+ 小封面行（歌名两行 2×~19 + 歌手 2+~17 + 落款 16+20 ≈ 93）≈ 155。
+// 歌词卡底部那一坨，最坏情况：省略号一行 22×1.5=33 + 分隔线（14+1+14=29）+ 小封面行（文字列：歌名两行 2×~19 + 歌手 2+~17 ≈ 57，封面 56）
+// + 落款（16+20=36）≈ 155。
 // 卡内上下边距不在这里，由下面 CARD_PADDING * 2 单独扣。
 const LYRIC_FOOTER_RESERVE = 160
 // 音乐卡里封面之外的那几行：标题 18+3×30=108、歌手 6+2×~25=56、落款 16+20=36 ≈ 200
@@ -39,18 +39,32 @@ export interface ShareCardProps {
   mode: 'music' | 'lyric'
   musicInfo: ShareCardData
   lyricLines?: readonly LyricBlockLine[]
+  /**
+   * 歌词卡正文字号(dp)。给了（歌词页用户选的字号 ÷10）就以它为**起始**档：
+   * 装不下时逐 dp 往下缩到"卡内歌手名"那一档（fitLyricBlock.LYRIC_MIN_FONT_SIZE），
+   * 好让最大卡片空间里装进更多句；缩到地板仍装不下的整句才丢掉。不给退回五档自适应。
+   */
+  lyricFontSize?: number
+  /** 被拍画布（= 导出图）的尺寸，dp */
   width: number
   height: number
-  /** false = 这一层那三路异步信号还没到齐，拍摄按钮该禁用（Task 1 探针 2 的结论落在这里）。
-   *  就绪只有这一个出口：卡封面、整屏糊底、配色三路各自的状态都在**这一层**合起来再报出去，
+  /**
+   * "基准整体"那块屏幕的尺寸，dp：卡盒与卡内每一度量都从它推，也就是全屏档那一版的数值。
+   * 与 width/height 分开是因为画布会随比例变短变宽，而卡片是同一个整体只做等比缩放
+   * （用户 2026-10-17 指定："卡内的内容大小比例不动"）。
+   */
+  masterWidth: number
+  masterHeight: number
+  /** false = 这一层那两路异步信号还没到齐，拍摄按钮该禁用（Task 1 探针 2 的结论落在这里）。
+   *  就绪只有这一个出口：卡封面、整屏糊底两路各自的状态都在**这一层**合起来再报出去，
    *  别的层（ShareCardModal）只吃这一个布尔值、不另存自己的 ready —— 各存一份就会有人漏掉某一路。
-   *  没有封面（本地歌）时三路都会当场落定，导出不会永远卡住。 */
+   *  没有封面（本地歌）时两路都会当场落定，导出不会永远卡住。
+   *  （原来的第三路"封面取色定卡色"已随卡色跟随应用主题一起退役，见 pickCardTheme。） */
   onReadyChange?: (ready: boolean) => void
 }
 
-const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLines, width, height, onReadyChange }, ref) => {
-  const [averageArgb, setAverageArgb] = useState<number | null>(null)
-  const [paletteSettled, setPaletteSettled] = useState(false)
+const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLines, lyricFontSize, width, height, masterWidth, masterHeight, onReadyChange }, ref) => {
+  const appTheme = useTheme()
   const [coverReady, setCoverReady] = useState(false)
   const uri = normalizeCoverUri(musicInfo.pic)
 
@@ -64,45 +78,22 @@ const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLine
   const [backdrop, setBackdrop] = useState<{ uri: string | null, settled: boolean }>({ uri, settled: uri === null })
   if (backdrop.uri !== uri) setBackdrop({ uri, settled: uri === null })
 
-  useEffect(() => {
-    let cancelled = false
-    setAverageArgb(null)
-    // 歌词卡的配色写死在 LYRIC_CARD_THEME，这个平均色取到也不用 —— 别为一趟没人读的取色去敲原生。
-    // 短路这一支必须自己把门落定：既然不敲门，就没人来应门。
-    if (!musicInfo.pic || mode === 'lyric') {
-      setPaletteSettled(true)
-      return
-    }
-    // averageArgb 还是 null 时 pickMusicCardTheme 给的是深卡（cardTheme.ts:36 对非数字一律判暗），
-    // 所以配色没落定就放行 = 白封面拍成黑卡。这一路是 HttpURLConnection 自己下的，
-    // 和卡封面那趟（多数是 Fresco 内存命中）没有任何同步点，冷像素缓存时能差几百毫秒到几秒。
-    setPaletteSettled(false)
-    const run = async() => {
-      try {
-        const value = await getCoverAverageArgb(musicInfo.pic)
-        if (!cancelled) setAverageArgb(value)
-      } catch (e) {
-        // 取色失败照样落定：回落到深卡是既有行为（spec §3），失败也说得出口；
-        // 真正不能接受的是门被一趟不会回来的回调永久钉住，以及一条没人接的 rejection。
-        console.error('[share_card] palette_failed', e)
-      } finally {
-        if (!cancelled) setPaletteSettled(true)
-      }
-    }
-    void run()
-    return () => { cancelled = true }
-  }, [musicInfo.pic, mode])
-
-  const ready = coverReady && backdrop.settled && paletteSettled
+  const ready = coverReady && backdrop.settled
   // 聚合结果只在这个布尔翻转时往外报一次。onReadyChange 走 ref 不进依赖数组（父组件每次都传新箭头），
   // 判据同 CoverImage:44-45。
   const reportReadyRef = useRef(onReadyChange)
   reportReadyRef.current = onReadyChange
   useEffect(() => { reportReadyRef.current?.(ready) }, [ready])
 
-  const theme: CardTheme = mode === 'lyric' ? LYRIC_CARD_THEME : pickMusicCardTheme(averageArgb)
-  const cardWidth = width * CARD_WIDTH_RATIO
-  const cardMaxHeight = height * CARD_MAX_HEIGHT_RATIO
+  // 卡色跟应用主题走（cardTheme.ts 顶部注释）：深色模式黑卡、浅色模式白卡，音乐卡与歌词卡同一套。
+  // 两张卡共用一个选择器 —— 分卡就是旧 spec §3 那对过时的取舍（歌词卡固定深色 / 音乐卡看封面脸色），
+  // 用户 2026-10-17 指定的是"统一跟着应用深浅模式"，一并改掉。
+  const theme: CardTheme = pickCardTheme(appTheme.isDark)
+  // 卡盒按基准整体算（= 全屏那一档的画面），画布只管"这张卡放在多大的糊底上、等比缩到多大"。
+  // 之前这里是 width/height，于是切比例时卡盒跟着画布两个轴各自变形、封面与文字的相对大小一起重排。
+  const cardWidth = masterWidth * CARD_WIDTH_RATIO
+  const cardMaxHeight = masterHeight * CARD_MAX_HEIGHT_RATIO
+  const scale = cardScale({ rectWidth: width, rectHeight: height, masterWidth, masterHeight })
   // 封面同时受两条边管：只按宽算，长歌名在矮窗口上会把标题/落款顶到卡底外面（RN 默认不缩不裁）。
   const coverSize = Math.max(0, Math.min(
     cardWidth - CARD_PADDING * 2,
@@ -111,7 +102,8 @@ const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLine
   const lyricMaxHeight = Math.max(0, cardMaxHeight - CARD_PADDING * 2 - LYRIC_FOOTER_RESERVE)
   // 文字那一列的宽度只受卡宽管（padding 是卡自己的），封面才受两条边管。
   const cardTextWidth = Math.max(0, cardWidth - CARD_PADDING * 2)
-
+  // 歌词卡字号：从用户字号（dp，歌词页设置值 ÷10）起步，装不下就逐 dp 下探到歌手名那一档，
+  // 在同样的卡片空间里尽量多装句子 —— 下探与地板都在 fitLyricBlock 里（lyricFontSize + minFontSize）。
   return (
     <View ref={ref} collapsable={false} style={{ width, height }}>
       <ImageBackground
@@ -125,11 +117,13 @@ const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLine
         <View style={[styles.fill, { backgroundColor: theme.scrimColor }]} />
       </ImageBackground>
       <View style={styles.center}>
-        <View style={{ width: cardWidth, maxHeight: cardMaxHeight, backgroundColor: theme.cardBackground, borderRadius: 20, padding: CARD_PADDING }}>
+        {/* overflow hidden：预算再保守也是估宽，万一真实渲染比模型多折一行，多出的部分在这里被圆角边界
+            裁住，压不住的那一小截不能再把落款挤出卡外（图一那个症状的最后一道保险） */}
+        <View style={{ width: cardWidth, maxHeight: cardMaxHeight, transform: [{ scale }], backgroundColor: theme.cardBackground, borderRadius: 20, padding: CARD_PADDING, overflow: 'hidden' }}>
           {
             mode === 'music'
               ? <MusicCard {...musicInfo} coverSize={coverSize} textWidth={cardTextWidth} theme={theme} onCoverReady={setCoverReady} />
-              : <LyricCard lines={lyricLines ?? []} {...musicInfo} lyricMaxHeight={lyricMaxHeight} theme={theme} onCoverReady={setCoverReady} />
+              : <LyricCard lines={lyricLines ?? []} {...musicInfo} lyricMaxHeight={lyricMaxHeight} textWidth={cardTextWidth} lyricFontSize={lyricFontSize} theme={theme} onCoverReady={setCoverReady} />
           }
         </View>
       </View>

@@ -13,7 +13,9 @@ import { usePlayMusicInfo } from '@/store/player/hook'
 import playerState from '@/store/player/state'
 import { useSettingValue } from '@/store/setting/hook'
 import { useTheme } from '@/store/theme/hook'
+import { useI18n } from '@/lang'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
+import SheetThemeProvider from '@/components/player/SheetThemeProvider'
 import { createStyle, shareMusic } from '@/utils/tools'
 import LyricSettingSheet, { type LyricSettingSheetType } from './LyricSettingSheet'
 import ShareCardModal from '@/components/ShareCard/ShareCardModal'
@@ -28,12 +30,13 @@ interface HeaderProps {
   onPageSelected?: (page: number) => void
 }
 
-const PAGE_NAMES = ['歌曲', '歌词'] as const
+const PAGE_NAMES = ['play_detail_tab_song', 'play_detail_tab_lyric'] as const
 const LYRIC_PAGE = 1
 
 export default memo(({ onBack, pageIndex = 0, onPageSelected }: HeaderProps) => {
   const statusBarHeight = useStatusbarHeight()
   const theme = useTheme()
+  const t = useI18n()
   const glassColors = useGlassColors()
   const playMusicInfo = usePlayMusicInfo()
   const settingSheetRef = useRef<LyricSettingSheetType>(null)
@@ -94,7 +97,7 @@ export default memo(({ onBack, pageIndex = 0, onPageSelected }: HeaderProps) => 
                       index == pageIndex ? styles.tabTextActive : null,
                     ]}
                   >
-                    {name}
+                    {t(name)}
                   </Text>
                 </TouchableOpacity>
               </Fragment>
@@ -103,15 +106,15 @@ export default memo(({ onBack, pageIndex = 0, onPageSelected }: HeaderProps) => 
         </View>
         {
           isLyricPage && (
-            <TouchableOpacity style={[styles.sideBtn, styles.settingBtn]} activeOpacity={0.7} onPress={showSetting}>
+            <TouchableOpacity style={[styles.sideBtn, styles.settingBtn]} activeOpacity={0.7} onPress={showSetting} accessibilityRole="button" accessibilityLabel={t('play_detail_setting_title')}>
               <Icon name="slider" size={19} color={glassColors.text} />
             </TouchableOpacity>
           )
         }
-        <TouchableOpacity style={[styles.sideBtn, styles.shareBtn]} activeOpacity={0.7} onPress={share}>
+        <TouchableOpacity style={[styles.sideBtn, styles.shareBtn]} activeOpacity={0.7} onPress={share} accessibilityRole="button" accessibilityLabel={t('share_title_music')}>
           <Icon name="share" size={19} color={glassColors.text} />
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.sideBtn, styles.backBtn]} activeOpacity={0.7} onPress={back}>
+        <TouchableOpacity style={[styles.sideBtn, styles.backBtn]} activeOpacity={0.7} onPress={back} accessibilityRole="button" accessibilityLabel={t('back')}>
           <Icon
             name="chevron-left"
             size={20}
@@ -120,8 +123,10 @@ export default memo(({ onBack, pageIndex = 0, onPageSelected }: HeaderProps) => 
           />
         </TouchableOpacity>
       </View>
-      <LyricSettingSheet ref={settingSheetRef} />
-      <ShareModeSheet ref={shareSheetRef} onSelect={handleShareMode} />
+      <SheetThemeProvider>
+        <LyricSettingSheet ref={settingSheetRef} />
+        <ShareModeSheet ref={shareSheetRef} onSelect={handleShareMode} />
+      </SheetThemeProvider>
       {
         shareCardData ? (
           <ShareCardModal
@@ -185,7 +190,7 @@ const styles = createStyle({
     includeFontPadding: false,
   },
   tabTextActive: {
-    fontWeight: '700',
+    fontWeight: 'bold',
   },
   separator: {
     height: 16,

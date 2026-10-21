@@ -4,7 +4,15 @@ import Text from '@/components/common/Text'
 import { BrandLine } from './BrandLine'
 import CoverImage from './CoverImage'
 import { type CardTheme } from './cardTheme'
-import { type LyricBlockLine, fitLyricBlock, LYRIC_LINE_HEIGHT_RATIO } from './fitLyricBlock'
+import {
+  estimateRowCount,
+  fitLyricBlock,
+  LYRIC_FOOTER_SINGER_FONT_SIZE,
+  LYRIC_FOOTER_TITLE_FONT_SIZE,
+  LYRIC_LINE_HEIGHT_RATIO,
+  LYRIC_MIN_FONT_SIZE,
+  type LyricBlockLine,
+} from './fitLyricBlock'
 
 interface Props {
   lines: readonly LyricBlockLine[]
@@ -12,6 +20,10 @@ interface Props {
   singer: string
   pic: string | null | undefined
   lyricMaxHeight: number
+  /** 卡内文字列宽度(dp)：给了就走换行感知的高度模型（一句该折几行算几行） */
+  textWidth?: number
+  /** 正文起始字号(dp) = 歌词页里用户选的那一档；不给退回旧的五档自适应 */
+  lyricFontSize?: number
   theme: CardTheme
   onCoverReady?: (ready: boolean) => void
 }
@@ -26,8 +38,16 @@ const noShadow: TextStyle = {
   textShadowOffset: { width: 0, height: 0 },
 }
 
-export default ({ lines, name, singer, pic, lyricMaxHeight, theme, onCoverReady }: Props) => {
-  const fit = fitLyricBlock(lines, { maxHeight: lyricMaxHeight })
+export default ({ lines, name, singer, pic, lyricMaxHeight, textWidth, lyricFontSize, theme, onCoverReady }: Props) => {
+  // 字号：从歌词页那一档逐 dp 下探到"卡内歌手名"那一档（LYRIC_MIN_FONT_SIZE），
+  // 每档取装得最多的一句数；全装得下的最大档就是答案。缩到地板还装不下才截断补 …。
+  const fit = fitLyricBlock(lines, {
+    maxHeight: lyricMaxHeight,
+    textWidth,
+    fontSize: lyricFontSize,
+    minFontSize: LYRIC_MIN_FONT_SIZE,
+    extendedRatio: 0.8,
+  })
   const shown = lines.slice(0, fit.visibleCount)
   return (
     <>
@@ -35,7 +55,9 @@ export default ({ lines, name, singer, pic, lyricMaxHeight, theme, onCoverReady 
         {
           shown.map((line, index) => (
             <View key={`${index}-${line.text}`}>
-              { line.text?.trim() ? <Text allowFontScaling={false} style={{ ...noShadow, fontSize: fit.fontSize, lineHeight: fit.fontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.lyricColor }}>{line.text}</Text> : null }
+              {/* 换行跟歌词页对齐：歌词页上那一行没折行（noWrap）且这一档字号仍放得下一行时，
+                  卡里也钉成一行；歌词页上折了行的，卡里照常按卡宽自动换行。 */}
+              { line.text?.trim() ? <Text allowFontScaling={false} numberOfLines={line.noWrap && estimateRowCount(line.text, fit.fontSize, textWidth ?? 0) <= 1 ? 1 : undefined} style={{ ...noShadow, fontSize: fit.fontSize, lineHeight: fit.fontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.lyricColor, fontWeight: 'bold' }}>{line.text}</Text> : null }
               {
                 (line.extendedLyrics ?? []).map((text, i) => text?.trim()
                   ? <Text key={i} allowFontScaling={false} style={{ ...noShadow, fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.subtitleColor }}>{text}</Text>
@@ -47,14 +69,18 @@ export default ({ lines, name, singer, pic, lyricMaxHeight, theme, onCoverReady 
         { fit.truncated ? <Text allowFontScaling={false} style={{ ...noShadow, fontSize: fit.extendedFontSize, lineHeight: fit.extendedFontSize * LYRIC_LINE_HEIGHT_RATIO, color: theme.subtitleColor }}>…</Text> : null }
       </View>
       <View style={[styles.separator, { backgroundColor: theme.subtitleColor }]} />
+      {/* 上界对齐：封面与歌名同一行顶（flex-start），歌手跟在歌名下面 */}
       <View style={styles.footer}>
-        <CoverImage url={pic} onReady={onCoverReady} style={styles.miniCover} />
+        {/* 封面边界线：同 MusicCard —— 黑卡白线 / 白卡黑线，把小封面从同色卡底上分出来 */}
+      <CoverImage url={pic} onReady={onCoverReady} style={[styles.miniCover, { borderWidth: StyleSheet.hairlineWidth, borderColor: theme.coverBorderColor }]} />
         <View style={styles.footerText}>
-          <Text numberOfLines={2} allowFontScaling={false} style={{ ...noShadow, fontSize: 16, color: theme.titleColor }}>{name}</Text>
-          <Text numberOfLines={1} allowFontScaling={false} style={{ ...noShadow, fontSize: 14, color: theme.subtitleColor, marginTop: 2 }}>{singer}</Text>
-          <BrandLine color={theme.subtitleColor} />
+          {/* 这两档字号是卡内唯一不随歌词字号变动的数：歌手名那一档同时是歌词正文的下探地板 */}
+          <Text numberOfLines={2} allowFontScaling={false} style={{ ...noShadow, fontSize: LYRIC_FOOTER_TITLE_FONT_SIZE, color: theme.titleColor }}>{name}</Text>
+          <Text numberOfLines={1} allowFontScaling={false} style={{ ...noShadow, fontSize: LYRIC_FOOTER_SINGER_FONT_SIZE, color: theme.subtitleColor, marginTop: 2 }}>{singer}</Text>
         </View>
       </View>
+      {/* 落款在最下方、左缘与封面左缘同一条线（都在卡 padding 边上） */}
+      <BrandLine color={theme.subtitleColor} />
     </>
   )
 }
@@ -64,7 +90,8 @@ export default ({ lines, name, singer, pic, lyricMaxHeight, theme, onCoverReady 
 // StyleSheet.hairlineWidth 不是数字换算，照用。
 const styles: { separator: ViewStyle, footer: ViewStyle, miniCover: ImageStyle, footerText: ViewStyle } = {
   separator: { height: StyleSheet.hairlineWidth, opacity: 0.35, marginVertical: 14 },
-  footer: { flexDirection: 'row', alignItems: 'center' },
+  // 上界对齐：行顶与封面顶同线，不用 center（那是旧布局，歌名会沉到封面中线以下）
+  footer: { flexDirection: 'row', alignItems: 'flex-start' },
   miniCover: { width: 56, height: 56, borderRadius: 8, marginRight: 12 },
   footerText: { flex: 1 },
 }

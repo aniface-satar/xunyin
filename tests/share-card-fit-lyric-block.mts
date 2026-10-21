@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
-import { EXTENDED_TIER_FLOOR, LYRIC_LINE_HEIGHT_RATIO, LYRIC_TIERS, fitLyricBlock } from '../src/components/ShareCard/fitLyricBlock.ts'
+import { EXTENDED_TIER_FLOOR, LYRIC_FOOTER_SINGER_FONT_SIZE, LYRIC_LINE_HEIGHT_RATIO, LYRIC_MIN_FONT_SIZE, LYRIC_TIERS, WRAP_SLACK_ROWS, estimateRowCount, fitsSingleRow, fitLyricBlock, lyricFontSizes, resolveNoWrap } from '../src/components/ShareCard/fitLyricBlock.ts'
 import { cardTextSizes } from '../src/components/ShareCard/cardTypography.ts'
 
 const line = (text: string, extendedLyrics: string[] = []) => ({ text, extendedLyrics })
@@ -86,6 +86,160 @@ test('default ratio is 1.5 and is overridable', () => {
   assert.equal(fitLyricBlock(lines, { maxHeight: 120 }).fontSize, 20)
 })
 
+// —— 换行感知模型（textWidth 给了才启用）——
+// 旧模型把"一句"当一行算高度，窄卡上每句实际渲染两行，真实高度几乎是预算两倍
+// （图一：字体取最高档时五句以内的短歌词照样顶穿圆角卡）。估宽判据按数字钉住。
+
+test('estimateRowCount follows the wrap width and is conservative via ceil', () => {
+  // 全角 5 字 = 5em；textWidth 100、字号 20 → em 宽 5 → 1 行
+  assert.equal(estimateRowCount('一二三四五', 20, 100), 1)
+  // 字号翻倍 → em 宽减半 → 2 行（ceil 0.5 只能向上）
+  assert.equal(estimateRowCount('一二三四五', 40, 100), 2)
+  // 拉丁 + 空格取 0.55em："hello world" = 11 × 0.55 = 6.05em → 20dp 下需要 1.21 → 2 行
+  assert.equal(estimateRowCount('hello world', 20, 100), 2)
+  // 空白句不占行；宽度无效时退回"一句一行"
+  assert.equal(estimateRowCount('   ', 20, 100), 0)
+  assert.equal(estimateRowCount('hello', 20, 0), 1)
+  assert.equal(estimateRowCount('hello', 20, NaN), 1)
+})
+
+test('wrap mode reserves one body row as estimation slack', () => {
+  assert.equal(WRAP_SLACK_ROWS, 1)
+  const lines = [line('一二三四'), line('四三四二')]
+  // 不折行（旧行为）：2 × 36 = 72 ≤ 100，24 档两句全装
+  assert.deepEqual(fitLyricBlock(lines, { maxHeight: 100 }), {
+    fontSize: 24, extendedFontSize: 22, visibleCount: 2, truncated: false,
+  })
+  // 折行 120：24 档预算 100−36=64，第二句 36+36=72 装不下；22 档预算 100−33=67，两行 66 → 全装
+  assert.deepEqual(fitLyricBlock(lines, { maxHeight: 100, textWidth: 120 }), {
+    fontSize: 22, extendedFontSize: 20, visibleCount: 2, truncated: false,
+  })
+})
+
+test('wrap-aware budget counts wrapped rows, not sentences', () => {
+  const lines = [line('一二三四五六七八九十'), line('一二三四五六七')]
+  // 逐档往下（textWidth 120）：24 档两句都是 2 行 72 > 预算 64；22 档 2×33=66 ≤ 67 → 1 句；
+  // 20/18 档都只有 1 句（不赢）；16 档：48 + 24 = 72 ≤ 76 → 两句全装
+  assert.deepEqual(fitLyricBlock(lines, { maxHeight: 100, textWidth: 120 }), {
+    fontSize: 16, extendedFontSize: EXTENDED_TIER_FLOOR, visibleCount: 2, truncated: false,
+  })
+})
+
+test('wrapped translations are part of the same block budget', () => {
+  const lines = [line('一二三', ['一二三四五六七八九十'])]
+  // 24 档：正文 36 + 译文(10 字 → 2 行) 66 = 102 > 64；22/20/18 档块高 93/84/75 仍压不进各自的预算；
+  // 16 档：24 + floor 12 一行 18 = 42 ≤ 76 → 整块（绝不只画正文把译文切掉）。没有句被丢 → 不算截断
+  assert.deepEqual(fitLyricBlock(lines, { maxHeight: 100, textWidth: 120 }), {
+    fontSize: 16, extendedFontSize: EXTENDED_TIER_FLOOR, visibleCount: 1, truncated: false,
+  })
+})
+
+test('degenerate width keeps the all-zero tie at the top tier', () => {
+  // 每档都 0 句 → 平局不换档，留最高档（与旧模型的平局规则同一判据）
+  const r = fitLyricBlock([line('很长很长的一句话')], { maxHeight: 10, textWidth: 120 })
+  assert.equal(r.visibleCount, 0)
+  assert.equal(r.truncated, true)
+  assert.equal(r.fontSize, LYRIC_TIERS[0])
+})
+
+// —— 逐 dp 下探（歌词卡走的那一支：fontSize + minFontSize）——
+// 用户 2026-10-19 的两条要求：① 卡片里每句的换行跟歌词页对齐；② 选了多句就在最大卡片空间里
+// 逐档缩小字号多装几句，地板是"卡内歌手名"那一档。行模型还是原始 dp × 1.5，
+// 只是档位从"五档"换成"从用户那一档逐 dp 到地板"。
+
+const flat = (text: string) => ({ text, extendedLyrics: [], noWrap: true })
+
+test('the floor is the card singer-name size and nothing else', () => {
+  assert.equal(LYRIC_FOOTER_SINGER_FONT_SIZE, 14)
+  assert.equal(LYRIC_MIN_FONT_SIZE, LYRIC_FOOTER_SINGER_FONT_SIZE)
+})
+
+test('lyricFontSizes walks down by 1dp and always lands on the floor', () => {
+  assert.deepEqual(lyricFontSizes(20, 14), [20, 19, 18, 17, 16, 15, 14])
+  // 上界不是整步（歌词页设置 ÷10 可能是 21.5 这种）：末尾补地板，否则那一档探不到
+  assert.deepEqual(lyricFontSizes(14.5, 14), [14.5, 14])
+  // 起点比地板还小（理论上不该发生）：只走那一档，不往上冒
+  assert.deepEqual(lyricFontSizes(13, 14), [13])
+  assert.deepEqual(lyricFontSizes(14, 14), [14])
+  // 无效上界没有档位可探
+  assert.deepEqual(lyricFontSizes(0, 14), [])
+  assert.deepEqual(lyricFontSizes(NaN, 14), [])
+})
+
+test('the descent starts at the lyric page size and stays there when all fits', () => {
+  const lines = [flat('第一句'), flat('第二句'), flat('第三句')]
+  // 3 字 = 3em，列宽 100 时 20dp 只要 60 ⇒ 一句一行；三句 3×30=90 ≤ 100 ⇒ 起步就装得下
+  assert.deepEqual(fitLyricBlock(lines, { maxHeight: 100, textWidth: 100, fontSize: 20, minFontSize: 14, extendedRatio: 0.8 }), {
+    fontSize: 20, extendedFontSize: 16, visibleCount: 3, truncated: false,
+  })
+})
+
+test('the descent shrinks one dp at a time until the whole selection fits', () => {
+  const lines = [flat('第一句'), flat('第二句'), flat('第三句')]
+  // 预算 70：20 档两句 60、三句 90 超；19/18/17/16 都还是两句（平局留大字号）；
+  // 15 档三句 3×22.5=67.5 ≤ 70 ⇒ 全装下，当场收工
+  assert.deepEqual(fitLyricBlock(lines, { maxHeight: 70, textWidth: 100, fontSize: 20, minFontSize: 14, extendedRatio: 0.8 }), {
+    fontSize: 15, extendedFontSize: 12, visibleCount: 3, truncated: false,
+  })
+})
+
+test('the descent stops at the floor and truncates whole sentences there', () => {
+  const lines = Array.from({ length: 10 }, (_, i) => flat(`第${i}句`))
+  // 预算 85：20/19 档 2 句、18/17/16/15 档 3 句、14 档 4 句（85/21=4.05）⇒ 地板那档装得最多
+  const r = fitLyricBlock(lines, { maxHeight: 85, textWidth: 100, fontSize: 20, minFontSize: 14, extendedRatio: 0.8 })
+  assert.equal(r.fontSize, LYRIC_MIN_FONT_SIZE)
+  assert.equal(r.visibleCount, 4)
+  assert.equal(r.truncated, true)
+})
+
+test('the descent keeps the bigger font when two tiers show the same count', () => {
+  const lines = Array.from({ length: 10 }, (_, i) => flat(`第${i}句`))
+  // 预算 100：20~17 档 3 句，16 档 4 句（100/24=4.17），15/14 档还是 4 句 ⇒ 平局停在 16
+  assert.deepEqual(fitLyricBlock(lines, { maxHeight: 100, textWidth: 100, fontSize: 20, minFontSize: 14, extendedRatio: 0.8 }), {
+    fontSize: 16, extendedFontSize: 12.8, visibleCount: 4, truncated: true,
+  })
+})
+
+// —— 换行跟歌词页对齐 ——
+
+test('fitsSingleRow only constrains lines the lyric page shows as one row', () => {
+  // 6 个全角 = 6em：列宽 100 里 20dp 要 120 ⇒ 两行，钉不住；16dp 要 96 ⇒ 钉得住
+  assert.equal(fitsSingleRow({ text: '一二三四五六', noWrap: true }, 20, 100), false)
+  assert.equal(fitsSingleRow({ text: '一二三四五六', noWrap: true }, 16, 100), true)
+  assert.equal(fitsSingleRow({ text: '一二三', noWrap: true }, 20, 100), true)
+  // 歌词页上就折了行的句子（没有 noWrap）压根不在约束里，卡里照常自动换行
+  assert.equal(fitsSingleRow({ text: '一二三四五六七八九十' }, 20, 100), true)
+  // 连地板都放不进一行的长句（40 个拉丁 = 22em，14dp 要 308 > 100）不该把整张卡拖到地板
+  assert.equal(fitsSingleRow({ text: 'a'.repeat(40), noWrap: true }, 14, 100), false)
+})
+
+test('a one-row line on the lyric page pulls the card font down to stay one row', () => {
+  // 约束：20 档 6em×20=120 > 100 会折两行，16 档 96 ≤ 100 才是一行 ⇒ 搜索从 16 起步，
+  // 那一句装得下（24 ≤ 100）就收，拿到 16 而不是起步的 20。
+  assert.deepEqual(fitLyricBlock([flat('一二三四五六')], { maxHeight: 100, textWidth: 100, fontSize: 20, minFontSize: 14, extendedRatio: 0.8 }), {
+    fontSize: 16, extendedFontSize: 12.8, visibleCount: 1, truncated: false,
+  })
+  // 对照组：同一句不带 noWrap（歌词页上它是折行的）就没这条约束，照旧拿起步的 20
+  assert.deepEqual(fitLyricBlock([{ text: '一二三四五六', extendedLyrics: [] }], { maxHeight: 100, textWidth: 100, fontSize: 20, minFontSize: 14, extendedRatio: 0.8 }), {
+    fontSize: 20, extendedFontSize: 16, visibleCount: 1, truncated: false,
+  })
+})
+
+test('resolveNoWrap trusts the lyric page measurement first', () => {
+  // 量到两行 ⇒ 即使按列宽估只有一行，也不钉（场上真相说了算）
+  assert.equal(resolveNoWrap(2, '一二三', 20, 1000), false)
+  // 量到一行 ⇒ 即使估宽模型以为它折了 4 行，也照样钉（这就是"估宽猜不准换行点"那条教训的正面）
+  assert.equal(resolveNoWrap(1, '一二三四五六七八九十'.repeat(2), 20, 100), true)
+})
+
+test('resolveNoWrap falls back to the lyric page geometry for rows never laid out', () => {
+  // FlatList 只挂载屏幕附近那几行：全选出来的绝大多数量不到，退回按歌词页宽度+真实渲染字号估。
+  // 3 字 × 20dp = 60 ≤ 100 ⇒ 一行
+  assert.equal(resolveNoWrap(undefined, '一二三', 20, 100), true)
+  // 7 字 × 20dp = 140 > 100 ⇒ 两行（估宽往保守侧抬，误判只会落在"该钉的没钉"这一边）
+  assert.equal(resolveNoWrap(undefined, '一二三四五六七', 20, 100), false)
+})
+
 // 上面每一档、每一个 `fontSize × 1.5` 的行模型都是**原始 dp**。它们对得上真实行高，只在两个前提成立时：
 // ① 安卓的**系统**字号没有乘上去（allowFontScaling 默认 true，1.3 档就是 +30%，文字块顶穿
 //    index.tsx 的 MUSIC_CARD_TEXT_RESERVE / 这里的 lyricMaxHeight，溢出发生在导出的成品图里）；
@@ -145,4 +299,29 @@ test('MusicCard takes its font sizes from the rule instead of hard-coded numbers
   assert.match(src, /lineHeight:\s*sizes\.titleLineHeight/)
   assert.match(src, /fontSize:\s*sizes\.singer/)
   assert.doesNotMatch(src, /fontSize:\s*\d/)
+})
+
+// —— "换行跟歌词页对齐"这条链的接线（源码级，同上面 CARD_TEXT_FILES 的判据路数）——
+// 这条链断过一次，而且断得很安静：歌词页的 onTextLayout 回调定义了却没接到 renderItem 上，
+// 于是 lineRowCountsRef 永远是空的、noWrap 永远给不上，卡里照旧自动折行 —— 纯函数用例全绿，
+// 因为判据本身没问题，缺的是喂给它的那个数。组件载不动，就按源码数一遍两端是否都还接在链上。
+const LYRIC_PAGE = path.join(import.meta.dirname, '../src/screens/PlayDetail/Vertical/Lyric.tsx')
+
+test('the lyric page actually feeds its own row counts into the poster', () => {
+  const src = stripComments(readFileSync(LYRIC_PAGE, 'utf8'))
+  // ① 每一行都挂上量行数的回调（少了这一句，后面两条都是死代码）
+  assert.match(src, /<LrcLine[^>]*onRowCount=\{handleLineRowCount\}/)
+  // ② 量到的行数确实来自 onTextLayout，并且用的是 RN 真有的事件类型
+  assert.match(src, /onTextLayout=\{handleTextLayout\}/)
+  assert.match(src, /NativeSyntheticEvent<TextLayoutEventData>/)
+  assert.doesNotMatch(src, /TextLayoutEvent(?![A-Za-z])/)
+  // ③ noWrap 走 resolveNoWrap（量到的优先、没量到的按歌词页几何估），不再只认量到
+  assert.match(src, /noWrap:\s*resolveNoWrap\(/)
+})
+
+test('the card render layer pins one-row lines to one row', () => {
+  const src = stripComments(readFileSync(path.join(CARD_DIR, 'LyricCard.tsx'), 'utf8'))
+  // 钉一行必须同时带上"这一档字号在卡宽里仍放得下一行"那半条判据，
+  // 只认 noWrap 就钉会把长句裁掉（numberOfLines 截断是有省略号的）
+  assert.match(src, /numberOfLines=\{[^}]*\.noWrap[^}]*estimateRowCount\([^)]*\)\s*<=\s*1\s*\?\s*1\s*:\s*undefined\}/)
 })

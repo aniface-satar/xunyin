@@ -1,4 +1,4 @@
-import { type ImageStyle, type TextStyle } from 'react-native'
+import { StyleSheet, type ImageStyle, type TextStyle } from 'react-native'
 
 import Text from '@/components/common/Text'
 import { BrandLine } from './BrandLine'
@@ -22,7 +22,9 @@ export default ({ name, singer, pic, coverSize, textWidth, theme, onCoverReady }
   const sizes = cardTextSizes(textWidth)
   return (
     <>
-      <CoverImage url={pic} onReady={onCoverReady} style={{ ...styles.cover, width: coverSize, height: coverSize }} />
+      {/* 封面边界线：黑卡上封面深色会和底糊成一块，白卡反之 —— 一条 hairline 细线把封面从卡底分出来
+          （白线/黑线取自 theme.coverBorderColor，cardTheme.ts）。CoverImage 把 style 原样铺在 Image 上。 */}
+      <CoverImage url={pic} onReady={onCoverReady} style={{ ...styles.cover, width: coverSize, height: coverSize, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.coverBorderColor }} />
       <Text numberOfLines={3} allowFontScaling={false} style={{ ...styles.title, fontSize: sizes.title, lineHeight: sizes.titleLineHeight, color: theme.titleColor }}>{name}</Text>
       <Text numberOfLines={2} allowFontScaling={false} style={{ ...styles.singer, fontSize: sizes.singer, color: theme.subtitleColor }}>{singer}</Text>
       <BrandLine color={theme.subtitleColor} />
