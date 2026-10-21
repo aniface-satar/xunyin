@@ -397,7 +397,6 @@ const patchs = [
     path.join(rootPath, trackPlayerInterfaces),
     /(export interface MetadataOptions \{\r?\n    ratingType\?: RatingType;\r?\n    forwardJumpInterval\?: number;\r?\n    backwardJumpInterval\?: number;\r?\n    likeOptions\?: FeedbackOptions;)(?![\s\S]{0,400}?LikeFeedbackOptions)/,
     [
-      'export interface MetadataOptions {',
       '$1',
       '    /** Enables the Android notification like button; this fork adds it outside Capability */',
     '    like?: boolean;',
@@ -411,6 +410,35 @@ const patchs = [
     path.join(rootPath, trackPlayerInterfaces),
     /(export type ResourceObject = number;)(?![\s\S]{0,200}?uri: string)/,
     'export type ResourceObject = number | { uri: string };',
+  ],
+  // 音量均衡需要在播放器的 audio session 上挂 audiofx 音效，而 JS 侧拿不到 session id
+  // （fork 从未调用过 getAudioSessionId，且它只在 media3 的 ExoPlayer 接口上声明，
+  // ExoPlayback 的 player 字段类型是 Player），所以转型后透出。
+  [
+    path.join(rootPath, trackPlayerService, 'player/ExoPlayback.java'),
+    /(    public abstract void setPlayerVolume\(float volume\);)(?![\s\S]{0,400}?getAudioSessionId)/,
+    [
+      '$1',
+      '',
+      '    public int getAudioSessionId() {',
+      '        if(player instanceof androidx.media3.exoplayer.ExoPlayer) {',
+      '            return ((androidx.media3.exoplayer.ExoPlayer) player).getAudioSessionId();',
+      '        }',
+      '        return 0;',
+      '    }',
+    ].join('\n'),
+  ],
+  [
+    path.join(rootPath, trackPlayerModule, 'MusicModule.java'),
+    /(    public void getVolume\(final Promise callback\) \{\r?\n        waitForConnection\(\(\) -> callback\.resolve\(binder\.getPlayback\(\)\.getVolume\(\)\)\);\r?\n    \})(?![\s\S]{0,300}?getAudioSessionId)/,
+    [
+      '$1',
+      '',
+      '    @ReactMethod',
+      '    public void getAudioSessionId(final Promise callback) {',
+      '        waitForConnection(() -> callback.resolve((double) binder.getPlayback().getAudioSessionId()));',
+      '    }',
+    ].join('\n'),
   ],
   // 音频字节预热：ExoPlayback 声明两个口子，LocalPlayback 用手里那份 SimpleCache 实现。
   // 默认实现只 resolve(false)，所以补丁只重打了 LocalPlayback 那半时也只是"这项功能熄火"，不会崩。
@@ -564,6 +592,34 @@ const patchs = [
       '    }',
     ].join('\n'),
   ],
+  // 下载默认存到系统音乐文件夹：安卓的文件夹选择器必须由用户点一下「允许」才能拿到持久授权，
+  // 但起点可以替用户选好 —— 补上 DocumentsContract.EXTRA_INITIAL_URI（键名
+  // "android.provider.extra.INITIAL_URI"，Intent 上并没有 EXTRA_DOCUMENT_TREE_INITIAL_URI，
+  // javap 过 android-36 的 android.jar 确认），选择器直接开在 Music，
+  // 只剩一次确认，不用再从根目录一层层点。API 26 才有这个 extra，低版本原样打开根目录。
+  // DocumentsContract / Build 写全限定名，省得再补一条 import 补丁。
+  [
+    path.join(rootPath, 'node_modules/react-native-file-system/android/src/main/java/com/filesystem/FileSystemModule.java'),
+    /(intent\.setAction\(Intent\.ACTION_OPEN_DOCUMENT_TREE\);)(?![\s\S]{0,400}?DocumentsContract\.EXTRA_INITIAL_URI)/,
+    [
+      '$1',
+      '',
+      '      // patched: see dependencies-patch.js — open the picker inside the system Music folder',
+      '      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {',
+      '        intent.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,',
+      '            android.provider.DocumentsContract.buildTreeDocumentUri(',
+      '                "com.android.externalstorage.documents", "primary:Music"));',
+      '      }',
+    ].join('\n'),
+  ],
+  [
+    // This Windows dev machine cold-crawls the full tree (empty metro disk
+    // cache) in over 240s, so metro-file-map's hardcoded watcher-ready
+    // timeout fails release bundling with "Failed to start watch mode".
+    path.join(rootPath, 'node_modules/metro-file-map/src/Watcher.js'),
+    /const MAX_WAIT_TIME = \d+;/,
+    'const MAX_WAIT_TIME = 900000; // patched: see dependencies-patch.js',
+  ],
 ]
 
 const moduleIconXml = `<?xml version="1.0" encoding="utf-8"?>
@@ -610,6 +666,21 @@ const moduleIconXml = `<?xml version="1.0" encoding="utf-8"?>
     if (err.code === 'ENOENT') console.log('Skipping material-color-utilities exports check (not installed)')
     else {
       console.error(`Patch verify ${mcuPkgPath} failed: ${err.message}`)
+      process.exitCode = 1
+    }
+  }
+  // 同理，选择器起点这条补丁失配只会"默默退回根目录"，下载默认存 Music 的要求就悄悄没了，
+  // 所以也单独验一次标记是否进了文件。
+  const scopedStoragePath = path.join(rootPath, 'node_modules/react-native-file-system/android/src/main/java/com/filesystem/FileSystemModule.java')
+  try {
+    if (!(await fs.promises.readFile(scopedStoragePath, 'utf8')).includes('DocumentsContract.EXTRA_INITIAL_URI')) {
+      console.error('Patch failed: react-native-file-system 的 openDocumentTree 没拿到 Music 起点（正则与该库源码字面格式不匹配）')
+      process.exitCode = 1
+    }
+  } catch (err) {
+    if (err.code === 'ENOENT') console.log('Skipping openDocumentTree initial-uri check (react-native-file-system not installed)')
+    else {
+      console.error(`Patch verify ${scopedStoragePath} failed: ${err.message}`)
       process.exitCode = 1
     }
   }
