@@ -38,6 +38,12 @@ declare namespace LX {
       // 本地内置源上一次跟随应用包写入的脚本版本；用来区分「应用带的新脚本」
       // 和「用户自己检查更新换上的脚本」，避免重启时把运行时更新覆盖回旧版
       builtinVersion?: string
+      // 在线内置源上一次由应用包写入的更新地址；只有地址仍是这个值时才跟随目录换新，
+      // 用户手动改过的地址不动
+      builtinUpdateUrl?: string
+      // 这个地址在自动检查里已经取回过「另一个音源的脚本」：地址不变就不再自动重试，
+      // 免得每次启动都白跑一次、日志里反复报错。手动检查与改地址照常
+      updateUrlRejected?: string
       sources?: UserApiSources
     }
 

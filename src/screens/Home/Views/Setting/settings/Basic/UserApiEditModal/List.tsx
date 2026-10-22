@@ -14,6 +14,7 @@ import Loading from '@/components/common/Loading'
 import settingState from '@/store/setting/state'
 import apiSourceInfo from '@/utils/musicSdk/api-source-info'
 import { pickBuiltinSources } from '@/utils/builtinSources'
+import { hasBuiltinUpdateSource } from '@/config/builtinSources/catalog'
 import { setApiSource } from '@/core/apiSource'
 import UpdateCheckModal, { type UpdateCheckModalType } from './UpdateCheckModal'
 import {
@@ -92,7 +93,7 @@ const ListItem = ({ item, activeId, checking, busy, onSelect, onRemove, onCheckU
           </View>
         </CheckBox>
         {
-          item.builtin == 'local' && !item.updateUrl && !item.scriptUpdateUrl
+          item.builtin == 'local' && !item.updateUrl && !item.scriptUpdateUrl && !hasBuiltinUpdateSource(item.id)
             ? <Text size={12} color={theme['c-font-label']}>{t('builtin_source_local_fixed')}</Text>
             : null
         }
@@ -196,7 +197,7 @@ export default ({ scope = 'custom' }: { scope?: 'custom' | 'builtin' }) => {
     try {
       const preview = await runUpdatePreview(item.id)
       if (preview.status != 'available') {
-        toastPreview(item.name, preview)
+        toastPreview(item.name, preview, { builtin: item.builtin == 'local' })
         return
       }
       const confirm = await confirmDialog({
@@ -206,7 +207,7 @@ export default ({ scope = 'custom' }: { scope?: 'custom' | 'builtin' }) => {
         bgClose: false,
       })
       if (!confirm) return
-      toastUpdateOutcome(item.name, await runUpdateApply(item.id, preview))
+      toastUpdateOutcome(item.name, await runUpdateApply(item.id, preview), { builtin: item.builtin == 'local' })
     } finally {
       checkingRef.current = false
       setCheckingId(null)

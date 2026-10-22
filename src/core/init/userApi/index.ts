@@ -6,9 +6,13 @@ import { planUpdateAlert } from '@/core/userApiUpdate/updateAlert'
 import settingState from '@/store/setting/state'
 import BackgroundTimer from 'react-native-background-timer'
 import { fetchData } from './request'
-import { getUserApiList, setUserApiVerifyPending } from '@/utils/data'
+import { getUserApiList, setUserApiUpdateUrlRejected, setUserApiVerifyPending } from '@/utils/data'
 import { setApiSource } from '@/core/apiSource'
 import { confirmDialog, openUrl, tipDialog, toast } from '@/utils/tools'
+import { findRemovedBuiltinSource } from '@/config/builtinSources/catalog'
+import { DEFAULT_BUILTIN_API_SOURCE_ID } from '@/config/defaultSetting'
+import { pickAvailableUserApiId } from '@/utils/builtinSources'
+import { updateSetting } from '@/core/common'
 
 
 export default async(setting: LX.AppSetting) => {
@@ -228,12 +232,21 @@ export default async(setting: LX.AppSetting) => {
     let outcome: UserApiUpdateOutcome | null = null
     if (autoUpdate) {
       try {
-        outcome = await checkUserApiUpdate(apiInfo.id, updateUrl)
+        // 这是后台自动检查：本地内置源只试脚本自带的地址，判定过没用的地址也不再重试
+        outcome = await checkUserApiUpdate(apiInfo.id, updateUrl, { scheduled: true })
       } catch (err: any) {
         outcome = { status: 'failed', reason: 'resolve_failed', message: err.message as string }
       }
-      // 失败必须留得下痕迹：r_error 写的日志设置页能看，不受「调试日志」开关影响
-      if (outcome.status == 'failed') log.r_error(`auto update user api failed: ${name}, ${outcome.message}`)
+      if (outcome.status == 'failed' && outcome.rejectReason == 'name_mismatch' && outcome.openUrl) {
+        void setUserApiUpdateUrlRejected(apiInfo.id, outcome.openUrl)
+      }
+      if (outcome.status == 'failed' && outcome.reason == 'no_url') {
+        // 没有可自动检查的地址不是失败：下面还能按脚本报的地址提醒用户手动更新
+        outcome = null
+      } else if (outcome.status == 'failed') {
+        // 失败必须留得下痕迹：r_error 写的日志设置页能看，不受「调试日志」开关影响
+        log.r_error(`auto update user api failed: ${name}, ${outcome.message}${outcome.openUrl ? ` <${outcome.openUrl}>` : ''}`)
+      }
     }
     const plan = planUpdateAlert({ autoUpdate, allowShowUpdateAlert }, outcome, updateUrl)
     switch (plan.type) {
@@ -308,7 +321,22 @@ export default async(setting: LX.AppSetting) => {
     }
   })
 
-  setUserApiList(await getUserApiList())
+  const list = await getUserApiList()
+  setUserApiList(list)
+
+  // 下架的内置源如果正好是当前音源，列表里已经不再有它的脚本。
+  // 必须在 init/index 调 setApiSource 之前换源，否则整条播放链路都会报源起不来。
+  const activeId = setting['common.apiSource']
+  const removed = findRemovedBuiltinSource(activeId)
+  if (removed && !list.some(info => info.id == activeId)) {
+    const fallbackId = pickAvailableUserApiId(list, DEFAULT_BUILTIN_API_SOURCE_ID)
+    if (fallbackId) {
+      setting['common.apiSource'] = fallbackId
+      updateSetting({ 'common.apiSource': fallbackId })
+      const fallbackName = list.find(info => info.id == fallbackId)?.name ?? fallbackId
+      toast(global.i18n.t('builtin_source_removed_switched_tip', { name: removed.name, fallback: fallbackName }), 'long')
+    }
+  }
 }
 
 /**

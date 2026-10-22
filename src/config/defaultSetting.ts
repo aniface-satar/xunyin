@@ -1,5 +1,7 @@
-// 内置本地音源 HYWmusic_公益版 的 id（config/builtinSources/scripts.ts 里的 key 是 hywmusic）
-export const DEFAULT_BUILTIN_API_SOURCE_ID = 'builtin_hywmusic'
+// 内置本地音源 星海音乐源 的 id（config/builtinSources/scripts.ts 里的 key 是 xinghai）。
+// 2026-10-22 实测选定的默认源：更新链路真机闭环跑通过（v3.2.13→v3.2.15 自动更新成功）、
+// 版本接口有双域名备用、作者持续迭代、全平台多后端聚合播放。
+export const DEFAULT_BUILTIN_API_SOURCE_ID = 'builtin_xinghai'
 
 const defaultSetting: LX.AppSetting = {
   version: '2.2',

@@ -162,6 +162,48 @@ test('没有更新地址的 latest 描述也能认出当前版本', async() => {
   assert.deepEqual(result.descriptor, { version: '1.3.0', url: '' })
 })
 
+test('版本接口不比当前新、页面又不给脚本时直接判最新，不再爬网盘/文档页', async() => {
+  const descriptor = '{"version":"1.0.1","updateUrl":"https://doc.example/update"}'
+  const { fetch, called } = fakeFetch({
+    'https://api.example/check': descriptor,
+    // 如果继续爬这个文档页，会取到一个别的脚本，容易误判成新版本
+    'https://doc.example/update': '<html><body><a href="https://cdn.example/other.js">other.js</a></body></html>',
+    'https://cdn.example/other.js': SCRIPT,
+  })
+  const result = await resolveScriptFromUrl('https://api.example/check', { fetch, currentVersion: '1.0.2' })
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.equal(result.reason, 'no_update')
+  assert.deepEqual(called, ['https://api.example/check'])
+  assert.deepEqual(result.descriptor, { version: '1.0.1', url: 'https://doc.example/update' })
+})
+
+test('版本号相同但更新页直接给了 .js 时仍继续取，抓同版本重新构建', async() => {
+  const { fetch } = fakeFetch({
+    'https://api.example/check': '{"version":"1.0.0","updateUrl":"https://cdn.example/new.js"}',
+    'https://cdn.example/new.js': SCRIPT,
+  })
+  const result = await resolveScriptFromUrl('https://api.example/check', { fetch, currentVersion: '1.0.0' })
+  assert.equal(result.ok, true)
+})
+
+test('更新页里 .js 链接排在说明页前面，先拿脚本', async() => {
+  const page = [
+    '<html><body>',
+    '<a href="https://doc.example/readme">readme</a>',
+    '<a href="https://cdn.example/real.js">real.js</a>',
+    '</body></html>',
+  ].join('')
+  const { fetch, called } = fakeFetch({
+    'https://page.example/': page,
+    'https://cdn.example/real.js': SCRIPT,
+    'https://doc.example/readme': '<html><body>not a script</body></html>',
+  })
+  const result = await resolveScriptFromUrl('https://page.example/', { fetch })
+  assert.equal(result.ok, true)
+  assert.deepEqual(called, ['https://page.example/', 'https://cdn.example/real.js'])
+})
+
 test('线索很多也拿不到脚本时按预算收手，不无限跟下去', async() => {
   // 每一页都只给出「下一页的 .js 链接」，永远拿不到脚本
   const hop = (i: number) => ({
@@ -190,6 +232,56 @@ test('版本接口回「已是最新版本」时判为没有更新', async() => 
     if (result.ok) continue
     assert.equal(result.reason, 'no_update', url)
   }
+})
+
+// lx-animemusic 的接口已最新时连提示都没有，只回 {"code":200,"data":null}；
+// 有新版时 data 里才带 updateUrl。空 data 也得算「没有更新」，不能报找不到脚本。
+test('版本接口回 code:200 且 data 为空时判为没有更新', async() => {
+  const { fetch } = fakeFetch({
+    'https://api.example/script/lxmusic?checkUpdate=abc': '{"code":200,"data":null}',
+  })
+  const result = await resolveScriptFromUrl('https://api.example/script/lxmusic?checkUpdate=abc', { fetch })
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.equal(result.reason, 'no_update')
+})
+
+// 星海的版本接口已最新时回 {"message":"已是最新版本","update_url":null,"ip_query_url":…}：
+// 提示语是 GBK 编码，UTF-8 解码后成乱码正则认不出，接口还总挂一个没用的 ip 查询地址。
+// 更新地址字段显式为 null 且整份 JSON 没有任何版本信息，就该判「没有更新」，
+// 再顺着垃圾链接爬下去只会误报「更新地址里没有可用的音源脚本链接」。
+test('版本接口回 update_url 显式为 null 且没有版本信息时判为没有更新', async() => {
+  const { fetch, called } = fakeFetch({
+    'https://api.example/lx/versionh2.php?ver=v3.2.15': '{"message":"\ufffd\ufffd\ufffd\ufffd\ufffd\xb0汾","update_url":null,"ip_query_url":"https://api.example/ip.php"}',
+    'https://api.example/ip.php': '{"ip":"1.2.3.4","country":"CN"}',
+  })
+  const result = await resolveScriptFromUrl('https://api.example/lx/versionh2.php?ver=v3.2.15', { fetch, currentVersion: 'v3.2.15' })
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.equal(result.reason, 'no_update')
+  assert.deepEqual(called, ['https://api.example/lx/versionh2.php?ver=v3.2.15'])
+})
+
+test('提示「已是最新」的接口还挂着非脚本查询链接时，照样判没有更新', async() => {
+  const { fetch } = fakeFetch({
+    'https://api.example/check': '{"code":0,"msg":"已是最新版本","status_url":"https://api.example/status"}',
+    'https://api.example/status': '<html><body>ok</body></html>',
+  })
+  const result = await resolveScriptFromUrl('https://api.example/check', { fetch })
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.equal(result.reason, 'no_update')
+})
+
+test('接口给了版本号但 update_url 为空时，不能被「无更新地址」规则吞掉', async() => {
+  const { fetch } = fakeFetch({
+    'https://api.example/check': '{"version":"9.9.9","update_url":null}',
+  })
+  const result = await resolveScriptFromUrl('https://api.example/check', { fetch, currentVersion: '1.0.0' })
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.equal(result.reason, 'no_script_link')
+  assert.deepEqual(result.descriptor, { version: '9.9.9', url: '' })
 })
 
 test('没有地址也没有“已最新”提示的 JSON 仍报找不到脚本', async() => {

@@ -15,16 +15,17 @@ import {
   saveUserApiBackupScript,
   saveUserApiScript,
   setUserApiLastCheckAt,
+  setUserApiUpdateUrlRejected,
   setUserApiVerifyPending,
   updateUserApi,
 } from '@/utils/data'
 import { log, setUserApi, setUserApiList } from '@/core/userApi'
 import settingState from '@/store/setting/state'
 import { toast } from '@/utils/tools'
-import { resolveScriptFromUrl, type ScriptHeaderInfo, type FetchImpl } from './resolveScript.ts'
+import { parseScriptHeader, resolveScriptFromUrl, type ScriptHeaderInfo, type FetchImpl } from './resolveScript.ts'
 import { applyUpdateScript, rollbackScript, type ScriptStore } from './applyUpdate.ts'
 import { pickBestPreview, previewDescriptor, previewUpdate, type UserApiUpdatePreview } from './preview.ts'
-import { pickCheckTargets, pickUpdateUrls, type UserApiUpdateCheckMode } from './schedule.ts'
+import { pickCheckTargets, planUpdateUrls, type UserApiUpdateCheckMode } from './schedule.ts'
 
 
 // 作者把更新地址当成「给人用浏览器打开的页面」，有些站点对不像浏览器的请求直接回 403
@@ -144,6 +145,8 @@ export type UserApiUpdateOutcome = {
 } | {
   status: 'failed'
   reason: 'not_found' | 'no_url' | 'resolve_failed' | 'rejected' | 'reload_failed'
+  /** rejected 时具体是哪条闸门拦下的 */
+  rejectReason?: 'invalid_script' | 'name_mismatch' | 'too_large' | 'syntax_error'
   message: string
   /** 取不到脚本时给人退回原来那一步：把这个地址打开自己下载 */
   openUrl?: string
@@ -161,36 +164,57 @@ const findApi = (id: string): LX.UserApi.UserApiInfo | null => {
  * 一个源可能同时列出多个地址：先按用户填的/脚本报的/头部存的顺序试，
  * 第一个地址已经确认能升到更高版本就停；否则继续试，最后挑最好的那个结论。
  * 这样固定提交的旧地址不会把脚本自报的新地址挡住。
+ *
+ * 主地址全是失败（超时、被墙、半截脚本）时再走目录给的备用线路；
+ * 已经拿到明确结论（最新 / 更旧 / 可更新）就不折腾，不替作者多花请求。
+ *
+ * @param options.overrideUrl 手动更新里用户这次填的地址：只试它，不拿存档地址顶替
+ * @param options.scheduled 后台定时检查：本地内置源只试脚本自带的地址
  */
-const previewUserApiUpdateOnce = async(id: string, eventUrl?: string): Promise<UserApiUpdatePreview> => {
+const previewUserApiUpdateOnce = async(
+  id: string,
+  eventUrl?: string,
+  options?: { overrideUrl?: string, scheduled?: boolean },
+): Promise<UserApiUpdatePreview> => {
   const api = findApi(id)
   if (!api) return { status: 'failed', reason: 'not_found', message: '音源不在了' }
 
-  const urls = pickUpdateUrls(api, eventUrl)
-  if (!urls.length) return { status: 'failed', reason: 'no_url', message: '这个源没有可用的更新地址' }
+  const plan = planUpdateUrls(api, eventUrl, options)
+  if (!plan.primary.length && !plan.fallback.length) {
+    return { status: 'failed', reason: 'no_url', message: '这个源没有可用的更新地址' }
+  }
 
   const storedScript = await getUserApiScript(api.id)
+  const currentVersion = parseScriptHeader(storedScript)?.version ?? ''
   const previews: UserApiUpdatePreview[] = []
-  for (const url of urls) {
-    const resolved = await resolveScriptFromUrl(url, { fetch: fetchText, hint: api.name })
-    if (!resolved.ok) {
-      // 版本接口查过当前版本说「已是最新」：这是检查成功，不是地址坏了
-      if (resolved.reason == 'no_update') {
-        previews.push({ status: 'up_to_date', name: api.name })
+  const tryUrls = async(urls: string[]): Promise<boolean> => {
+    for (const url of urls) {
+      const resolved = await resolveScriptFromUrl(url, { fetch: fetchText, hint: api.name, currentVersion })
+      if (!resolved.ok) {
+        // 版本接口查过当前版本说「已是最新」：这是检查成功，不是地址坏了
+        if (resolved.reason == 'no_update') {
+          previews.push({ status: 'up_to_date', name: api.name })
+          continue
+        }
+        // 只给了版本号、网页里没有脚本：版本相同也是「已最新」，只有确实更新才报手动更新
+        const byDescriptor = resolved.descriptor
+          ? previewDescriptor({ name: api.name, storedScript, descriptor: resolved.descriptor, url })
+          : null
+        previews.push(byDescriptor ??
+          { status: 'failed', reason: 'resolve_failed', message: resolved.message, openUrl: url })
         continue
       }
-      // 只给了版本号、网页里没有脚本：版本相同也是「已最新」，只有确实更新才报手动更新
-      const byDescriptor = resolved.descriptor
-        ? previewDescriptor({ name: api.name, storedScript, descriptor: resolved.descriptor, url })
-        : null
-      previews.push(byDescriptor ??
-        { status: 'failed', reason: 'resolve_failed', message: resolved.message, openUrl: url })
-      continue
+      const preview = previewUpdate({ name: api.name, storedScript, script: resolved.script, url })
+      previews.push(preview)
+      // 正常情况只有一个候选；已经确认能升级就不用再花请求试备用的
+      if (preview.status == 'available' && preview.comparison == 'newer') return true
     }
-    const preview = previewUpdate({ name: api.name, storedScript, script: resolved.script, url })
-    previews.push(preview)
-    // 正常情况只有一个候选；已经确认能升级就不用再花请求试备用的
-    if (preview.status == 'available' && preview.comparison == 'newer') break
+    return false
+  }
+
+  if (await tryUrls(plan.primary)) return previews[previews.length - 1]
+  if (plan.fallback.length && previews.every(preview => preview.status == 'failed')) {
+    if (await tryUrls(plan.fallback)) return previews[previews.length - 1]
   }
   return pickBestPreview(previews) ?? { status: 'failed', reason: 'resolve_failed', message: '更新地址没有返回可用结果' }
 }
@@ -244,14 +268,25 @@ const applyUserApiUpdateOnce = async(id: string, preview: UserApiUpdatePreview, 
   return applyPreview(api, preview, options)
 }
 
-const checkUserApiUpdateOnce = async(id: string, eventUrl?: string): Promise<UserApiUpdateOutcome> => {
-  const preview = await previewUserApiUpdateOnce(id, eventUrl)
+const checkUserApiUpdateOnce = async(
+  id: string,
+  eventUrl?: string,
+  options?: { overrideUrl?: string, scheduled?: boolean },
+): Promise<UserApiUpdateOutcome> => {
+  const preview = await previewUserApiUpdateOnce(id, eventUrl, options)
   if (preview.status == 'up_to_date') return { status: 'unchanged', name: preview.name }
   if (preview.status == 'older') {
     return { status: 'older', name: preview.name, fromVersion: preview.fromVersion, toVersion: preview.toVersion }
   }
   if (preview.status == 'failed') {
-    return { status: 'failed', reason: preview.reason, message: preview.message, openUrl: preview.openUrl }
+    return {
+      status: 'failed',
+      reason: preview.reason,
+      ...(preview.rejectReason ? { rejectReason: preview.rejectReason } : {}),
+      message: preview.message,
+      // 带上实际试过的地址：日志里只看得到「取不到」，不知道取的是哪条线路
+      openUrl: preview.openUrl ?? preview.url,
+    }
   }
   const api = findApi(id)
   if (!api) return { status: 'failed', reason: 'not_found', message: '音源不在了' }
@@ -266,14 +301,25 @@ const runSerialized = async<T>(task: () => Promise<T>): Promise<T> => {
   chain = result.then(() => {}, () => {})
   return result
 }
-export const checkUserApiUpdate = async(id: string, eventUrl?: string): Promise<UserApiUpdateOutcome> => {
-  return runSerialized(async() => checkUserApiUpdateOnce(id, eventUrl))
+export const checkUserApiUpdate = async(
+  id: string,
+  eventUrl?: string,
+  options?: { overrideUrl?: string, scheduled?: boolean },
+): Promise<UserApiUpdateOutcome> => {
+  return runSerialized(async() => checkUserApiUpdateOnce(id, eventUrl, options))
 }
 /**
  * 检查更新按钮用：只给结论，不写盘。用户确认后再把同一个预览交给 applyUserApiUpdate。
+ *
+ * overrideUrl 是手动更新里刚输入的地址：先测它，测通了调用方再落盘，
+ * 测不通就不该把坏地址写进源里、让以后每次启动都去试一遍。
  */
-export const previewUserApiUpdate = async(id: string, eventUrl?: string): Promise<UserApiUpdatePreview> => {
-  return runSerialized(async() => previewUserApiUpdateOnce(id, eventUrl))
+export const previewUserApiUpdate = async(
+  id: string,
+  eventUrl?: string,
+  options?: { overrideUrl?: string, scheduled?: boolean },
+): Promise<UserApiUpdatePreview> => {
+  return runSerialized(async() => previewUserApiUpdateOnce(id, eventUrl, options))
 }
 /**
  * 把预览里的脚本落盘。allowDowngrade 只给「手动更新 + 用户明确确认换回旧版」用。
@@ -297,9 +343,17 @@ export const runScheduledUserApiUpdateCheck = async(
     await setUserApiLastCheckAt(api.id, now)
     let outcome: UserApiUpdateOutcome
     try {
-      outcome = await checkUserApiUpdate(api.id)
+      // 后台检查不碰用户手填的地址：本地内置源只试脚本自带的，填错了也不在启动时反复超时
+      outcome = await checkUserApiUpdate(api.id, undefined, { scheduled: true })
     } catch (err: any) {
       outcome = { status: 'failed', reason: 'resolve_failed', message: err.message as string }
+    }
+    // 名字对不上不是网络抖动：用户填的地址给的是别家的脚本，下次自动检查别再拿它白跑一趟。
+    // 只记用户填的 updateUrl —— 脚本头部和目录的地址属于源本身，作者换了内容就会恢复，
+    // 把它们永久拉黑会让一个本来能用的版本接口再也查不了。手动检查也不受这条影响
+    if (outcome.status == 'failed' && outcome.rejectReason == 'name_mismatch' &&
+      outcome.openUrl && outcome.openUrl == api.updateUrl) {
+      await setUserApiUpdateUrlRejected(api.id, outcome.openUrl)
     }
     onOutcome(api, outcome)
   }
@@ -354,7 +408,7 @@ export const runUserApiUpdateCheckOnStartup = async() => {
         return
       }
       if (outcome.status == 'failed') {
-        log.r_error(`user api update check failed: ${api.name}, ${outcome.message}`)
+        log.r_error(`user api update check failed: ${api.name}, ${outcome.message}${outcome.openUrl ? ` <${outcome.openUrl}>` : ''}`)
         if (outcome.reason == 'reload_failed') {
           toast(outcome.rolledBack
             ? global.i18n.t('user_api_update_check_rolled_back_tip')

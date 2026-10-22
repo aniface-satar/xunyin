@@ -749,6 +749,14 @@ export const getUserApiList = async(): Promise<LX.UserApi.UserApiInfo[]> => {
   } else if (updated) {
     await saveData(userApiPrefix, userApis)
   }
+  // 下架的源把盘上的脚本和回滚备份一起清掉，列表里已经不再引用它们
+  if (seedPlan.removedIds.length) {
+    const keys: string[] = []
+    for (const id of seedPlan.removedIds) {
+      keys.push(`${userApiPrefix}${id}`, `${userApiPrefix}${id}@backup`)
+    }
+    await removeDataMultiple(keys)
+  }
 
   return [...userApis]
 }
@@ -843,6 +851,18 @@ export const setUserApiUpdateUrl = async(id: string, updateUrl: string) => {
   const targetApi = userApis?.find(api => api.id == id)
   if (!targetApi) return
   targetApi.updateUrl = updateUrl.trim()
+  // 用户主动改了地址：之前「这个地址取回的是别的音源」的结论作废，下一次检查重新判断
+  if (targetApi.updateUrlRejected) targetApi.updateUrlRejected = undefined
+  await saveData(userApiPrefix, userApis)
+}
+/**
+ * 记下自动检查里已经证明没用的地址（取回的是另一个音源的脚本）。
+ * 地址不变就不再自动重试；用户改地址或手动检查不受影响。
+ */
+export const setUserApiUpdateUrlRejected = async(id: string, url: string) => {
+  const targetApi = userApis?.find(api => api.id == id)
+  if (!targetApi || !url || targetApi.updateUrlRejected == url) return
+  targetApi.updateUrlRejected = url
   await saveData(userApiPrefix, userApis)
 }
 export const setUserApiLastCheckAt = async(id: string, checkAt: number) => {

@@ -34,6 +34,10 @@ export type UserApiUpdatePreview =
   | {
     status: 'failed'
     reason: 'not_found' | 'no_url' | 'resolve_failed' | 'rejected'
+    /** rejected 时具体是哪条闸门拦下的；别的失败没有 */
+    rejectReason?: 'invalid_script' | 'name_mismatch' | 'too_large' | 'syntax_error'
+    /** 地址本身没问题，只是给的是版本/更新网页：这些地址留着下次还有用 */
+    versionPage?: boolean
     message: string
     url?: string
     openUrl?: string
@@ -60,7 +64,13 @@ export const previewUpdate = (params: {
         header: plan.header,
       }
     }
-    return { status: 'failed', reason: 'rejected', message: plan.message ?? '无法更新', url }
+    return {
+      status: 'failed',
+      reason: 'rejected',
+      ...(plan.reason && plan.reason != 'older' ? { rejectReason: plan.reason } : {}),
+      message: plan.message ?? '无法更新',
+      url,
+    }
   }
   return {
     status: 'available',
@@ -98,6 +108,7 @@ export const previewDescriptor = (params: {
   return {
     status: 'failed',
     reason: 'resolve_failed',
+    versionPage: true,
     message: `发现新版本 ${descriptor.version}，但更新地址给的是网页，没法自动下载，请手动打开更新页面`,
     ...(openUrl ? { openUrl } : {}),
   }

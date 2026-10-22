@@ -64,6 +64,20 @@ test('不合格的脚本在预览阶段就失败，不进入确认流程', () =>
   assert.equal(result.reason, 'rejected')
 })
 
+test('名字对不上时标出是哪条闸门，日志里能说清是地址填错了', () => {
+  const result = previewUpdate({
+    name: '西瓜聚合源',
+    storedScript: OLD,
+    script: header('落雪云更新音源(实测)', '2026.10.20'),
+    url: 'https://a.test/lx.js',
+  })
+  assert.equal(result.status, 'failed')
+  if (result.status != 'failed') return
+  assert.equal(result.reason, 'rejected')
+  assert.equal(result.rejectReason, 'name_mismatch')
+  assert.equal(result.url, 'https://a.test/lx.js')
+})
+
 test('同一个源报了多个地址：可更新压过已最新/更旧/失败，且在同为可更新时选版本高的', () => {
   const newer20 = preview(OLD, NEW, 'https://a.test/20.js')
   const newer21 = preview(OLD, header(NAME, '2026.10.21'), 'https://b.test/21.js')
@@ -106,6 +120,7 @@ test('版本描述确实更新但只有网页：说清楚要手动打开，并�
   assert.match(result.message, /1\.0\.3/)
   assert.match(result.message, /手动/)
   assert.equal(result.openUrl, 'https://doc.test/update')
+  assert.equal(result.versionPage, true, '地址本身是通的，手动更新可以记下来')
 })
 
 test('版本号格式认不出时不猜，交给调用方报普通失败', () => {

@@ -79,7 +79,7 @@ export const planUpdate = (params: {
     return {
       action: 'reject',
       reason: 'name_mismatch',
-      message: `更新脚本的名字与当前源不一致（${currentName} / ${header.name}）`,
+      message: `更新地址返回的是另一个音源「${header.name}」，和当前源「${currentName}」对不上，已跳过（这个地址可能填错了）`,
     }
   }
   // 编译最贵，放在其它检查之后：头部注释齐全、名字也对得上的半截文件只能靠这一步认出来

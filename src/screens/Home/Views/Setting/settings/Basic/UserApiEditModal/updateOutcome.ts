@@ -6,12 +6,24 @@ import {
   type UserApiUpdatePreview,
 } from '@/core/userApiUpdate'
 
-export const runUpdatePreview = async(id: string): Promise<UserApiUpdatePreview> => {
+export const runUpdatePreview = async(id: string, overrideUrl?: string): Promise<UserApiUpdatePreview> => {
   try {
-    return await previewUserApiUpdate(id)
+    return await previewUserApiUpdate(id, undefined, overrideUrl == null ? undefined : { overrideUrl })
   } catch (err: any) {
     return { status: 'failed', reason: 'resolve_failed', message: err.message as string }
   }
+}
+
+/**
+ * 手动更新里刚填的地址值不值得存下来。
+ *
+ * 真取到了脚本（能更新 / 已最新 / 更旧），或者地址给的是版本页，说明这个地址是通的；
+ * 超时、403、名字对不上、语法坏则说明地址本身就错了 —— 存下来只会让以后每次启动
+ * 都去试一遍这个坏地址，还在日志里刷失败。
+ */
+export const shouldSaveUpdateUrl = (preview: UserApiUpdatePreview): boolean => {
+  if (preview.status != 'failed') return true
+  return preview.reason == 'resolve_failed' && preview.versionPage === true
 }
 
 export const runUpdateApply = async(
@@ -58,7 +70,11 @@ export const buildDowngradeConfirmMessage = (preview: Extract<UserApiUpdatePrevi
  *
  * @returns 手动更新弹窗还要不要留着：只有「换个地址也许能修好」的失败才留
  */
-export const toastPreview = (name: string, preview: UserApiUpdatePreview): boolean => {
+export const toastPreview = (
+  name: string,
+  preview: UserApiUpdatePreview,
+  options?: { builtin?: boolean },
+): boolean => {
   if (preview.status == 'up_to_date') {
     toast(global.i18n.t('user_api_update_check_unchanged_tip', { name }), 'long')
     return false
@@ -75,14 +91,20 @@ export const toastPreview = (name: string, preview: UserApiUpdatePreview): boole
     return true
   }
   if (preview.reason == 'no_url') {
-    toast(global.i18n.t('user_api_update_check_no_url_tip', { name }), 'long')
+    toast(global.i18n.t(options?.builtin
+      ? 'builtin_source_no_update_address_tip'
+      : 'user_api_update_check_no_url_tip', { name }), 'long')
     return true
   }
   toast(global.i18n.t('user_api_update_check_failed_tip', { name, message: preview.message }), 'long')
   return true
 }
 
-export const toastUpdateOutcome = (name: string, outcome: UserApiUpdateOutcome): boolean => {
+export const toastUpdateOutcome = (
+  name: string,
+  outcome: UserApiUpdateOutcome,
+  options?: { builtin?: boolean },
+): boolean => {
   if (outcome.status == 'updated') {
     toast(global.i18n.t('user_api_update_check_updated_tip', { name: outcome.name, version: versionLabel(outcome.toVersion) }), 'long')
     return false
@@ -105,7 +127,9 @@ export const toastUpdateOutcome = (name: string, outcome: UserApiUpdateOutcome):
     return false
   }
   if (outcome.reason == 'no_url') {
-    toast(global.i18n.t('user_api_update_check_no_url_tip', { name }), 'long')
+    toast(global.i18n.t(options?.builtin
+      ? 'builtin_source_no_update_address_tip'
+      : 'user_api_update_check_no_url_tip', { name }), 'long')
     return true
   }
   toast(global.i18n.t('user_api_update_check_failed_tip', { name, message: outcome.message }), 'long')

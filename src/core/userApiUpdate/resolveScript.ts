@@ -7,6 +7,8 @@
  * 找不到就明确报失败 —— 宁可退回人工打开，也不把 HTML 当成脚本写回源里。
  */
 
+import { compareVersions } from './version.ts'
+
 export type FetchImpl = (url: string) => Promise<{ ok: boolean, status: number, text: () => Promise<string> }>
 
 export interface ScriptHeaderInfo {
@@ -46,6 +48,8 @@ interface ResolveOptions {
   fetch: FetchImpl
   hint?: string
   maxRequests?: number
+  /** 本地脚本版本：版本接口明确说不比它新时，不用再顺着作者的更新页爬 */
+  currentVersion?: string
 }
 
 const DEFAULT_MAX_REQUESTS = 8
@@ -109,6 +113,12 @@ const isScript = (content: string) => {
 }
 
 const isHttpUrl = (url: string) => /^https?:\/\/\S+$/i.test(url)
+
+// AbortController 中断时各运行时给的 message 就是英文的 Aborted，直接摆给用户看不懂
+const describeFetchFailure = (status: string): string => {
+  if (status == 'Aborted') return '请求超时'
+  return status || '网络错误'
+}
 
 const NOT_SCRIPT_RXP = /\.(?:css|less|scss|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf|mp[34]|zip|rar|7z|apk)(?:[?#]|$)/i
 
@@ -216,25 +226,39 @@ const parseVersionDescriptor = (content: string, baseUrl: string): VersionDescri
 }
 
 // 版本检查接口在“已是最新”时往往只回一句话、不给任何脚本地址（HYW 就是 code:0 + 已是最新版本）。
-// 只认 JSON 且没有任何候选链接时才看这句提示，避免把普通页面里的宣传语当成“没更新”。
+// 只认 JSON 且候选里没有可下载的脚本链接时才看这句提示，避免把普通页面里的宣传语当成“没更新”。
 const NO_UPDATE_RXP = /已是最新|最新版本|没有新版本|无更新|no\s*update|up[-\s]?to[-\s]?date|already\s+(?:the\s+)?latest|latest\s+version/i
-const isNoUpdateResponse = (content: string): boolean => {
-  let body: unknown
-  try {
-    body = JSON.parse(content)
-  } catch {
-    return false
-  }
+// 也有人家的提示语根本不让正则认（星海用 GBK 编码，UTF-8 解码后全是乱码），
+// 但 JSON 里把更新地址字段显式回成 null —— 结构上就是「这次没有可推送的更新」。
+// 只在整份 JSON 里没有任何版本信息时才算：带着版本号的接口不能靠这条吞掉。
+const NULL_UPDATE_URL_KEYS = new Set(['updateurl', 'downloadurl', 'download', 'scripturl'])
+const hasNullUpdateUrl = (value: unknown, depth: number): boolean => {
+  if (depth > 4 || value == null || typeof value != 'object') return false
+  if (Array.isArray(value)) return value.some(item => hasNullUpdateUrl(item, depth + 1))
+  const entries = Object.entries(value as Record<string, unknown>)
+  if (entries.some(([key, field]) => field === null && NULL_UPDATE_URL_KEYS.has(normalizeKey(key)))) return true
+  return entries.some(([, field]) => hasNullUpdateUrl(field, depth + 1))
+}
+const isNoUpdateResponse = (content: string, body: unknown, hasDescriptor: boolean): boolean => {
   if (body == null || typeof body != 'object') return false
+  // 也有人家的接口什么话都不说，只回 {"code":200,"data":null} 表示“没有可推送的更新”
+  // （lx-animemusic 就是这样；有新版时 data 里会带 updateUrl）。
+  const record = body as Record<string, unknown>
+  if (Number(record.code) === 200 && record.data == null) return true
+  if (!hasDescriptor && hasNullUpdateUrl(body, 0)) return true
   return NO_UPDATE_RXP.test(content)
 }
 
+const isScriptLink = (link: string) => /\.js(?:[?#]|$)/i.test(link)
+
 const rankCandidates = (candidates: string[], hint?: string) => {
-  if (!hint) return candidates
-  const key = hint.trim().toLowerCase()
-  if (!key) return candidates
-  const score = (link: string) => link.toLowerCase().includes(key) ? 0 : 1
-  // 只把「名字像当前源」的链接提到前面，其余保持文档顺序
+  const key = hint?.trim().toLowerCase() ?? ''
+  // 更新页里既有脚本又有说明页/图片时，先拿脚本；名字像当前源的再往前排。
+  // 同一档内保持页面里的文档顺序（作者通常把最新版放最前面）。
+  const score = (link: string) => {
+    const normalized = link.toLowerCase()
+    return (isScriptLink(normalized) ? 0 : 2) + (key && normalized.includes(key) ? -1 : 0)
+  }
   return candidates.map((link, index) => ({ link, index })).sort((a, b) => {
     const diff = score(a.link) - score(b.link)
     return diff != 0 ? diff : a.index - b.index
@@ -242,7 +266,7 @@ const rankCandidates = (candidates: string[], hint?: string) => {
 }
 
 export const resolveScriptFromUrl = async(url: string, options: ResolveOptions): Promise<ResolveResult> => {
-  const { fetch, hint, maxRequests = DEFAULT_MAX_REQUESTS } = options
+  const { fetch, hint, maxRequests = DEFAULT_MAX_REQUESTS, currentVersion } = options
   if (!isHttpUrl(url)) return { ok: false, reason: 'invalid_url', message: '更新地址不是 http(s) 链接' }
 
   const queue: string[] = [url]
@@ -282,14 +306,29 @@ export const resolveScriptFromUrl = async(url: string, options: ResolveOptions):
     }
 
     if (isScript(content)) return { ok: true, script: content, fromUrl: target, requests }
-    descriptor ??= parseVersionDescriptor(content, target)
+    const pageDescriptor = parseVersionDescriptor(content, target)
+    descriptor ??= pageDescriptor
     const candidates = collectCandidates(target, content)
-    if (!candidates.length && isNoUpdateResponse(content)) {
+    let jsonBody: unknown = null
+    try {
+      jsonBody = JSON.parse(content)
+    } catch {}
+    // 候选里还有能下载的脚本链接时继续爬：接口一边说「已最新」一边给得出脚本的，以脚本为准
+    if (isNoUpdateResponse(content, jsonBody, pageDescriptor != null) && !candidates.some(isScriptLink)) {
       return fail('no_update', '更新地址显示已经是最新版本')
+    }
+    // 长青/念心/聚合 API 这类地址本身就带着版本号，更新页只是给人看的文档。
+    // 版本不比本地新、页面上又没有脚本可下载时，到这里就可以说「已是最新」，
+    // 不必再取一遍网盘/文档页（有的还会超时或要求登录）。
+    if (currentVersion && pageDescriptor?.version) {
+      const compared = compareVersions(pageDescriptor.version, currentVersion)
+      if (compared != null && compared <= 0 && !candidates.some(isScriptLink)) {
+        return fail('no_update', '更新地址显示已经是最新版本')
+      }
     }
     queue.push(...rankCandidates(candidates, hint).filter(link => !visited.has(link)))
   }
 
-  if (!fetchedAny) return fail('fetch_failed', `更新地址取不到（${failedStatus}）`)
+  if (!fetchedAny) return fail('fetch_failed', `更新地址取不到（${describeFetchFailure(failedStatus)}）`)
   return fail('no_script_link', '更新地址里没有可用的音源脚本链接')
 }
