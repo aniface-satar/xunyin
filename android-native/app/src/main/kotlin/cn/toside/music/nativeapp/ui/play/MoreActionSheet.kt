@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.toside.music.core.player.SleepTimer
+import cn.toside.music.nativeapp.lyric.DesktopLyricRow
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import com.moriafly.salt.ui.Button
 import com.moriafly.salt.ui.ButtonAppearance
@@ -178,6 +179,7 @@ fun MoreActionSheet(
             onChange = { onToggleRoma() },
             text = "显示歌词罗马音（如果可用）",
         )
+        DesktopLyricRow()
         ItemSpacer()
         // 只读展示当前音质；切换仍走设置页（Lane B 范围）
         ReadOnlyRow(label = "当前音质", value = qualityLabel(runtime.playQuality()))
