@@ -1,5 +1,6 @@
 package cn.toside.music.core.music.leaderboard
 
+import cn.toside.music.core.music.search.SearchRequest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -18,12 +19,16 @@ import kotlin.math.pow
 /**
  * 网易云排行榜 —— 对照 RN `musicSdk/wy/leaderboard.js` + `musicDetail.js`。
  *
- * 两段链路：weapi POST `weapi/v3/playlist/detail`（n=100000 全量）取 trackIds，
+ * 两段链路：weapi POST `weapi/v3/playlist/detail`（n=100000）取 trackIds，
  * 再 weapi POST `weapi/v3/song/detail` 按 id 批量取详情（RN musicDetail.getList）。
- * 一次返回整榜，total = 详情列表长度；失败重试最多 6 次（RN 上限）。
+ * 一次返回整榜，total = 详情列表长度。
+ *
+ * 重试语义对照 RN：playlist detail 非 200 / 结构缺失、song detail 非 200（内部至多
+ * 3 次尝试后抛「获取歌曲详情失败」）都走外层重试，整榜最多 6 次；空 trackIds
+ * 是合法空榜不重试（RN 空数组照常走完两段返回空 list）。
  */
 class WyLeaderboard(
-    private val fetchForm: suspend (url: String, form: Map<String, String>) -> String,
+    private val fetch: suspend (SearchRequest) -> String,
 ) : LeaderboardSource {
     override val source: String = "wy"
 
@@ -36,9 +41,12 @@ class WyLeaderboard(
         var attempt = 0
         while (true) {
             attempt++
-            val parsed = runCatching { fetchList(bangid, page) }.getOrNull()
-            if (parsed != null) return parsed
-            check(attempt < MAX_ATTEMPTS) { "wy leaderboard failed after $attempt attempts" }
+            val result =
+                runCatching { fetchList(bangid, page) }.getOrElse {
+                    check(attempt < MAX_ATTEMPTS) { "wy leaderboard failed after $attempt attempts" }
+                    return@getOrElse Unit
+                }
+            if (result is BoardList) return result
         }
     }
 
@@ -46,29 +54,66 @@ class WyLeaderboard(
         bangid: String,
         page: Int,
     ): BoardList {
-        // 1) playlist detail → trackIds
-        val detailBody = fetchForm(PLAYLIST_DETAIL_URL, weapiForm("""{"id":"$bangid","n":100000,"p":1}"""))
-        val detail = parseOk(detailBody) ?: return BoardList(emptyList(), 0, LIMIT, page, "wy")
+        // 1) playlist detail → trackIds（RN getData：非 200 重试；trackIds 缺失视为结构错误）
+        val detailBody =
+            fetch(
+                SearchRequest(
+                    url = PLAYLIST_DETAIL_URL,
+                    method = "POST",
+                    form = weapiForm("""{"id":"$bangid","n":100000,"p":1}"""),
+                ),
+            )
+        val detail = parseOk(detailBody) ?: error("wy playlist detail invalid")
         val trackIds =
             ((detail["playlist"] as? JsonObject)?.get("trackIds") as? JsonArray)
                 ?.mapNotNull { (it as? JsonObject)?.get("id").asLong() }
-                .orEmpty()
-        if (trackIds.isEmpty()) return BoardList(emptyList(), 0, LIMIT, page, "wy")
+                ?: error("wy playlist detail missing trackIds")
 
-        // 2) song detail → 整榜歌曲（RN musicDetail.getList 的 c/ids 形状）
+        // 2) song detail → 整榜歌曲（RN musicDetail.getList：内部至多 3 次尝试，之后抛错）
+        val list =
+            if (trackIds.isEmpty()) {
+                emptyList()
+            } else {
+                fetchSongDetail(trackIds)
+            }
+        return BoardList(list, list.size, LIMIT, page, "wy")
+    }
+
+    /** RN musicDetailApi.getList：同一 c/ids 请求最多 3 次，非 200/结构缺失即重试，超限抛错。 */
+    private suspend fun fetchSongDetail(trackIds: List<Long>): List<JsonObject> {
         val c = trackIds.joinToString(",") { """{"id":$it}""" }
         val ids = trackIds.joinToString(",")
-        val songBody = fetchForm(SONG_DETAIL_URL, weapiForm("""{"c":"[$c]","ids":"[$ids]"}"""))
-        val songs = parseOk(songBody) ?: return BoardList(emptyList(), 0, LIMIT, page, "wy")
-        val list = parseSongList(songs)
-        return BoardList(list, list.size, LIMIT, page, "wy")
+        val form = weapiForm("""{"c":"[$c]","ids":"[$ids]"}""")
+        var attempt = 0
+        while (true) {
+            attempt++
+            val request =
+                SearchRequest(
+                    url = SONG_DETAIL_URL,
+                    method = "POST",
+                    headers =
+                        mapOf(
+                            // RN musicDetail.getList 固定头
+                            "User-Agent" to SONG_DETAIL_UA,
+                            "origin" to "https://music.163.com",
+                        ),
+                    form = form,
+                )
+            val body = runCatching { fetch(request) }.getOrNull()
+            val songs = body?.let { parseOk(it) }
+            if (songs != null) return parseSongList(songs)
+            check(attempt < DETAIL_MAX_ATTEMPTS) { "获取歌曲详情失败" }
+        }
     }
 
     companion object {
         const val LIMIT = 100_000
         private const val MAX_ATTEMPTS = 6
+        private const val DETAIL_MAX_ATTEMPTS = 3
         private const val PLAYLIST_DETAIL_URL = "https://music.163.com/weapi/v3/playlist/detail"
         private const val SONG_DETAIL_URL = "https://music.163.com/weapi/v3/song/detail"
+        private const val SONG_DETAIL_UA =
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36"
         private val json = Json { ignoreUnknownKeys = true }
 
         fun weapiForm(objectJson: String): Map<String, String> {
@@ -85,18 +130,20 @@ class WyLeaderboard(
             return root
         }
 
-        /** RN musicDetail.filterList：songs + privileges 按位配对（id 不匹配时回找）。 */
+        /** RN musicDetail.filterList：songs + privileges 配对（先按下标，id 不匹配回找）。 */
         fun parseSongList(root: JsonObject): List<JsonObject> {
             val songs = root["songs"] as? JsonArray ?: return emptyList()
             val privileges = root["privileges"] as? JsonArray ?: return emptyList()
             val list = mutableListOf<JsonObject>()
-            songs.forEach { songElement ->
-                val item = songElement as? JsonObject ?: return@forEach
+            songs.forEachIndexed { index, songElement ->
+                val item = songElement as? JsonObject ?: return@forEachIndexed
                 val songId = item.text("id")
                 val privilege =
-                    privileges
-                        .firstOrNull { (it as? JsonObject)?.text("id") == songId }
-                        ?.let { it as JsonObject } ?: return@forEach
+                    (privileges.getOrNull(index) as? JsonObject)
+                        ?.takeIf { it.text("id") == songId }
+                        ?: privileges
+                            .firstOrNull { (it as? JsonObject)?.text("id") == songId }
+                            ?.let { it as JsonObject } ?: return@forEachIndexed
                 val types = mutableListOf<Pair<String, String?>>()
                 if (privilege.text("maxBrLevel") == "hires") {
                     types.add("flac24bit" to sizeOf(item["hr"]))
@@ -114,7 +161,7 @@ class WyLeaderboard(
                     "192000", "128000" -> types.add("128k" to sizeOf(item["l"]))
                 }
                 // RN types.reverse() → 高音质在前
-                val qualities = types.asReversed().filter { it.second != null }
+                val qualities = types.asReversed()
                 val pc = item["pc"] as? JsonObject
                 val album = item["al"] as? JsonObject
                 list.add(

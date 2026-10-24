@@ -23,10 +23,12 @@ import kotlin.math.pow
  * tx 榜单详情需要 `period`（榜单期号）：先抓 `c.y.qq.com/node/pc/wk_v15/top.html`
  * 用正则解析出各榜期号（RN periods 表缓存），再 POST `u.y.qq.com/cgi-bin/musicu.fcg`
  * 拉 `GetDetail`。一次返回整榜（无分页），total = songInfoList.length。
+ *
+ * 传输统一走 [SearchRequest]（与 RN request.js 一致：POST body 时
+ * Content-Type 为 application/json；HTML 抓取就是 GET 返回文本）。
  */
 class TxLeaderboard(
     private val fetch: suspend (SearchRequest) -> String,
-    private val fetchHtml: suspend (url: String) -> String,
 ) : LeaderboardSource {
     override val source: String = "tx"
 
@@ -39,15 +41,17 @@ class TxLeaderboard(
         bangid: String,
         page: Int,
     ): BoardList {
-        var period = periods[bangid]
+        // RN getList: bangid = parseInt(bangid) —— 数字进请求体与期号表
+        val topId = bangid.toLongOrNull() ?: error("tx bangid not numeric: $bangid")
+        var period = periods[topId.toString()]
         if (period == null) {
-            period = fetchPeriod(bangid)
-            checkNotNull(period) { "tx leaderboard period not found for $bangid" }
+            period = fetchPeriod(topId.toString())
+            checkNotNull(period) { "tx leaderboard period not found for $topId" }
         }
         var attempt = 0
         while (true) {
             attempt++
-            val body = fetch(buildRequest(bangid, period, LIMIT))
+            val body = fetch(buildRequest(topId, period, LIMIT))
             val parsed = parse(body)
             if (parsed != null) return parsed
             check(attempt < MAX_ATTEMPTS) { "tx leaderboard failed after $attempt attempts" }
@@ -56,7 +60,13 @@ class TxLeaderboard(
 
     /** RN getPeriods：抓 HTML 解析期号表后取目标榜的期号。 */
     private suspend fun fetchPeriod(bangid: String): String? {
-        val html = fetchHtml(PERIOD_URL)
+        val html =
+            fetch(
+                SearchRequest(
+                    url = PERIOD_URL,
+                    headers = mapOf("User-Agent" to DETAIL_UA),
+                ),
+            )
         PERIOD_REGEX.findAll(html).forEach { match ->
             periods[match.groupValues[2]] = match.groupValues[3]
         }
@@ -67,6 +77,10 @@ class TxLeaderboard(
         const val LIMIT = 300
         private const val MAX_ATTEMPTS = 3
         private const val PERIOD_URL = "https://c.y.qq.com/node/pc/wk_v15/top.html"
+
+        /** RN listDetailRequest / getData 用的 IE9 UA。 */
+        private const val DETAIL_UA =
+            "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)"
         private val json = Json { ignoreUnknownKeys = true }
 
         /** RN regExps.period：`data-listname="(.+?)" data-tid=".*?\/(.+?)" data-date="(.+?)" .+?<\/i>` */
@@ -74,7 +88,7 @@ class TxLeaderboard(
             Regex("""data-listname="(.+?)" data-tid=".*?/(.+?)" data-date="(.+?)" .+?</i>""")
 
         fun buildRequest(
-            topId: String,
+            topId: Long,
             period: String,
             limit: Int,
         ): SearchRequest {
@@ -110,7 +124,7 @@ class TxLeaderboard(
                 method = "POST",
                 headers =
                     mapOf(
-                        "User-Agent" to "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)",
+                        "User-Agent" to DETAIL_UA,
                         "Content-Type" to "application/json",
                     ),
                 body = body,
@@ -135,7 +149,7 @@ class TxLeaderboard(
         private fun toMusicInfo(item: JsonObject): JsonObject? {
             val songMid = item.text("mid")
             if (songMid.isEmpty()) return null
-            val file = item["file"] as? JsonObject
+            val file = item["file"] as? JsonObject ?: return null
             val album = item["album"] as? JsonObject
             val singerList = item["singer"] as? JsonArray
             val singer =
@@ -144,10 +158,15 @@ class TxLeaderboard(
                     ?.joinToString("、")
                     .orEmpty()
             val albumMid = album?.text("mid").orEmpty()
+            val albumName = album?.text("name").orEmpty()
+            // RN filterData 的 img 分支按 album.name 判定（不是 album.mid）
             val picUrl =
-                if (albumMid.isEmpty() || albumMid == "空") {
-                    val singerMid = (singerList?.firstOrNull() as? JsonObject)?.text("mid").orEmpty()
-                    if (singerMid.isEmpty()) "" else "https://y.gtimg.cn/music/photo_new/T001R500x500M000$singerMid.jpg"
+                if (albumName.isEmpty() || albumName == "空") {
+                    (singerList?.firstOrNull() as? JsonObject)
+                        ?.text("mid")
+                        ?.ifEmpty { null }
+                        ?.let { "https://y.gtimg.cn/music/photo_new/T001R500x500M000$it.jpg" }
+                        .orEmpty()
                 } else {
                     "https://y.gtimg.cn/music/photo_new/T002R500x500M000$albumMid.jpg"
                 }
@@ -158,7 +177,7 @@ class TxLeaderboard(
                     "flac" to "size_flac",
                     "flac24bit" to "size_hires",
                 ).mapNotNull { (type, key) ->
-                    val size = file?.get(key).asLong() ?: 0L
+                    val size = file[key].asLong() ?: 0L
                     if (size == 0L) null else type to formatSize(size)
                 }
             return buildJsonObject {
@@ -171,10 +190,10 @@ class TxLeaderboard(
                     "meta",
                     buildJsonObject {
                         put("songId", songMid)
-                        put("albumName", album?.text("name").orEmpty())
+                        put("albumName", albumName)
                         put("picUrl", picUrl)
                         put("albumId", albumMid)
-                        put("strMediaMid", file?.text("media_mid").orEmpty())
+                        put("strMediaMid", file.text("media_mid"))
                         put("albumMid", albumMid)
                         put("id", item["id"] ?: JsonNull)
                         put("qualitys", qualityArray(qualities))
