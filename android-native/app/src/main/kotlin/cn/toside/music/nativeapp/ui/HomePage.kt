@@ -45,6 +45,9 @@ import cn.toside.music.nativeapp.data.SearchRuntime
 import cn.toside.music.nativeapp.ui.leaderboard.LeaderboardDetailPage
 import cn.toside.music.nativeapp.ui.list.ListDetailPage
 import cn.toside.music.nativeapp.ui.search.SearchPage
+import cn.toside.music.nativeapp.ui.songlist.RecommendPanel
+import cn.toside.music.nativeapp.ui.songlist.SonglistDetailPage
+import cn.toside.music.nativeapp.ui.songlist.SonglistPanel
 import com.moriafly.salt.ui.Item
 import com.moriafly.salt.ui.ItemSpacer
 import com.moriafly.salt.ui.SaltTheme
@@ -136,6 +139,10 @@ private fun HomeTabContent(
                     onOpenLeaderboard = { boardId, title ->
                         navigator.push(HomeNavigator.Route.LeaderboardDetail(boardId, title))
                     },
+                    onOpenSonglist = { source, id, title ->
+                        navigator.push(HomeNavigator.Route.SonglistDetail(source, id, title))
+                    },
+                    onOpenPlayer = onOpenPlayer,
                 )
             HomeTab.MY ->
                 MyPage(
@@ -158,6 +165,14 @@ private fun HomeTabContent(
             is HomeNavigator.Route.LeaderboardDetail ->
                 LeaderboardDetailPage(
                     boardId = detail.boardId,
+                    title = detail.title,
+                    onBack = { navigator.back() },
+                    onOpenPlayer = onOpenPlayer,
+                )
+            is HomeNavigator.Route.SonglistDetail ->
+                SonglistDetailPage(
+                    source = detail.source,
+                    id = detail.id,
                     title = detail.title,
                     onBack = { navigator.back() },
                     onOpenPlayer = onOpenPlayer,
@@ -246,6 +261,8 @@ private fun DiscoverPage(
     section: DiscoverSection,
     onSectionChange: (DiscoverSection) -> Unit,
     onOpenLeaderboard: (String, String) -> Unit,
+    onOpenSonglist: (String, String, String) -> Unit,
+    onOpenPlayer: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -285,11 +302,11 @@ private fun DiscoverPage(
         }
         when (section) {
             DiscoverSection.RECOMMEND ->
-                DiscoverPlaceholder("推荐内容暂未接入")
+                RecommendPanel(onOpenSonglist = onOpenSonglist, onOpenPlayer = onOpenPlayer)
             DiscoverSection.RANKING ->
                 LeaderboardBoardsPage(onOpenLeaderboard = onOpenLeaderboard)
             DiscoverSection.SONGLIST ->
-                DiscoverPlaceholder("在线歌单内容暂未接入")
+                SonglistPanel(onOpenSonglist = onOpenSonglist)
         }
     }
 }
