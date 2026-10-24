@@ -216,5 +216,27 @@ class MusicSortTest {
         )
     }
 
+    /**
+     * 锁定 JVM Collator 与 JS localeCompare(zh-CN) 的已知方向差异（实测，见车道报告「语义修正」节）。
+     * RN 实测：阿 < b、"a-b" < ab；JVM 方向相反。
+     * 若未来更换比较实现（ICU4J / 自定义排序）导致本用例失败，必须同步复核报告差异表。
+     */
+    @Test
+    fun jvmCollatorDivergenceFromJsIsLocked() {
+        val cjkVsLatin =
+            listOf(
+                music("cjk", name = "阿"),
+                music("latin", name = "b"),
+            )
+        assertEquals(listOf("latin", "cjk"), ids(sort(cjkVsLatin, MusicSortId.NAME)))
+
+        val punctuation =
+            listOf(
+                music("dash", name = "a-b"),
+                music("plain", name = "ab"),
+            )
+        assertEquals(listOf("plain", "dash"), ids(sort(punctuation, MusicSortId.NAME)))
+    }
+
     private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
 }
