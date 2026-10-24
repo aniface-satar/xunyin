@@ -11,13 +11,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -45,11 +48,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import cn.toside.music.core.list.MusicSort
+import cn.toside.music.core.list.MusicSortId
 import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import com.moriafly.salt.ui.Button
+import com.moriafly.salt.ui.ButtonAppearance
 import com.moriafly.salt.ui.Item
 import com.moriafly.salt.ui.ItemArrowType
+import com.moriafly.salt.ui.ItemCheck
 import com.moriafly.salt.ui.SaltTheme
 import com.moriafly.salt.ui.Text
 import com.moriafly.salt.ui.UnstableSaltUiApi
@@ -62,12 +69,28 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import java.util.Locale
+
+/** 排序档位与文案（对照 RN MyList/ListMusicSort.tsx + zh-cn.json#list_sort_option_*）。 */
+private val SORT_OPTIONS =
+    listOf(
+        "name" to "标题",
+        "album" to "专辑（音轨）",
+        "duration_up" to "时长（短→长）",
+        "duration_down" to "时长（长→短）",
+        "add_time_up" to "添加时间",
+        "add_time_down" to "添加时间降序",
+        "singer" to "歌手",
+        "year" to "年份",
+        "play_count" to "播放次数",
+    )
 
 /**
- * 歌单详情页（B5 第一、三、五切片）—— 读取 ListStore 的列表歌曲、整表播放与编辑。
+ * 歌单详情页（B5 第一、三、五、七切片）—— 读取 ListStore 的列表歌曲、整表播放与编辑。
  *
- * 用户歌单支持重命名/清空/删除；任意列表支持单曲移除与多选批量删除/移动到其他列表；
- * 变更后同步随机队列（`PlayerCore.handleListMusicsUpdated`）。拖拽排序随后续切片补。
+ * 用户歌单支持重命名/清空/删除；任意列表支持单曲移除、多选批量删除/移动到其他列表、
+ * 拖拽排序，以及 9 档规则排序（自定义排序与多选互斥）。
+ * 变更后同步随机队列（`PlayerCore.handleListMusicsUpdated`）。
  */
 @OptIn(UnstableSaltUiApi::class)
 @Composable
@@ -97,6 +120,12 @@ fun ListDetailPage(
     var removeSelectedVisible by remember { mutableStateOf(false) }
     var dragId by remember(listId) { mutableStateOf<String?>(null) }
     var dragOffsetY by remember(listId) { mutableFloatStateOf(0f) }
+    // 自定义排序与多选互斥（RN MusicList/index.tsx#hancelMultiSelect / enterCustomSort）
+    var customSortMode by remember(listId) { mutableStateOf(false) }
+    var sortVisible by remember { mutableStateOf(false) }
+    var sortSelection by remember { mutableStateOf<String?>(null) }
+    // 记住上次确认过的档位（RN ListMusicSort.tsx#lastSelectedSortId）
+    var lastSortKey by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(listId) { items = runtime.lists.musics(listId) }
 
@@ -115,6 +144,34 @@ fun ListDetailPage(
         scope.launch {
             runtime.lists.store.listMusicUpdatePosition(listId, targetIndex, listOf(movedId))
             runtime.core.handleListMusicsUpdated(listOf(listId))
+        }
+    }
+
+    /**
+     * 排序语言：优先设置里的 common.langId（RN global.i18n.locale），
+     * 未设置时退回系统语言；下划线形式由 [MusicSort] 归一化。
+     */
+    fun sortLocaleId(): String =
+        runtime.settings.store
+            .string("common.langId")
+            .ifEmpty { Locale.getDefault().toLanguageTag() }
+
+    /** 应用普通排序档位：整表按规则重排后走既有 listMusicUpdatePosition 落库。 */
+    fun applySort(key: String) {
+        val sortId = MusicSortId.fromKey(key) ?: return
+        lastSortKey = key
+        sortVisible = false
+        scope.launch {
+            val current = runtime.lists.musics(listId)
+            // add_time / play_count 在原生侧暂无读写者，取值恒 0（见车道报告数据缺口）。
+            val sorted = MusicSort.sort(current, sortId, sortLocaleId())
+            runtime.lists.store.listMusicUpdatePosition(
+                listId,
+                0,
+                sorted.mapNotNull { it.text("id") },
+            )
+            runtime.core.handleListMusicsUpdated(listOf(listId))
+            items = runtime.lists.musics(listId)
         }
     }
 
@@ -143,6 +200,15 @@ fun ListDetailPage(
                     }
                     ActionText("删除") { if (selectedIds.isNotEmpty()) removeSelectedVisible = true }
                     ActionText("移动到") { if (selectedIds.isNotEmpty()) moveVisible = true }
+                    // 多选态下排序不可用（RN MylistDetail/index.tsx 的 disabled）
+                    ActionText("排序", enabled = false) {}
+                } else if (customSortMode) {
+                    ActionText("完成") { customSortMode = false }
+                    ActionText("多选") {
+                        customSortMode = false
+                        editMode = true
+                        selectedIds = emptySet()
+                    }
                 } else {
                     if (userList != null) {
                         ActionText("重命名") {
@@ -157,6 +223,10 @@ fun ListDetailPage(
                     ActionText("多选") {
                         editMode = true
                         selectedIds = emptySet()
+                    }
+                    ActionText("排序") {
+                        sortSelection = lastSortKey
+                        sortVisible = true
                     }
                 }
             }
@@ -222,9 +292,11 @@ fun ListDetailPage(
                                     }.padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            if (editMode) {
-                                SelectMark(selected = selected)
-                                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            if (editMode || customSortMode) {
+                                if (editMode) {
+                                    SelectMark(selected = selected)
+                                }
+                                Column(Modifier.weight(1f).padding(start = if (editMode) 10.dp else 0.dp)) {
                                     MusicTitle(item = item, index = index, active = active)
                                 }
                                 DragHandle(
@@ -302,6 +374,55 @@ fun ListDetailPage(
                                 )
                             }
                         }
+                    }
+                }
+            }
+            if (sortVisible) {
+                // 对照 RN MyList/ListMusicSort.tsx：单选档位 + 自定义排序，确认后才生效。
+                BasicDialog(onDismissRequest = { sortVisible = false }) {
+                    DialogTitle(text = displayTitle)
+                    Column(
+                        Modifier
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        SORT_OPTIONS.forEach { (key, label) ->
+                            ItemCheck(
+                                state = sortSelection == key,
+                                onChange = { checked -> if (checked) sortSelection = key },
+                                text = label,
+                            )
+                        }
+                        ItemCheck(
+                            state = sortSelection == "custom",
+                            onChange = { checked -> if (checked) sortSelection = "custom" },
+                            text = "自定义排序",
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { sortVisible = false },
+                            text = "取消",
+                            appearance = ButtonAppearance.Subtle,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            onClick = {
+                                when (val key = sortSelection) {
+                                    null -> Unit
+                                    "custom" -> {
+                                        sortVisible = false
+                                        editMode = false
+                                        selectedIds = emptySet()
+                                        customSortMode = true
+                                    }
+                                    else -> applySort(key)
+                                }
+                            },
+                            text = "确定",
+                            enabled = sortSelection != null,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
             }
@@ -497,6 +618,7 @@ private fun DragHandle(modifier: Modifier = Modifier) {
 @Composable
 private fun ActionText(
     label: String,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     BasicText(
@@ -504,9 +626,13 @@ private fun ActionText(
         modifier =
             Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .clickable(onClick = onClick)
+                .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
                 .padding(horizontal = 10.dp, vertical = 6.dp),
-        style = TextStyle(color = SaltTheme.colors.highlight, fontSize = 13.sp),
+        style =
+            TextStyle(
+                color = if (enabled) SaltTheme.colors.highlight else SaltTheme.colors.subText.copy(alpha = 0.4f),
+                fontSize = 13.sp,
+            ),
     )
 }
 

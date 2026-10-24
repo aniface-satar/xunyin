@@ -94,3 +94,74 @@ RN 对照（worktree 内只读，先通读实证再动手）：
 - 排序比较规则有 JVM 单测（含与 RN `localeCompare` 差异的锁定用例）；
 - 新增 ListStore 方法有单测；真机菜单项清单写进报告；
 - lane 报告按 RULES 模板追加到本文件末尾并 commit。
+
+---
+
+## Lane 报告（2026-10-25）
+
+- 结论：完成。排序菜单（9 档 + 自定义排序）已接入歌单详情页；排序规则落在 `:core` 并有 16 例 JVM 单测；列表级菜单 9 项逐项盘点见下，未实现项登记遗留。
+- commit：`9ffc40f`（core 规则）、`a14326d`（UI 接入）、`832e81e`（差异锁定用例）；测试数 core 400 + app 62 = 462 全绿（基线 446，+16 为本车道新增），APK 27,670,207 B。
+- 触碰文件清单：
+  - `android-native/core/src/main/kotlin/cn/toside/music/core/list/MusicSort.kt`（新增）
+  - `android-native/core/src/test/kotlin/cn/toside/music/core/list/MusicSortTest.kt`（新增）
+  - `android-native/app/src/main/kotlin/cn/toside/music/nativeapp/ui/list/ListDetailPage.kt`（修改）
+  - `docs/waves/w2-C.md`（本报告）
+  - `ListRuntime.kt` / `ListStore.kt` 未改：整表排序直接复用既有 `listMusicUpdatePosition`，无需新增原子能力。
+- 语义修正与实证发现：
+
+  ### 1. 字符串比较：Collator vs JS localeCompare
+  实证环境：Node v24 `localeCompare(b, 'zh-CN')` vs JDK 21（Android Studio JBR）`java.text.Collator(Locale.forLanguageTag("zh-CN"))`。
+  结论：Android 的 `java.text.Collator` 委托 ICU，与 RN 的 `localeCompare` 同源，故采用 Collator（未用 `String.compareTo`）；`localeId` 先做 `_`→`-` 归一化（RN same）。
+
+  一致用例（已锁进 `MusicSortTest`）：`a<A`、`abc<ABC`、数字按字典序 `"10"<"9"`、`ABC<abd`、`_x<ax`、`Z<a`、`李<曾<张`、`长<重`。
+
+  已知不一致（JVM 实测；**真机 ICU 未复核**）：
+
+  | 比较对 | JS(zh-CN) | JVM Collator(zh-CN) |
+  | --- | --- | --- |
+  | 阿 vs b | -1 | +1 |
+  | a-b vs ab | -1 | +1 |
+  | ab vs "a b" | +1 | -1 |
+  | é vs e | -1 | +1 |
+  | ， vs a | -1 | +1 |
+  | 阿 vs 啊 | -1 | +1 |
+
+  处理：一致用例写成断言；差异方向写成 `jvmCollatorDivergenceFromJsIsLocked` 特征用例（换比较实现时该用例失败 → 必须同步复核本表）。风险面：中文与拉丁混排、含标点/重音的歌曲名可能个别次序与 RN 不同；分组/时长/年份等档位不受影响。
+  边界：null 永远在前；排序稳定（Kotlin `sortedWith` 与 JS `sort` 均稳定）；`getIntv` 采用 `parseInt` 前缀语义，非法片段按 0（RN NaN 在比较中视同相等）。
+
+  ### 2. 排序落库复用既有能力
+  `ListStore.listMusicUpdatePosition(listId, 0, allIds)` 在传入全集时等价整表重排（内部 rest 为空、按入参顺序插回），既有语义已覆盖，故未新增 ListStore 方法。
+
+  ### 3. 自定义排序 ↔ 多选互斥映射
+  RN：排序弹窗选 custom → 关弹窗进拖拽态；进入多选强制退出拖拽态；多选态排序按钮 disabled。
+  Kotlin：新增独立 `customSortMode`（与 `editMode` 互斥），拖拽柄在两种模式都显示；多选态操作条保留灰显「排序」且不可点；自定义态操作条为「完成 / 多选」。
+  细微差异：RN 的「上次档位」是模块级变量、跨歌单跨页面记忆；Kotlin 存在页面级 `remember`，切歌单保留、退出详情页重置。RN 排序按钮文案是「排序歌曲」，Kotlin 操作条还承载重命名/清空/删除列表，为防小屏溢出用「排序」；**9 档 + 自定义的档位文案与 zh-cn.json 逐字一致**（标题/专辑（音轨）/时长（短→长）/时长（长→短）/添加时间/添加时间降序/歌手/年份/播放次数/自定义排序）。
+
+  ### 4. add_time / play_count 数据缺口
+  Kotlin 仅有 `StorageKeys.MUSIC_ADD_TIME` / `MUSIC_PLAY_COUNT`（StorageKeys.kt:56-57），无读写者，`ListRuntime` 也未暴露通用 KV。按任务书以 0 兜底：`add_time_up/down` 与 `play_count` 对当前数据是**稳定的空操作**（保持原顺序），待 data.ts 等价层落地后自动生效。未改禁触文件。
+
+  ### 5. RN 列表页没有「随机播放」「收藏全部」
+  再次核实 `MylistDetail/index.tsx` 操作条只有多选/排序，未实现这两个菜单项。
+
+  ### 6. 列表级菜单逐项盘点（RN `MyList/ListMenu.tsx`，9 项）
+  | RN 菜单 | Kotlin 现状 | 结论 |
+  | --- | --- | --- |
+  | new 新建 | HomePage「新建列表」 | 已有 |
+  | rename 重命名 | 详情页「重命名」（用户歌单） | 已有（入口位置不同） |
+  | sort 排序 | 本波详情页「排序」 | 本波接入 |
+  | duplicateMusic 重复歌曲 | 无 | 遗留：需 filterDuplicateMusic 纯规则 + 弹层 |
+  | local_file 选择本地文件 | 无 | 遗留（B6/B7：SAF 多选导入） |
+  | sync 同步歌单 | 无 | 遗留（B6/B7：依赖来源 songList 能力） |
+  | import 导入 | 无 | 遗留（B6/B7） |
+  | export 导出 | 无 | 遗留（B6/B7） |
+  | remove 删除列表 | 详情页「删除列表」（用户歌单） | 已有 |
+  说明：RN 的列表级菜单挂在首页列表长按；Kotlin 首页无长按菜单且 `ui/HomePage.kt` 属 Lane A 禁触，故本波只把排序接到详情页操作条（RN 详情页同样有该入口）。
+
+  ### 7. 闸门观察
+  首次全量 `test` 时 `core` 既有用例 `PlaybackCoordinatorTest.loadFailureSchedulesNextTrack` 偶发失败（expected b but was a），单独重跑与随后全量重跑均通过；该用例属 player 包、本车道未触碰，判定为既有时序型 flaky，建议集成会话留观。
+
+- 遗留问题与对后续波次的建议：
+  1. **真机未验**：排序弹窗布局（10 项滚动）、拖拽手感、排序后随机队列同步需装机复验；建议在 Android 14/16 上抽 2-3 例 Collator 边角与 RN 比对（尤其「阿 vs b」）。
+  2. add_time / play_count 的读写层（data.ts 对齐）未实现，两个档位当前无实际效果。
+  3. 列表级菜单缺 5 项（duplicateMusic / local_file / sync / import / export）；导入导出与本地文件属 B6/B7，duplicateMusic 可独立做纯规则 + 弹层小切片。
+  4. 首页列表缺少 RN 的长按列表菜单入口（Lane A 或后续波次）。
