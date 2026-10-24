@@ -6,7 +6,8 @@
 
 ## 开工自检（任何一项不过 → 停下报告，不要自行补救）
 
-1. `git status` 干净，当前分支为你被告知的分支名（`w1/laneA` / `w1/laneB` / `w1/laneC`）。
+1. `git status` 干净，当前分支为你被告知的分支名（`w<N>/laneA` / `w<N>/laneB` /
+   `w<N>/laneC`）。
 2. `cd android-native && gradlew.bat ktlintCheck test assembleDebug` 全绿；
    测试总数与本目录 `docs/kotlin-migration-progress.md`「验证基线」记录一致
    （只会等于，不会少于；变少 = 有人删测试，停下报告）。
