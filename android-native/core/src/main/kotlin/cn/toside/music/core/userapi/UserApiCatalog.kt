@@ -118,6 +118,16 @@ object UserApiCatalog {
             .getOrElse { emptyList() }
 
     /**
+     * 源数量上限（对照 RN `UserApiEditModal/ImportBtn.tsx`）。
+     *
+     * RN 写的是 `list.length > 20` 才拦，也就是能存到 21 个，和它自己那句
+     * 「最多只能同时存在 20 个源」差一个；原生按文案来，满 20 就不再收。
+     */
+    const val MAX_SOURCE_COUNT = 20
+
+    fun canImport(list: List<UserApiInfo>): Boolean = list.size < MAX_SOURCE_COUNT
+
+    /**
      * 导入一份脚本：头部注释必须齐全，否则按 RN 的 `addUserApi` 报「不是音源脚本」。
      *
      * @param randomSuffix RN 用 `Math.random()` 的前三位数字，测试里注入固定值

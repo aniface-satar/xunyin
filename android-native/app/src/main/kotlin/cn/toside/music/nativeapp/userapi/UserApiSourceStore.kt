@@ -121,6 +121,13 @@ class UserApiSourceStore(
         updateUrl: String? = null,
     ): Result<UserApiInfo> =
         mutex.withLock {
+            prepareLocked()
+            // 先查数量再验脚本：满了还去解析脚本，等于给用户一个「导入成功又立刻塞不进」的假象
+            if (!UserApiCatalog.canImport(list)) {
+                return@withLock Result.failure(
+                    IllegalStateException("最多只能同时存在 ${UserApiCatalog.MAX_SOURCE_COUNT} 个源，先移除一些旧的源腾出位置吧"),
+                )
+            }
             val info =
                 UserApiCatalog
                     .buildImportedInfo(
@@ -129,7 +136,6 @@ class UserApiSourceStore(
                         now = now(),
                         randomSuffix = randomSuffix(),
                     ).getOrElse { return@withLock Result.failure(it) }
-            prepareLocked()
             kv.setString(KEY_SCRIPT + info.id, script)
             persistLocked(list + info)
             Result.success(info)

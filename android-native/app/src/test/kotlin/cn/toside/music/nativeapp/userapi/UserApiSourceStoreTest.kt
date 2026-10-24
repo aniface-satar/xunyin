@@ -9,6 +9,7 @@ import cn.toside.music.core.userapi.BuiltinUpdateCatalog
 import cn.toside.music.core.userapi.RemovedBuiltinSource
 import cn.toside.music.core.userapi.ScriptHeaderInfo
 import cn.toside.music.core.userapi.ScriptResolver
+import cn.toside.music.core.userapi.UserApiCatalog
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -257,6 +258,29 @@ class UserApiSourceStoreTest {
             // 本地导入没有来源地址：不该被后台检查挑中
             assertEquals("", reopened.userUpdateUrl(info.id))
             assertTrue(reopened.updateUrlSource(info.id)?.updateUrl?.isEmpty() == true)
+        }
+
+    @Test
+    fun importingBeyondTheCapIsRefusedAndTheListStaysAsIs() =
+        runBlocking {
+            // store() 的后缀是写死的，连着导入会撞同一个 id，这里要一份自增的
+            var seq = 0
+            val store =
+                UserApiSourceStore(
+                    kv = InMemoryKvStore(),
+                    builtin = catalog(),
+                    removedSources = emptyList(),
+                    now = { 1_000L },
+                    randomSuffix = { (++seq).toString() },
+                )
+            // 随包两个 + 自定义 18 个 = 上限 20
+            repeat(UserApiCatalog.MAX_SOURCE_COUNT - 2) { store.importScript(script("我的源 $it", "0.1"), null).getOrThrow() }
+
+            val result = store.importScript(script("装不下的源", "0.1"), null)
+
+            assertTrue(result.isFailure)
+            assertEquals(UserApiCatalog.MAX_SOURCE_COUNT, store.list().size)
+            assertFalse(store.list().any { it.name == "装不下的源" })
         }
 
     // ---------- 启停 ----------

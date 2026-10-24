@@ -134,6 +134,19 @@ class UserApiCatalogTest {
         assertEquals("user_api_5", info.name)
     }
 
+    @Test
+    fun importCapStopsAtTheCountTheMessagePromises() {
+        val full = (0 until UserApiCatalog.MAX_SOURCE_COUNT).map { importedSource(it) }
+        // RN 写的是 list.length > 20 才拦，实际能存到 21 个，和它自己那句「最多 20 个」差一个；
+        // 原生按文案来，满 20 就不再收
+        assertTrue(UserApiCatalog.canImport(full.dropLast(1)))
+        assertFalse(UserApiCatalog.canImport(full))
+        assertFalse(UserApiCatalog.canImport(full + importedSource(99)))
+    }
+
+    private fun importedSource(index: Int): UserApiInfo =
+        UserApiCatalog.buildImportedInfo(script("源 $index", "1.0"), now = index.toLong(), randomSuffix = "1").getOrThrow()
+
     // ---------- 更新后刷新条目 ----------
 
     @Test

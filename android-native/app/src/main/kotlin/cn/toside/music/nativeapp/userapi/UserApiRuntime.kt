@@ -112,6 +112,15 @@ class UserApiRuntime(
     val logs: StateFlow<List<LogEntry>> = _logs.asStateFlow()
 
     /**
+     * 是否记下脚本自己打印的日志（对照 RN `global.lx.isEnableUserApiLog`，默认关、不持久化）。
+     *
+     * 只挡脚本自己 `console.*` 出来的那一路：一份源的日志能刷到上百行，
+     * 默认全记会把真正有用的更新结论挤掉。更新检查/回滚这类结论不受这个开关影响，
+     * RN 那边它们走的也是另一条日志通道。
+     */
+    var logsEnabled = false
+
+    /**
      * 日志出口：默认把每条日志记进 [logs]。
      *
      * [PlayerRuntime] 会把更新执行的日志转发到这里，所以「检查更新失败」这类结论
@@ -373,7 +382,8 @@ class UserApiRuntime(
                 val type = entry.text("type") ?: "log"
                 val message = entry.text("log").orEmpty()
                 Log.d("$TAG [${currentSourceId ?: "?"}]", "[$type]$message")
-                onLog?.invoke(type, message)
+                // 脚本自己刷的日志按开关收（RN 的 isEnableUserApiLog），logcat 那条照旧
+                if (logsEnabled) onLog?.invoke(type, message)
             }
             else -> Log.w(TAG, "unknown script action: $action")
         }
