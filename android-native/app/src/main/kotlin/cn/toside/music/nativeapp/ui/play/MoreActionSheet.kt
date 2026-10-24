@@ -84,7 +84,7 @@ fun MoreActionSheet(
     var ratePercent by remember { mutableFloatStateOf(storedRatePercent(runtime).toFloat()) }
     var fontTenths by remember { mutableFloatStateOf(fontSizeTenths.toFloat()) }
 
-    SheetScaffold(title = "播放设置", onDismiss = onDismiss) {
+    SheetScaffold(title = "播放器设置", onDismiss = onDismiss) {
         Item(
             onClick = { showTimeout = true },
             text = "定时关闭",
@@ -147,7 +147,7 @@ fun MoreActionSheet(
                     }
                 }
             },
-            text = "重置速率",
+            text = "重置",
             appearance = ButtonAppearance.Plain,
         )
         ItemSpacer()
@@ -171,12 +171,12 @@ fun MoreActionSheet(
         ItemSwitcher(
             state = translationShown,
             onChange = { onToggleTranslation() },
-            text = "显示歌词译文",
+            text = "显示歌词翻译（如果可用）",
         )
         ItemSwitcher(
             state = romaShown,
             onChange = { onToggleRoma() },
-            text = "显示罗马音",
+            text = "显示歌词罗马音（如果可用）",
         )
         ItemSpacer()
         // 只读展示当前音质；切换仍走设置页（Lane B 范围）
@@ -256,7 +256,8 @@ private fun TimeoutExitSheet(
                 when (val parsed = SleepTimer.parseMinutes(minutesText)) {
                     // RN:198 空输入直接 return，不提示、不开始计时
                     SleepTimer.MinutesInput.Empty -> Unit
-                    is SleepTimer.MinutesInput.Invalid -> toast(context, "输入错误")
+                    // 文案照抄 RN `input_error`（zh-cn.json:116，原文就带表情）
+                    is SleepTimer.MinutesInput.Invalid -> toast(context, "不要乱输好吧😡")
                     is SleepTimer.MinutesInput.TooLong ->
                         toast(context, "最多只能设置 ${SleepTimer.MAX_MINUTES} 分钟哦")
                     is SleepTimer.MinutesInput.Valid -> {
