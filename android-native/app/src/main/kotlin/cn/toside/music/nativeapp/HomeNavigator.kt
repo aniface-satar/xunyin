@@ -23,6 +23,12 @@ class HomeNavigator {
             val boardId: String,
             val title: String,
         ) : Route
+
+        data class SonglistDetail(
+            val source: String,
+            val id: String,
+            val title: String,
+        ) : Route
     }
 
     var currentTab by mutableStateOf(HomeTab.DISCOVER)
