@@ -1,5 +1,6 @@
 package cn.toside.music.nativeapp.userapi
 
+import cn.toside.music.core.setting.SettingsStore
 import cn.toside.music.core.userapi.ApplyUpdateResult
 import cn.toside.music.core.userapi.PreviewFailureReason
 import cn.toside.music.core.userapi.ScriptFetcher
@@ -57,6 +58,34 @@ data class UpdaterSettings(
         UpdateAlertSettings(
             autoUpdate = autoUpdate,
             allowShowUpdateAlert = allowShowUpdateAlert,
+        )
+}
+
+/**
+ * 设置层 → 更新设置（对照 RN `common.userApiUpdateCheck` / `common.userApiAutoUpdate` /
+ * `common.userApiAllowShowUpdateAlert` 三个键）。
+ *
+ * 认不出的频率串按「每天」处理：写坏的值不该让后台检查整个停掉。
+ */
+object UpdaterSettingsFrom {
+    const val KEY_CHECK_MODE = "common.userApiUpdateCheck"
+    const val KEY_AUTO_UPDATE = "common.userApiAutoUpdate"
+    const val KEY_ALLOW_ALERT = "common.userApiAllowShowUpdateAlert"
+
+    /** RN 设置页的四个串（setting_basic_user_api_update_check_*）。 */
+    fun checkMode(value: String?): UserApiUpdateCheckMode =
+        when (value) {
+            "off" -> UserApiUpdateCheckMode.OFF
+            "startup" -> UserApiUpdateCheckMode.STARTUP
+            "weekly" -> UserApiUpdateCheckMode.WEEKLY
+            else -> UserApiUpdateCheckMode.DAILY
+        }
+
+    fun of(settings: SettingsStore): UpdaterSettings =
+        UpdaterSettings(
+            checkMode = checkMode(settings.string(KEY_CHECK_MODE)),
+            autoUpdate = settings.bool(KEY_AUTO_UPDATE),
+            allowShowUpdateAlert = settings.bool(KEY_ALLOW_ALERT),
         )
 }
 
@@ -315,6 +344,9 @@ class UserApiUpdater(
                     message = applied.message,
                 )
             is ApplyUpdateResult.Updated -> {
+                // 清单条目跟着新脚本走（对照 RN updateUserApi）：名字/版本/脚本自己报的地址
+                // 都来自头部注释，用户在设置里填的 updateUrl 不动
+                store.refreshFromScript(id)
                 val updatedName = applied.header.name.ifEmpty { name }
                 // 不是正在用的源就不必重新加载：换过去的时候自然会用到新脚本
                 if (currentSourceId() != id) {
