@@ -3,7 +3,7 @@
 > 跟踪 `kotlin-saltui-migration-feasibility.md` §七 分批次方案的执行状态。
 > 每批一节，含完成项、遗留项、验收边界。
 
-## 批次状态速查（更新于 2026-10-25，Wave1 三车道已并入）
+## 批次状态速查（更新于 2026-10-25，Wave2 三车道已并入）
 
 | 批次 | 状态 | 备注 |
 |:--:|:--|:--|
@@ -12,24 +12,23 @@
 | B2 播放内核与原生桥 | 🔄 进行中 | 决策层+Media3 平台+crypto+预热+状态同步/通知栏命令+实例接线/失败重试/加载超时/音量均衡已完成（116 + 13 用例全绿）；**B2 代码项收口，剩余真机验收** |
 | B3 音源生态 QuickJS | 🔄 进行中 | QuickJS 桥 + 原生 HTTP + 内置源运行时 + 取链 + **更新流全链路（调度/解析/语法闸门/写入回滚/启动检查/updateAlert）** + **自定义源管理页/音源日志页/设置页补齐（Wave1 Lane B）** 已完成；代码项收口，剩余真机取链与更新流验收（见下方 B3 节） |
 | B4 全屏播控页 | 🔄 进行中 | 首版骨架 + **B4 剩余弹层（Wave1 Lane C：播放器设置面板 = 定时关闭/音量/倍速/歌词字号/译文/音译/当前音质只读，歌词设置以设置为唯一来源）** 已完成；分享卡与桌面歌词留 B6，本批剩余真机视觉与手感验收（见下方 B4 节） |
-| B5 主界面与列表 | 🔄 进行中 | 第一切片：ListStore→播放器接线、歌单页、首页列表入口；第二切片：酷我搜索→试听列表→播放；第三切片：新建/重命名/删除/清空列表、单曲移除、搜索结果加入指定歌单；第四切片：设置存储与设置页（音质/歌词开关/音量均衡/加歌位置）；第五切片：首页迷你播放条、歌单多选批量删除/移动、长按拖拽排序；第六切片：三一级 tab/独立详情栈/发现二级 tab 导航壳与搜索一级 tab 嵌入；第七切片：五源搜索核心与全源聚合规则（app 层尚未接线）；第八切片：五源搜索 app 接线（transport/并发/代次/缓存/源选择/翻页 UI）；第九切片：排行榜内容（五源榜单清单 + kw/kg 榜单详情 + 30 条本地分页 + 临时列表起播，tx/wy/mg 详情未接）；第十切片：排行榜 tx/wy/mg 三源榜单详情收口 + 三源接线 + 25 条用例（Wave1 Lane A，第九切片的「详情未接」到此关闭）。本批剩余：推荐内容与在线歌单数据、真机验收 |
-| B6 长尾屏幕与桌面歌词 | ⬜ 未开始 | — |
+| B5 主界面与列表 | 🔄 进行中 | 第一切片：ListStore→播放器接线、歌单页、首页列表入口；第二切片：酷我搜索→试听列表→播放；第三切片：新建/重命名/删除/清空列表、单曲移除、搜索结果加入指定歌单；第四切片：设置存储与设置页（音质/歌词开关/音量均衡/加歌位置）；第五切片：首页迷你播放条、歌单多选批量删除/移动、长按拖拽排序；第六切片：三一级 tab/独立详情栈/发现二级 tab 导航壳与搜索一级 tab 嵌入；第七切片：五源搜索核心与全源聚合规则（app 层尚未接线）；第八切片：五源搜索 app 接线（transport/并发/代次/缓存/源选择/翻页 UI）；第九切片：排行榜内容（五源榜单清单 + kw/kg 榜单详情 + 30 条本地分页 + 临时列表起播，tx/wy/mg 详情未接）；第十切片：排行榜 tx/wy/mg 三源榜单详情收口 + 三源接线 + 25 条用例（Wave1 Lane A，第九切片的「详情未接」到此关闭）；第十一切片：在线歌单五源（标签/列表/详情 + 30 条展示分页）与发现页推荐官方内容通道（推荐歌单/新歌速递，Wave2 Lane A）；第十二切片：歌单详情排序 9 档 + 自定义排序（Wave2 Lane C）。本批剩余：个性化推荐引擎（bandit/画像/音频相似）、列表级菜单 5 项、真机验收 |
+| B6 长尾屏幕与桌面歌词 | 🔄 进行中 | **桌面歌词浮窗 MVP（Wave2 Lane B）**：悬浮窗服务 + 逐行滚动（150ms 提前量）+ 更多菜单开关 + 悬浮窗权限流程 + 位置持久化（整数百分比）已完成；剩余冷启动自动恢复、完整歌词设置页（宽度/行数/颜色等）、锁定态实时切换、OEM 保活评估与真机验收（见下方 B6 节） |
 | B7 收官 | ⬜ 未开始 | — |
 
 **验证基线**：`cd android-native && gradlew.bat ktlintCheck test assembleDebug`
 （Git Bash 下用 `GRADLE_USER_HOME=E:/GradleHome ./gradlew ...`）
-→ 当前应为 `:core` 384 + `:app` 62（合计 **446**）全绿，APK 27,602,811 B
-（QuickJS 四 ABI + 9 个内置源脚本 + Wave1 三车道成果）。
-> 数字取自主仓库合并提交 `63e4715`，用 `--rerun-tasks --no-build-cache` 强制真跑
-> （61 actionable tasks: 61 executed，1m07s），不是缓存复用。
-> 2026-10-25 更正：此前记录的 APK 27,589,564 B 是过期值——波前快照 `51f53b6` 实测为
-> 27,455,355 B；上一被叫停会话留下的半成品 `TxLeaderboard.kt`/`WyLeaderboard.kt`/`WyWeapi.kt`
-> （两处 `size ?: JsonNull` 编译错误已在波前修复）的**三源接线与测试**已由 Wave1 Lane A
-> 收口并入，本行数字随之更新。
-> 三条 lane 各自的闸门数（便于回溯定位是谁的改动）：Lane A core 334 + app 19（新增 25：
-> Tx 7 / Wy 7 / WyWeapi 5 / Mg 6）；Lane B core 333 + app 57（新增 core 24 + app 38）；
-> Lane C core 335 + app 24（新增 31：SleepTimer 22 / PlaySheetSettingKeys 4 / PlaySettingSheet 5）。
-> 三车道触碰路径互不相交，合并后测试数正好是各新增项相加，无删除、无覆盖。
+→ 当前应为 `:core` 470 + `:app` 68（合计 **538**）全绿，APK **28,049,076 B**
+（sha256 `cd39d70a7cc5b8165fa1bbd4c60881a74828f6e4be89cfa37274dd30971c68da`；
+QuickJS 四 ABI + 9 个内置源脚本 + Wave1/Wave2 六条车道成果）。
+> 数字取自主仓库合并提交 `3a83b8c`（Wave2 三车道全部并入后的最终闸门：60 秒内完成，
+> BUILD SUCCESSFUL，failures/errors/skipped 全 0）。
+> Wave2 各 lane 的闸门数（便于回溯定位是谁的改动）：Lane A core 433 + app 68（新增 55：
+> core 49 + app 6）；Lane B core 405 + app 62（新增 core 21：桌面歌词 line/color/键契约）；
+> Lane C core 400 + app 62（新增 core 16：MusicSort 9 档 + Collator 差异锁定）。
+> 可加性核对：core `384 + 49(A) + 21(B) + 16(C) = 470`、app `62 + 6(A) = 68`，
+> 与实测一致，说明合并**没有丢测试、没有互相覆盖**。
+> Wave1 基线（历史）：合并提交 `63e4715`，core 384 + app 62 = 446，APK 27,602,811 B。
 ktlint 已升级到 **14.2.0**（12.2.0 在 AGP 9 内建 Kotlin 下只检查 `.kts`，app 的 Kotlin 源码此前实际未被 lint）；
 全工程统一为 ktlint official 4 空格缩进（`android-native/.editorconfig`）。
 
@@ -401,10 +400,79 @@ ktlint 已升级到 **14.2.0**（12.2.0 在 AGP 9 内建 Kotlin 下只检查 `.k
 > 加解密金标不依赖该接口。tx/mg fixture 为本机公开接口真实响应原样落盘。
 > Lane A 开工首跑带 `--rerun-tasks` 曾出现一次瞬时红（与并行构建争用），干净重跑即全绿。
 
+### 已完成（B5 第十一切片：在线歌单五源与发现页推荐内容通道，Wave2 Lane A，2026-10-25）
+
+- [x] **五源歌单源接口**（`core/.../songlist/`，新增 9 文件）：`SonglistModels.kt` 定义
+      传输中立 `SonglistRequest`/`SonglistSort`/`SonglistTag(s)`/`PlaylistItem`/
+      `SonglistPage`/`SonglistDetail` 与 `SonglistSource` 接口；`SonglistUtils.kt` 移植
+      RN `formatPlayCount/sizeFormate/formatPlayTime/dateFormat`；`KwSonglist/KgSonglist/
+      TxSonglist/WySonglist/MgSonglist` 各自实现 `getTags/getList/getDetail`
+- [x] **五源取数与签名链**：kw wbd AES、wy linuxapi（实测修正，见下表）、kg 网关固定 key
+      + HTML `global.data`、tx `uniform_get_Dissinfo` POST、mg `querycontentbyId`；
+      `normalizeId` 对不支持的入口**显式抛错**，不请求错误 URL
+- [x] **30 条展示分页**（`SonglistDetailPager.kt`）：源页切成 30 条展示页、尾段 tempList
+      与下一源页拼满、缓存与 isRefresh、`getDetailAll` 拉全、按 id 去重；**新增跳页补齐**
+      （从最近的已加载展示页续拉），修正 RN 只在顺序翻页时成立的记账缺口
+- [x] **推荐冷启动选择规则**（`RecommendSelection.kt` + 10 用例）：新歌榜优先、组内取名字最短；
+      最热排序按 `name+tid` 匹配；标签扁平化与轮换；RN 的 `Math.random` 改为**可复现轮换**
+- [x] **app 装配层**（`data/SonglistRuntime.kt`）：五源注册、tags/list 缓存、每歌单一个 Pager、
+      `reachedEnd` 的 `limit*page` 兜底；`RecommendRuntime` 组织「推荐歌单 6 张 + 新歌速递 3 首」
+- [x] **UI**：发现页「歌单」面板（源/排序/标签/分页列表）、歌单详情页（信息头 + 30 条分页 +
+      播放全部 + 后台补全）、发现页「推荐」面板（两个分区各自「换一批」）；路由
+      `Route.SonglistDetail(source,id,title)` 进现有详情栈
+- [x] **起播复用临时列表链路**：`listMusicOverwrite(TEMP) → playListById(TEMP) →
+      handleListMusicsUpdated → 进播放页 → 后台 getListDetailAll 补全`，未新建第二套播放入口
+- [x] **新增用例 55 条**（core 49 + app 6），fixture 27 个（26 响应 + linuxapi 金标；
+      仅 kw child[0]、kg recommend、wy trackIds 三处为合成数据，已在测试注释标注）
+- [ ] 真机验收（清单见文末 Wave2 集成记录）
+
+### B5 语义修正记录（在线歌单五源与推荐冷启动，Wave2 Lane A 对照 RN 源码与线上实测）
+
+| 主题 | RN 实证 / 线上实测 | Kotlin 落地 |
+|:--|:--|:--|
+| wy linuxapi 加密 | RN 用 ECB/NoPadding 加密 **Base64(JSON) 文本**；实测同接口原始 JSON 字节 + PKCS7 → code 200，`Base64(JSON)` + PKCS7 → code 400 | 原始 JSON 字节 + PKCS7（JVM 侧 `PKCS5Padding` 拼写），金标 fixture 固化 |
+| tx 歌单详情 | GET `musicu.fcg` 被 `subcode 4000` 拒；改 POST `uniform_get_Dissinfo` 后可用 | POST 表单实现；两种响应都落盘留证 |
+| kg 歌单详情 | HTML `global.data` 有 30 行，网关只回 26 条有效 `audio_info`；RN 直接 map 会抛异常 | 跳过不可播条目，`total = list.size`，测试注释记录差异 |
+| Java 正则差异 | kg `global = {…};` 在 JS 无碍 | 裸 `{` 在 Java `Pattern` 抛 `Illegal repetition`，已转义并注释 |
+| kw 线上数据怪癖 | `rcm` 的 total=1753；tag 10000 请求 rn=36 实际只回 35 条；详情 uname 形如 uid | 分页仍按 total；uname 原样透传 |
+| wy 音质尺寸 | flac 尺寸取 `sq.size`；缺字段不补零 | 格式化为 `xx.xx MiB`，缺失写 `JsonNull`；`###` cookie 归一为 `MUSIC_U=<token>` |
+| 详情分页 | RN `getListDetailLimit` 只在顺序翻页时成立，跳页会丢 `sourcePage` 记账 | `SonglistDetailPager` 从最近已加载展示页续拉补齐；拼接页 sourcePage 记当前源页 |
+| 列表 total 兜底 | RN `songlistActions.setList` 在翻页空响应/无 total 时用 `limit * page` | `SonglistRuntime.reachedEnd` 同规则，app 单测覆盖 |
+| 推荐冷启动 | RN `pickPlaylistTag` 无画像时等价 `ranked[rotation % size]`；`pickNewSongBoard` 新歌组优先且组内名字最短；源顺序用 `shuffledSources + Math.random` | 同规则；随机改**轮次轮换**（可复现），代价是同一进程内顺序固定 |
+| 路由形状 | RN 用 `source__id` 复合键 | `PlaylistItem.id` 是源本地 id（kw `digest-8__x`、kg `id_…`），路由显式带 `source`，避免拆分歧义 |
+
+### 已完成（B5 第十二切片：列表排序 9 档 + 自定义排序，Wave2 Lane C，2026-10-25）
+
+- [x] **排序规则**（`core/.../list/MusicSort.kt` + 16 用例）：9 档 = 标题 / 专辑（音轨）/
+      时长（短→长）/ 时长（长→短）/ 添加时间 / 添加时间降序 / 歌手 / 年份 / 播放次数，
+      另加「自定义排序」；字符串比较用 `java.text.Collator(zh-CN)`（Android 委托 ICU，
+      与 RN `localeCompare` 同源），`localeId` 做 `_`→`-` 归一化
+- [x] **UI 接入**（`ui/list/ListDetailPage.kt`）：排序弹窗 10 项、选中档位高亮；
+      `customSortMode` 与多选 `editMode` 互斥；多选态排序按钮灰显不可点
+- [x] **落库复用既有能力**：整表重排直接调 `ListStore.listMusicUpdatePosition(listId, 0, allIds)`，
+      未新增 ListStore 方法
+- [x] **差异锁定用例**：一致用例断言 8 组；JVM/JS 已知 6 组反向差异单独锁成特征用例，
+      换比较实现时该用例失败 → 必须同步复核
+- [ ] 真机验收：弹窗 10 项滚动、拖拽手感、排序后随机队列同步、Collator 边角与 RN 比对
+
+### B5 语义修正记录（列表排序，Wave2 Lane C）
+
+| 主题 | RN 实证 | Kotlin 落地 |
+|:--|:--|:--|
+| 字符串比较 | RN 用 `localeCompare(b,'zh-CN')`；Android `java.text.Collator` 委托 ICU，同源 | 用 Collator，不用 `String.compareTo` |
+| 已知不一致 | JVM 实测 6 组反向：阿/b、a-b/ab、ab/"a b"、é/e、「，」/a、阿/啊 | 一致组断言；差异组锁成特征用例，**真机 ICU 未复核** |
+| 边界 | null 永远在前；排序稳定；`parseInt` 前缀语义（NaN 视同相等） | 同；非法时长片段按 0 |
+| 上次档位 | RN 模块级变量，跨歌单/页面记忆 | 页面级 `remember`：切歌单保留、退出详情页重置 |
+| 添加时间/播放次数 | RN 读 `add_time`/`play_count` | 当前无读写者 → 0 兜底，对现有数据是**稳定空操作** |
+| 排序按钮文案 | RN「排序歌曲」 | 操作条还承载重命名/清空/删除，用「排序」防小屏溢出；10 项档位文案与 zh-cn.json 逐字一致 |
+
 ### 待办（B5 剩余）
 
-- [ ] 默认列表的「随机播放/收藏全部」等批量操作与排序菜单
-- [ ] 推荐算法与内容、在线歌单数据（第六切片仅提供导航/入口空态壳）
+- [ ] 默认列表的「随机播放/收藏全部」等批量操作（排序菜单已由 Wave2 Lane C 接入歌单详情页；
+      列表级菜单另缺 duplicateMusic / 本地文件 / 同步 / 导入 / 导出 5 项）
+- [ ] 个性化推荐引擎：电台/探索、画像重排、不感兴趣、onboarding、音频相似
+      （在线歌单与冷启动官方内容通道已由 Wave2 Lane A 完成；后续立项输入见文末
+      「Wave3 推荐立项输入：引擎解耦评估」）
 - [ ] 设置页继续接：~~自定义源管理（B3）、缓存清理与缓存大小、倍速/音量偏好~~
       → **已由 Wave1 Lane B 完成**（自定义源管理页 + 音源日志页 + 缓存统计清理 +
       电池优化/通知权限 + 音量/倍速滑杆 + 记住播放进度开关）；
@@ -416,6 +484,56 @@ ktlint 已升级到 **14.2.0**（12.2.0 在 AGP 9 内建 Kotlin 下只检查 `.k
       换源即时切换
 - [ ] **排行榜真机验收**（第九+第十切片代码完成）：kw 加密链路、kg 取数、分页、起播；
       另加 tx 期号跨天重抓、wy weapi **服务端是否接受**（JVM 侧只能证形状）、mg 整榜 50 条
+
+## B6 长尾屏幕与桌面歌词
+
+**状态：进行中**（桌面歌词浮窗 MVP 由 Wave2 Lane B 于 2026-10-25 完成并入；冷启动恢复、
+完整设置页、锁定态实时切换、OEM 保活与真机验收仍缺）
+
+### 已完成（B6 首版：桌面歌词浮窗 MVP，Wave2 Lane B，2026-10-25）
+
+- [x] **core 纯规则**：`DesktopLyricLine.kt`（逐行提前量与行集合，11 用例）、
+      `DesktopLyricColor.kt`（rgba/#hex 解析，5 用例）、`DesktopLyricSettingKeysTest`（5 用例，
+      默认键契约）；合计 core +21
+- [x] **悬浮窗服务**（`app/.../lyric/DesktopLyricService.kt` + `DesktopLyricOverlay/Row`）：
+      `TYPE_APPLICATION_OVERLAY` 窗口、宽 `maxWidth*widthPercent/100`、高
+      `fontMetrics.height*maxLineNum` 封顶 `maxHeight-100`、百分比定位后夹在屏内（负坐标归 0）
+- [x] **逐行滚动**：`OFFSET_MS = 150`（对齐桌面 RN；播放页 Kotlin 仍是 100，未动）；
+      当前行 + 扩展行，单行模式只显示当前行；纯空白扩展行跳过
+- [x] **开关与权限流程**：更多菜单新增「桌面歌词」行；未授权先 toast 再跳
+      `ACTION_MANAGE_OVERLAY_PERMISSION`，返回后按系统事实起服务或回滚开关
+- [x] **位置持久化**：`position.x/y` 统一写四舍五入后的**整数百分比**（见下表类型强转差异）
+- [x] **Manifest**：新增 `SYSTEM_ALERT_WINDOW` 与 `DesktopLyricService`；
+      `screenOrientation="portrait"` 未动
+- [ ] 真机验收（清单见文末 Wave2 集成记录）
+
+### B6 语义修正记录（桌面歌词，Wave2 Lane B 对照 RN 源码实证）
+
+| 主题 | RN 实证 | Kotlin 落地 |
+|:--|:--|:--|
+| 逐行提前量 | 桌面 `LyricPlayer.offset = 150`；Kotlin 播放页 `LyricParser.DEFAULT_OFFSET_MS = 100` | 桌面独立 `OFFSET_MS = 150`；单测锁 850ms 停第一行、851ms 切第二行 |
+| 显示哪些行 | `LyricView.setLyric`：当前行 + 扩展行，`maxLineNum>1` 且非单行时最多 `maxLineNum` 行 | 同规则；RN `Lyric.java` 只滤空串，Kotlin 连纯空白扩展行也跳过；`maxLineNum<=0` 仍显示当前行一次 |
+| 翻译/罗马音开关 | `Lyric.java:193-196` 扩展行受 `isShowTranslation`/`isShowRoma` 控制，并跟随播放页开关 | MVP 无桌面独立开关，直接用 `ParsedLyric.extendedLyrics`（与播放页 `ui/play/LyricView.kt:92` 一致）；差异记待办 |
+| 窗口几何 | 宽 `maxWidth*widthPercent/100`；高 `fontMetrics.height*maxLineNum`，封顶 `maxHeight-100`；百分比定位后夹在屏内 | 像素级照搬；RN 窗口大于屏幕时会出现负坐标，Kotlin 统一归 0 贴左上 |
+| 颜色解析 | `LyricView.parseColor`：先匹配 `rgba?()`（alpha 0-1 小数），否则 `Color.parseColor`，失败回退黑 | `DesktopLyricColor` 移植；RN 正则只允许逗号后空格，`rgb( 7 , 197 , 86 )` 会回退黑（已写成用例）；支持 #RGB/#ARGB/#RRGGBB/#AARRGGBB |
+| 位置持久化 | `mergeSetting` 原样复制 JS 原始值，RN 写小数百分比 | **关键差异**：`SettingsStore.merge` 按默认值类型强转，`position.x/y` 默认 Int 0，小数会被丢弃成 0 → Kotlin 统一写四舍五入整数百分比；RN 旧版小数在 Kotlin 读侧可能变 0（契约测试固化）。`SettingsStore` 属禁触区，未改 |
+| 权限流程 | `DesktopLyricEnable.tsx` 先弹确认框，再跳系统悬浮窗页；回来自检，失败开关落回 false | MVP 直接 toast 后跳系统页；`ON_RESUME` 按系统事实起服务或回滚，未授予时提示并关闭 |
+| 冷启动恢复 | `src/core/init/player/lyric.ts:33-35` 启动时若 enable=true 自动恢复，异常落 false | 无 Application 级钩子（不在范围）：`sync()` 只在「更多」弹层里的行出现时执行；进程被杀后需再开一次弹层才恢复 |
+| 锁定态 | `isLock`：窗口不可触摸、背景透明、Android 12+ 透明度 0.8 | 同左；MVP 只读取设置，不提供浮窗内锁定/解锁手势，运行中改 `isLock` 需重开服务 |
+| 单行模式 / 服务形态 | `LyricTextView` 横向滚动；普通 Service + 悬浮窗，无前台通知 | MVP 用 marquee 截断；同为普通 Service，未用前台服务，内存紧张时可能被回收 |
+
+### 待办（B6 剩余）
+
+- [ ] 冷启动自动恢复：在应用初始化处调用一次 `DesktopLyricController.get(context).sync()`
+      （入口归属需集成会话/后续波次确认）
+- [ ] 桌面歌词设置页：锁定、宽度、最大行数、字号、透明度、播放/未播放/阴影颜色、文字位置；
+      翻译/罗马音独立开关
+- [ ] 锁定态切换与服务内实时接收设置变更（当前仅在服务启动后 `refreshConfig` 一次）
+- [ ] 单行模式横向滚动（对齐 RN `LyricTextView`，MVP 是 marquee 截断）
+- [ ] 前台服务 / OEM 保活评估；`desktopLyric.style.lyricUnplayColor` 在 MVP 里未被渲染使用
+- [ ] 真机验收（MIUI/HyperOS 优先，清单见文末 Wave2 集成记录）
+- [ ] 若要与 RN 小数百分比完全互通：`SettingsStore` 支持 Double 读取，或把这组键改成
+      字符串/放大整数（本波未动禁触文件）
 
 ## B1 数据与领域层移植
 
@@ -733,7 +851,7 @@ Media3 ExoPlayer + MediaSessionService、rn-track-player 定制对照、
 **验证基线**（每次续接后先跑）：
 ```bash
 cd android-native
-gradlew.bat ktlintCheck test assembleDebug   # 当前应为 :core 384 + :app 62 全绿，APK 27,602,811 B
+gradlew.bat ktlintCheck test assembleDebug   # 当前应为 :core 470 + :app 68 全绿，APK 28,049,076 B
 ```
 
 **全局待办提醒**：真机装包抽查（B0/B2 验收的硬性项，需用户配合）、
@@ -972,3 +1090,107 @@ musicSdk → Ktor、theme 表生成器双目标输出。Redux slice 边界 = Vie
   B4 14 行），细节仍以 lane 报告为准。
 - **禁触区要显式列出「已知缺口」**：Lane C 因为禁触 `player/` 只能做近似实现，
   并把 RN 守卫行号完整抄进报告——这条做法应在后续波次的任务书里固化为要求。
+
+## Wave2 集成记录（2026-10-25）
+
+**结论：三条车道全部按 RULES 走完收尾三步，按 C→B→A 顺序并入 `main`，逐条跑闸门全绿，零冲突。**
+
+| 车道 | 任务 | lane 提交 | 各自闸门数 |
+|:--|:--|:--|:--|
+| Lane C | B5 列表排序 9 档 + 自定义排序 | `9ffc40f`（core）/ `a14326d`（UI）/ `832e81e`（差异用例）+ `40a1a96` 报告 | core 400 + app 62 |
+| Lane B | B6 桌面歌词浮窗 MVP | `4458f3c` / `ae9ba90` / `1f3f3cc` / `6010420` 成果 + `897152f` 报告 | core 405 + app 62 |
+| Lane A | B5 在线歌单五源 + 发现页推荐内容通道 | `7810b43` / `dc737cf` / `0249e1d` 成果 + `d506e34` 报告 | core 433 + app 68 |
+
+- **波前快照**：`c817af7`（Wave1 合并后任务书修订，core 384 + app 62 = 446）。
+- **合并提交**：`d25767c`（laneC）→ `5a15cd3`（laneB）→ `3a83b8c`（laneA），
+  均为 `--no-ff`，保留 lane 历史，未 squash。
+- **逐条闸门**：并完 C `core 400 + app 62 = 462`；并完 B `core 421 + app 62 = 483`；
+  并完 A `core 470 + app 68 = **538**`。三次 `ktlintCheck test assembleDebug` 全绿，
+  failures/errors/skipped 全 0；最终 APK **28,049,076 B**，
+  sha256 `cd39d70a7cc5b8165fa1bbd4c60881a74828f6e4be89cfa37274dd30971c68da`。
+- **冲突情况：零，无需修复点。** 三条车道触碰路径互不相交（A 在 `core/.../songlist/` +
+  `app/.../data/SonglistRuntime.kt` + `ui/songlist/` + 发现页分支，B 在 `app/.../lyric/` +
+  `MoreActionSheet.kt` 一行 + Manifest，C 在 `core/.../list/MusicSort.kt` + `ListDetailPage.kt`）。
+  任务书预警的「B 更多菜单行 vs A ui/songlist」未发生交集；`DefaultSetting.kt` 本波
+  没有任何车道修改（B 改为 `DesktopLyricSettingKeysTest` 键契约）。
+- **可加性核对**：core `384 + 16(C) + 21(B) + 49(A) = 470`、app `62 + 6(A) = 68`，
+  与实测一致，无测试丢失或覆盖。
+- **集成会话的判断**：
+  1. 未写业务代码、未 push（用户未要求）；三次合并后 `android-native/` 工作区干净。
+  2. RN 侧未提交改动全程未碰（未 add、未 stash、未还原），`git status` 中的 RN 路径
+     改动数量与合并前一致；本次只提交 `docs/`。
+  3. 车道报告提到的既有用例 `PlaybackCoordinatorTest.loadFailureSchedulesNextTrack`
+     偶发失败（B、C 各自并行负载下各见一次，单跑即过）在本次三次集成闸门中**未复现**；
+     该用例属 `core/.../player/`，三条车道均未触碰。留观，若主仓库再复现按 flaky 定位。
+  4. Lane A 报告建议的 RN 侧修正（linuxapi NoPadding+Base64、kg 缺 `audio_info` 抛异常、
+     `getListDetailLimit` 跳页丢缓存）属 RN 只读参照，**不在集成范围**，已登记到遗留。
+
+### 真机验收清单汇总（Wave2，16 条）
+
+**在线歌单与推荐通道（Lane A，6 条）**
+
+1. 发现→歌单：五源各切一次；排序横滑可点；标签横滑（全部/热门/分组）切换后列表回到第 1 页。
+2. 列表滚动到底触发下一页；换源后排序回首档、标签回「全部」；断网显示错误与重试。
+3. 点歌单进详情：名称/作者/播放量/简介显示；30 条/页滚动加载；底部出现「到底啦~」。
+4. 详情「播放全部」进播放页；队列最终长度等于整单；点第 N 首从该首起播；返回逐级退。
+5. 发现→推荐：推荐歌单 6 张、新歌速递 3 首；「换一批」两次应换源/分类；点卡片进详情、
+   点新歌起播（临时列表链路）。
+6. 竖屏全程；三 tab 详情栈互不干扰（Wave1 行为不回归）；记录每源首屏条数与可播性。
+
+**桌面歌词浮窗（Lane B，7 条，MIUI/HyperOS 优先）**
+
+7. 「更多」里开启 → 跳系统悬浮窗授权页，授权返回后浮窗立即出现；拒绝授权返回后开关回 false 且有提示。
+8. 播放/暂停/切歌时歌词按 150ms 提前量逐行切换，无闪烁/重复行。
+9. 拖动浮窗到任意位置，松手后杀进程再开、位置保持（整数百分比）。
+10. 开启 `isLock` 后浮窗不可触摸、背景透明、Android 12+ 透明度 0.8；关闭后可继续拖动。
+11. 关闭开关立即消失，`desktopLyric.enable` 持久化为 false。
+12. 息屏/锁屏后音乐继续时浮窗与歌词是否继续刷新；应用退到后台/被清理后的表现。
+13. 单行模式 marquee 与多行+翻译显示；小窗/分屏/旋转锁定的竖屏下窗口不越界。
+
+**列表排序（Lane C，3 条）**
+
+14. 排序弹窗 10 项可滚动、选中档位高亮、文案与 RN 一致；排序后列表与随机队列同步。
+15. 自定义排序：拖拽手感、松手落库、重进页面顺序保持；与多选互斥（多选态排序灰显）。
+16. Collator 边角抽 2-3 例与 RN 比对（「阿 vs b」「é vs e」「a-b vs ab」），
+    确认中文/拉丁混排的个别次序差异可接受。
+
+### 遗留问题（Wave3 候选）
+
+1. **个性化推荐引擎未移植**：电台/探索、画像重排、不感兴趣、onboarding、音频相似；
+   立项输入见下一节。本波只做冷启动官方内容通道，未造假数据。
+2. **歌单搜索未做**：搜索 tab 的 songlist 类型（RN `core/search/songlist.ts`）。
+3. **歌单详情未移植**：RN「添加到我的歌单」「多选」「更多菜单（下载/分享/相似歌曲）」；
+   封面图未显示（原生壳暂无联网图片加载器，本波未改 gradle）。
+4. **未接的 id/入口**：kw digest-13（专辑歌单）、kw 用户歌单/BD；kg 纯数字/酷狗码、
+   用户歌单（infSign）；tx playsquare 与短分享链接；wy 单段 `playlist/<id>` 链接。
+   Kotlin `normalizeId` 一律显式抛错（界面显示加载失败），不会请求错误 URL。
+5. **列表级菜单缺 5 项**：duplicateMusic / 本地文件 / 同步 / 导入 / 导出；首页列表也缺
+   RN 的长按菜单入口。排序「上次档位」目前是页面级记忆（RN 是模块级跨页记忆）。
+6. **排序的两个空操作档位**：`add_time_up/down` 与 `play_count` 因无读写者按 0 兜底，
+   待 data.ts 等价层落地后自动生效。
+7. **桌面歌词后续**：冷启动自动恢复、完整设置页、翻译/罗马音独立开关、锁定态实时切换、
+   单行横向滚动、FGS/OEM 保活；`SettingsStore` 的数值类型若要与 RN 小数百分比互通需改造。
+8. **既有 flaky**：`PlaybackCoordinatorTest.loadFailureSchedulesNextTrack`（并行负载下偶发，
+   本波未触碰该包）；再复现时优先排查时序假设。
+
+## Wave3 推荐立项输入：引擎解耦评估（Wave2 Lane A）
+
+> 本节是 Lane A 报告的独立成节版本，供 Wave3 推荐项目立项直接引用。
+> 结论：**内容通道与画像引擎可以分层**——先做「纯规则 + 存储」的画像重排（M1），
+> 再接 bandit 全家桶（M2），音频相似与 MMR 最后做（M3）。
+
+- **本波已落地的可解耦通道**：官方分类目录（`getTags`）+ 最热排序挑分类 + 取第一页；
+  新歌速递（静态榜单表挑新歌/飙升榜 + 榜单第一页）。两通道只需五源 songList/leaderboard
+  接口，不读写画像。
+- **Wave 3-M1（建议先做）**：`tabSections` 的 `rankPlaylistTags / rankPlaylistsByProfile /
+  rankTracksByProfile` 输入是普通 Map，边界清楚；依赖约 7 个文件：`trackKey`、`artistPrior`、
+  `tokenFeedback`、`feedback`（仅 themeNetWeight）、`playlistIndex`、`language`（判定字段）、
+  `stateSchema/storage`。先做「推荐歌单/新歌按画像重排」，不接 bandit，仍可用 JVM 单测覆盖。
+- **Wave 3-M2（必须连引擎）**：电台/探索 = `bandit + candidate/candidatePool/queue/
+  requestPolicy/sessionHealth/listening` 全家桶。
+- **Wave 3-M3（最后做，需 native 方案评审）**：音频相似（`audioEmbedding/melSpectrogram/
+  nativeAudio`）与 MMR（`diversity/similarity`）。
+- **语种配额**（`languageQuota/language`）只影响电台补货，不影响当前内容通道；五源逐曲
+  语种字段：kg/tx 有 L1，kw/wy/mg 只能靠分类 L2。
+- **数据底线**：本波保持空态、绝不造假；电台卡片、探索卡片、画像重排、「不感兴趣」、
+  onboarding、「更多」分页均未移植，取不到内容时显示失败/空态文案。
