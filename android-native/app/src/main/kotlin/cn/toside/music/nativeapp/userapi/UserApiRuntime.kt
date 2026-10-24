@@ -4,8 +4,13 @@ import android.content.Context
 import android.util.Log
 import cn.toside.music.core.music.PlayQuality
 import cn.toside.music.core.userapi.UpdateExecutor
+import cn.toside.music.core.userapi.UserApiInfo
 import cn.toside.music.nativeapp.data.DataStoreKvStore
+import cn.toside.music.nativeapp.data.SettingsRuntime
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -42,21 +47,38 @@ class UserApiRuntime(
         const val TAG = "UserApi"
         const val INIT_TIMEOUT_MS = 15_000L
         const val REQUEST_TIMEOUT_MS = 20_000L
+
+        /** 日志页最多留这么多条（最新在前）。 */
+        const val LOG_LIMIT = 200
     }
 
     private val appContext = context.applicationContext
     private val repository = BuiltinSourceRepository(appContext)
 
-    /** 脚本落盘层：内置脚本来自 assets，更新后的脚本与备份写在 KvStore。 */
+    /** 设置层（与设置页同一个进程级单例）：当前源 id 与音源更新三键都从这里读。 */
+    private val settings = SettingsRuntime.get(appContext)
+
+    /** 脚本落盘层：内置脚本来自 assets，用户导入的源、更新后的脚本与备份写在 KvStore。 */
     val store = UserApiSourceStore(DataStoreKvStore(appContext), repository)
 
-    /** 设置层接线前先用 RN defaultSetting 的默认值（自动更新开、弹窗关、每天检查）。 */
-    var updaterSettings: () -> UpdaterSettings = { UpdaterSettings() }
+    /** 该加载哪个源（设置里的当前源不在了就换一个还能用的）。 */
+    private val selector = UserApiSourceSelector(store, settings.store)
+
+    /**
+     * 更新检查的设置 —— 来自设置层那三个键（对照 RN `common.userApiUpdateCheck` /
+     * `common.userApiAutoUpdate` / `common.userApiAllowShowUpdateAlert`）。
+     *
+     * 设置还没从存储合并时读到的就是默认表里的值（每天检查、自动更新开、弹窗关）。
+     */
+    var updaterSettings: () -> UpdaterSettings = { UpdaterSettingsFrom.of(settings.store) }
+
+    /** 取脚本正文（更新检查与「按地址导入」共用）。 */
+    private val fetcher = NativeScriptFetcher()
 
     val updater =
         UserApiUpdater(
             store = store,
-            fetcher = NativeScriptFetcher(),
+            fetcher = fetcher,
             syntaxChecker = QuickJsSyntaxChecker(),
             currentSourceId = { currentSourceId },
             reloadSource = { id, verify -> setSource(id, verify).isSuccess },
@@ -74,10 +96,41 @@ class UserApiRuntime(
     var currentSourceId: String? = null
         private set
 
-    var onLog: ((type: String, message: String) -> Unit)? = null
+    /**
+     * 音源日志（脚本自己打的日志 + 更新检查结果）——设置里的「音源日志」页读这份。
+     *
+     * 只留在内存里，最新一条在前，超过 [LOG_LIMIT] 条就丢掉最旧的：
+     * 这份日志是排查用的，不值得为它写存储。
+     */
+    data class LogEntry(
+        val time: Long,
+        val type: String,
+        val message: String,
+    )
+
+    private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())
+    val logs: StateFlow<List<LogEntry>> = _logs.asStateFlow()
+
+    /**
+     * 日志出口：默认把每条日志记进 [logs]。
+     *
+     * [PlayerRuntime] 会把更新执行的日志转发到这里，所以「检查更新失败」这类结论
+     * 也能在日志页看到；外部接管这个钩子时，日志页就只剩脚本自己打的日志。
+     */
+    var onLog: ((type: String, message: String) -> Unit)? = { type, message ->
+        val time = System.currentTimeMillis()
+        _logs.value = (listOf(LogEntry(time, type, message)) + _logs.value).take(LOG_LIMIT)
+    }
+
     var onUpdateAlert: ((name: String, log: String, updateUrl: String) -> Unit)? = null
 
-    fun availableSources(): List<BuiltinSource> = store.list()
+    /** 清空日志页（RN 没有这项，纯为本机的排查便利）。 */
+    fun clearLogs() {
+        _logs.value = emptyList()
+    }
+
+    /** 源清单（内置 + 用户导入），设置里的音源管理页用。 */
+    suspend fun sources(): List<UserApiInfo> = store.list()
 
     /** 切源：换脚本就整只换引擎（与 RN 一致）。失败时抛异常，调用方决定是否回退。 */
     suspend fun setSource(
@@ -197,10 +250,69 @@ class UserApiRuntime(
         pending.clear()
     }
 
-    /** 启动时加载默认源；失败结果交给调用方（启动检查仍可继续跑别的源）。 */
+    /**
+     * 启动时加载当前源（设置里的 `common.apiSource`）。
+     *
+     * 先播种再读：内置源第一次见到时要从随包目录补进清单；
+     * 设置里那个源不在清单里（被下架、或用户删了）就按 [UserApiCatalog.pickAvailableId]
+     * 换一个还能用的，并把换的结果写回设置。
+     */
     suspend fun ensureSourceReady(): Result<Unit> {
         if (engine != null) return Result.success(Unit)
-        return setSource(BuiltinSourceRepository.DEFAULT_SOURCE_ID)
+        settings.ensureLoaded()
+        val removed = store.prepare()
+        if (removed.isNotEmpty()) {
+            onLog?.invoke("warn", "user api removed with the bundled catalog: ${removed.joinToString()}")
+        }
+        val target = selector.resolve() ?: return Result.failure(IllegalStateException("no user api source"))
+        return setSource(target)
+    }
+
+    /**
+     * 换到另一个源（音源管理页的「使用这个源」）。
+     *
+     * 脚本真的起来了才改设置里的当前源：起不来就留在原来那个上，
+     * 免得设置指向一个加载失败的脚本，下次启动也没人兜底。
+     */
+    suspend fun switchSource(sourceId: String): Result<Unit> {
+        val result = setSource(sourceId)
+        if (result.isSuccess) selector.select(sourceId)
+        return result
+    }
+
+    /**
+     * 导入一份粘贴进来的脚本（对照 RN `ImportBtn` 的「本地导入」）。
+     *
+     * 头部注释不齐全时失败返回，不会往清单里塞一个加载不起来的源。
+     */
+    suspend fun importScript(
+        script: String,
+        updateUrl: String? = null,
+    ): Result<UserApiInfo> = store.importScript(script, updateUrl)
+
+    /** 按地址导入（对照 RN `ScriptImportOnline`）：取回的正文按「在线导入」入库，之后能自动检查。 */
+    suspend fun importFromUrl(url: String): Result<UserApiInfo> {
+        val target = url.trim()
+        if (!target.startsWith("http://") && !target.startsWith("https://")) {
+            return Result.failure(IllegalArgumentException("地址要以 http:// 或 https:// 开头"))
+        }
+        val response =
+            runCatching { fetcher.fetch(target) }.getOrElse {
+                return Result.failure(IllegalArgumentException("取不到脚本：${it.message ?: "网络错误"}"))
+            }
+        if (!response.ok) return Result.failure(IllegalArgumentException("取不到脚本：HTTP ${response.status}"))
+        return importScript(response.body, target)
+    }
+
+    /**
+     * 删掉一个源。两种情况不让删：
+     * 正在用的那个（播放器会指着已经不存在的脚本），
+     * 以及随包内置源（下次启动目录会把它补回来，删了只是看着像删了）。
+     */
+    suspend fun removeSource(sourceId: String): Boolean {
+        if (sourceId == currentSourceId) return false
+        if (store.find(sourceId)?.builtin != null) return false
+        return store.removeSource(sourceId)
     }
 
     private suspend fun ensureReady() {

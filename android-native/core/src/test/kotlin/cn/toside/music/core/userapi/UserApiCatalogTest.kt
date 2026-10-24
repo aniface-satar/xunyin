@@ -99,7 +99,14 @@ class UserApiCatalogTest {
 
     @Test
     fun importedInfoRecordsSourceUrlTrimmed() {
-        val info = UserApiCatalog.buildImportedInfo(headerScript, updateUrl = "  https://a.com/x.js ", now = 1L, randomSuffix = "999").getOrThrow()
+        val info =
+            UserApiCatalog
+                .buildImportedInfo(
+                    headerScript,
+                    updateUrl = "  https://a.com/x.js ",
+                    now = 1L,
+                    randomSuffix = "999",
+                ).getOrThrow()
         assertEquals("https://a.com/x.js", info.updateUrl)
     }
 
@@ -200,7 +207,10 @@ class UserApiCatalogTest {
 
     @Test
     fun seedFirstRunCreatesEveryBuiltin() {
-        val plan = UserApiCatalog.seed(BuiltinSeedInput(existing = emptyList(), storedScripts = emptyMap(), definitions = listOf(onlineDef(), localDef())))
+        val plan =
+            UserApiCatalog.seed(
+                BuiltinSeedInput(existing = emptyList(), storedScripts = emptyMap(), definitions = listOf(onlineDef(), localDef())),
+            )
         assertTrue(plan.changed)
         assertEquals(2, plan.list.size)
         assertEquals(listOf("builtin_online", "builtin_local"), plan.writes.map { it.id })
@@ -241,7 +251,8 @@ class UserApiCatalogTest {
     @Test
     fun seedStoredScriptMissingRewritesFromPackage() {
         val definition = localDef(id = "builtin_local", version = "2.0.0")
-        val existing = listOf(UserApiInfo(id = "builtin_local", name = "旧名字", version = "1.0.0", builtin = "local", builtinVersion = "1.0.0"))
+        val existing =
+            listOf(UserApiInfo(id = "builtin_local", name = "旧名字", version = "1.0.0", builtin = "local", builtinVersion = "1.0.0"))
         val plan = UserApiCatalog.seed(BuiltinSeedInput(existing, mapOf("builtin_local" to null), listOf(definition)))
         assertTrue(plan.changed)
         assertEquals(listOf("builtin_local"), plan.writes.map { it.id })
@@ -255,7 +266,10 @@ class UserApiCatalogTest {
     fun seedSamePackageVersionKeepsRuntimeUpdatedScript() {
         val definition = localDef(id = "builtin_local", version = "1.0.0")
         val runtimeScript = script("builtin_local", "1.0.1", updateUrl = "https://author.example.com/check")
-        val existing = listOf(UserApiInfo(id = "builtin_local", name = "builtin_local", version = "1.0.0", builtin = "local", builtinVersion = "1.0.0"))
+        val existing =
+            listOf(
+                UserApiInfo(id = "builtin_local", name = "builtin_local", version = "1.0.0", builtin = "local", builtinVersion = "1.0.0"),
+            )
         val plan = UserApiCatalog.seed(BuiltinSeedInput(existing, mapOf("builtin_local" to runtimeScript), listOf(definition)))
         // 同一个应用包里盘上的差异只可能是用户检查更新换上的，不能被随包旧脚本盖掉
         assertEquals(emptyList<BuiltinSeedWrite>(), plan.writes)
@@ -269,7 +283,8 @@ class UserApiCatalogTest {
     fun seedAppUpgradeKeepsNewerStoredScript() {
         val definition = localDef(id = "builtin_local", version = "1.0.0")
         val stored = script("builtin_local", "3.0.0")
-        val existing = listOf(UserApiInfo(id = "builtin_local", name = "用户换过的名字", version = "3.0.0", builtin = "local", builtinVersion = "0.9.0"))
+        val existing =
+            listOf(UserApiInfo(id = "builtin_local", name = "用户换过的名字", version = "3.0.0", builtin = "local", builtinVersion = "0.9.0"))
         val plan = UserApiCatalog.seed(BuiltinSeedInput(existing, mapOf("builtin_local" to stored), listOf(definition)))
         assertEquals(emptyList<BuiltinSeedWrite>(), plan.writes)
         // 应用升级标记照样更新，但脚本与信息都留着用户那份
@@ -281,7 +296,10 @@ class UserApiCatalogTest {
     fun seedAppUpgradeOverwritesOlderStoredScript() {
         val definition = localDef(id = "builtin_local", version = "5.0.0")
         val stored = script("builtin_local", "1.0.0")
-        val existing = listOf(UserApiInfo(id = "builtin_local", name = "builtin_local", version = "1.0.0", builtin = "local", builtinVersion = "1.0.0"))
+        val existing =
+            listOf(
+                UserApiInfo(id = "builtin_local", name = "builtin_local", version = "1.0.0", builtin = "local", builtinVersion = "1.0.0"),
+            )
         val plan = UserApiCatalog.seed(BuiltinSeedInput(existing, mapOf("builtin_local" to stored), listOf(definition)))
         assertEquals(listOf("builtin_local"), plan.writes.map { it.id })
         assertEquals("5.0.0", plan.list.single().version)
@@ -290,13 +308,26 @@ class UserApiCatalogTest {
     @Test
     fun seedMigratesOnlineUpdateUrlOnlyWhenStillCatalogWritten() {
         val definition = onlineDef(id = "builtin_online", updateUrl = "https://new.example.com/x.js")
-        val untouched = UserApiInfo(id = "builtin_online", name = "n", builtin = "online", updateUrl = "https://old.example.com/x.js", builtinUpdateUrl = "https://old.example.com/x.js")
-        val plan = UserApiCatalog.seed(BuiltinSeedInput(listOf(untouched), mapOf("builtin_online" to definition.script), listOf(definition)))
+        val untouched =
+            UserApiInfo(
+                id = "builtin_online",
+                name = "n",
+                builtin = "online",
+                updateUrl = "https://old.example.com/x.js",
+                builtinUpdateUrl = "https://old.example.com/x.js",
+            )
+        val plan =
+            UserApiCatalog.seed(
+                BuiltinSeedInput(listOf(untouched), mapOf("builtin_online" to definition.script), listOf(definition)),
+            )
         assertEquals("https://new.example.com/x.js", plan.list.single().updateUrl)
         assertEquals("https://new.example.com/x.js", plan.list.single().builtinUpdateUrl)
 
         val userEdited = untouched.copy(updateUrl = "https://user.example.com/me")
-        val kept = UserApiCatalog.seed(BuiltinSeedInput(listOf(userEdited), mapOf("builtin_online" to definition.script), listOf(definition)))
+        val kept =
+            UserApiCatalog.seed(
+                BuiltinSeedInput(listOf(userEdited), mapOf("builtin_online" to definition.script), listOf(definition)),
+            )
         assertFalse(kept.changed)
         assertEquals("https://user.example.com/me", kept.list.single().updateUrl)
     }
@@ -330,7 +361,10 @@ class UserApiCatalogTest {
     fun seedMarksCrossWiredBuiltinUpdateUrlAsRejected() {
         val owner = onlineDef(id = "builtin_other", updateUrl = "https://cdn.example.com/other.js")
         val victim = UserApiInfo(id = "builtin_online", name = "被塞错了", builtin = "online", updateUrl = owner.updateUrl)
-        val plan = UserApiCatalog.seed(BuiltinSeedInput(listOf(victim), mapOf("builtin_online" to script("builtin_online", "1.0.0")), listOf(owner, onlineDef())))
+        val plan =
+            UserApiCatalog.seed(
+                BuiltinSeedInput(listOf(victim), mapOf("builtin_online" to script("builtin_online", "1.0.0")), listOf(owner, onlineDef())),
+            )
         assertEquals("https://cdn.example.com/other.js", plan.list.first { it.id == "builtin_online" }.updateUrlRejected)
 
         // 名字相同的是用户自己又导入了一份同一个源，地址本来就能用
@@ -345,25 +379,53 @@ class UserApiCatalogTest {
             listOf(
                 RemovedBuiltinSource("builtin_gone", "已下架源"),
                 RemovedBuiltinSource("builtin_other_gone", "另一个"),
+                RemovedBuiltinSource("builtin_url_only", "只剩地址"),
             )
-        val handed = UserApiInfo(id = "builtin_gone", name = "已下架源", builtin = "local", builtinVersion = "1.0.0", updateUrl = "https://user.example.com/mine")
+        val handed =
+            UserApiInfo(
+                id = "builtin_gone",
+                name = "已下架源",
+                builtin = "local",
+                builtinVersion = "1.0.0",
+                updateUrl = "https://user.example.com/mine",
+            )
         val abandoned = UserApiInfo(id = "builtin_other_gone", name = "另一个", builtin = "local", updateUrlRejected = "https://bad")
+        val urlOnly = UserApiInfo(id = "builtin_url_only", name = "只剩地址", builtin = "local", updateUrl = "https://user.example.com/only")
 
-        val plan = UserApiCatalog.seed(BuiltinSeedInput(listOf(handed, abandoned), emptyMap(), listOf(localDef(id = "builtin_local")), removed))
-        // 用户自己填过更新地址的：摘掉内置标记，留在自定义源里
+        val plan =
+            UserApiCatalog.seed(
+                BuiltinSeedInput(
+                    // 接手的条件是「用户填过地址，而且盘上有他自己那份脚本」：
+                    // 随包正文不在存储里，目录一撤就没脚本的条目留着也跑不起来
+                    existing = listOf(handed, abandoned, urlOnly),
+                    storedScripts = mapOf("builtin_gone" to script("builtin_gone", "2.0.0")),
+                    definitions = listOf(localDef(id = "builtin_local")),
+                    removed = removed,
+                ),
+            )
+        // 用户自己填过更新地址、也有自己那份脚本的：摘掉内置标记，留在自定义源里
         val kept = plan.list.first { it.id == "builtin_gone" }
         assertNull(kept.builtin)
         assertNull(kept.builtinVersion)
         assertEquals("https://user.example.com/mine", kept.updateUrl)
-        // 没接手的：整条删掉，盘上脚本与备份跟着清
-        assertEquals(listOf("builtin_other_gone"), plan.removedIds)
+        // 没接手的（含「只有地址、没有脚本」的）：整条删掉，盘上脚本与备份跟着清
+        assertEquals(listOf("builtin_other_gone", "builtin_url_only"), plan.removedIds)
         assertTrue(plan.list.none { it.id == "builtin_other_gone" })
+        assertTrue(plan.list.none { it.id == "builtin_url_only" })
     }
 
     @Test
     fun seedOnlineWithoutStoredScriptSeedsPackageScript() {
         val definition = onlineDef(id = "builtin_online")
-        val existing = UserApiInfo(id = "builtin_online", name = "", version = "", builtin = "online", updateUrl = definition.updateUrl, builtinUpdateUrl = definition.updateUrl)
+        val existing =
+            UserApiInfo(
+                id = "builtin_online",
+                name = "",
+                version = "",
+                builtin = "online",
+                updateUrl = definition.updateUrl,
+                builtinUpdateUrl = definition.updateUrl,
+            )
         val plan = UserApiCatalog.seed(BuiltinSeedInput(listOf(existing), mapOf("builtin_online" to null), listOf(definition)))
         assertEquals(listOf("builtin_online"), plan.writes.map { it.id })
         assertEquals("builtin_online", plan.list.single().name)

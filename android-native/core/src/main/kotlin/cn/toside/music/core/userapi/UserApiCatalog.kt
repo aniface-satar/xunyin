@@ -68,7 +68,7 @@ data class RemovedBuiltinSource(
 
 data class BuiltinSeedInput(
     val existing: List<UserApiInfo>,
-    /** 内置源 id → 盘上脚本；没有存过就是 null。 */
+    /** 内置源 id → 盘上脚本；没有存过就是 null。下架的源也放进来，接手判定要看它。 */
     val storedScripts: Map<String, String?>,
     val definitions: List<BuiltinSeedDefinition>,
     val removed: List<RemovedBuiltinSource> = emptyList(),
@@ -129,8 +129,9 @@ object UserApiCatalog {
         randomSuffix: String = (100..999).random().toString(),
         fallbackName: String = "user_api_$now",
     ): Result<UserApiInfo> {
-        val comment = ScriptResolver.matchHeaderComment(script)
-            ?: return Result.failure(IllegalArgumentException("导入的内容不是音源脚本：缺少头部注释"))
+        val comment =
+            ScriptResolver.matchHeaderComment(script)
+                ?: return Result.failure(IllegalArgumentException("导入的内容不是音源脚本：缺少头部注释"))
         val infos = matchInfo(comment)
         val name = infos["name"].orEmpty().ifEmpty { fallbackName }
         return Result.success(
@@ -218,14 +219,19 @@ object UserApiCatalog {
         val writes = mutableListOf<BuiltinSeedWrite>()
         var changed = false
 
-        // 只带内置标记且已下架的条目才处理；用户接手过（自己填过地址）的摘掉标记留下
+        // 只带内置标记且已下架的条目才处理；用户接手过（自己填过地址、盘上有自己那份脚本）的摘掉标记留下
         var list =
             input.existing.mapNotNull { info ->
                 if (info.builtin == null || !removed.containsKey(info.id)) return@mapNotNull info
                 changed = true
-                if (hasOwnUpdateUrl(info, definitions)) {
+                val takenOver =
+                    hasOwnUpdateUrl(info, definitions) && !input.storedScripts[info.id].isNullOrEmpty()
+                if (takenOver) {
                     info.copy(builtin = null, builtinVersion = null, builtinUpdateUrl = null, updateUrlRejected = null)
                 } else {
+                    // RN 这里只要用户填过地址就留着，因为它播种时把随包脚本也复制进了存储；
+                    // 原生侧随包正文留在 assets，目录一撤就没有任何地方还留着它，
+                    // 留一行没有脚本的条目只会变成一个点不动的按钮
                     removedIds.add(info.id)
                     null
                 }
