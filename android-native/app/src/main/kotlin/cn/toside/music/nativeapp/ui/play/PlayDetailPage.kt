@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -34,7 +33,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,8 +78,8 @@ import java.util.Locale
  * B4 全屏播控页（竖屏）。
  *
  * 结构对照 RN `PlayDetail/Vertical`：封面台 / 歌词台左右翻页，底部固定播控；
- * 背景取封面模糊 + 压暗。首版先把「能播、能滚、能 seek」走通，
- * 分享卡、定时关闭、音质/音量弹层留到后续切片。
+ * 背景取封面模糊 + 压暗。头部「⋮」是 S11 收进来的播放设置面板（定时关闭 / 音量 / 倍速 /
+ * 歌词字号 / 译文·音译），分享卡与桌面歌词留到后续批次（对照 B6 / Wave 2）。
  */
 @Composable
 fun PlayDetailPage(onBack: () -> Unit) {
@@ -110,14 +108,32 @@ fun PlayDetailPage(onBack: () -> Unit) {
         }
     }
 
-    var fontSizeSp by remember { mutableFloatStateOf(20f) }
-    var translationShown by remember { mutableStateOf(runtime.isLyricTranslationShown()) }
+    // 字号/译文/音译都以设置为唯一来源（RN：useSettingValue + Lyric.tsx:101-103 除以 10）
+    LaunchedEffect(Unit) { runtime.settings.ensureLoaded() }
+    val settings by runtime.settings.state.collectAsState()
+    val timeout = remember { TimeoutExitRuntime.get(context) }
+    val fontSizeTenths = lrcFontSizeTenths(settings)
+    val translationShown = settings["player.isShowLyricTranslation"] as? Boolean ?: true
+    val romaShown = settings["player.isShowLyricRoma"] as? Boolean ?: false
     var showPlaylist by remember { mutableStateOf(false) }
+    var showMore by remember { mutableStateOf(false) }
+
+    // RN SettingLrcFontSize.tsx:31-33：与已存值相同则不写设置
+    val commitFontSize: (Int) -> Unit = { tenths ->
+        if (tenths != fontSizeTenths) {
+            scope.launch {
+                runtime.settings.ensureLoaded()
+                runtime.settings.store.set(KEY_LRC_FONT_SIZE, tenths)
+            }
+        }
+    }
+    val toggleTranslation = { runtime.setLyricTranslation(!translationShown) }
+    val toggleRoma = { runtime.setLyricRoma(!romaShown) }
 
     Box(Modifier.fillMaxSize()) {
         PlayerBackdrop(cover)
         Column(Modifier.fillMaxSize()) {
-            PlayerHeader(title = "正在播放", onBack = onBack)
+            PlayerHeader(title = "正在播放", onBack = onBack, onOpenMore = { showMore = true })
             PagerAndControls(
                 modifier = Modifier.weight(1f),
                 runtime = runtime,
@@ -125,13 +141,10 @@ fun PlayDetailPage(onBack: () -> Unit) {
                 lyrics = lyrics,
                 cover = cover,
                 positionMs = positionMs,
-                fontSizeSp = fontSizeSp,
-                onFontSizeChange = { fontSizeSp = it },
+                fontSizeTenths = fontSizeTenths,
+                onFontSizeCommit = commitFontSize,
                 translationShown = translationShown,
-                onToggleTranslation = {
-                    translationShown = !translationShown
-                    runtime.setLyricTranslation(translationShown)
-                },
+                onToggleTranslation = toggleTranslation,
                 onOpenPlaylist = { showPlaylist = true },
                 scope = scope,
                 music = music,
@@ -145,6 +158,19 @@ fun PlayDetailPage(onBack: () -> Unit) {
                 onDismiss = { showPlaylist = false },
             )
         }
+        if (showMore) {
+            MoreActionSheet(
+                runtime = runtime,
+                timeout = timeout,
+                fontSizeTenths = fontSizeTenths,
+                onFontSizeCommit = commitFontSize,
+                translationShown = translationShown,
+                romaShown = romaShown,
+                onToggleTranslation = toggleTranslation,
+                onToggleRoma = toggleRoma,
+                onDismiss = { showMore = false },
+            )
+        }
     }
 }
 
@@ -156,8 +182,8 @@ private fun PagerAndControls(
     lyrics: LyricsState,
     cover: CoverArt?,
     positionMs: Long,
-    fontSizeSp: Float,
-    onFontSizeChange: (Float) -> Unit,
+    fontSizeTenths: Int,
+    onFontSizeCommit: (Int) -> Unit,
     translationShown: Boolean,
     onToggleTranslation: () -> Unit,
     onOpenPlaylist: () -> Unit,
@@ -174,7 +200,7 @@ private fun PagerAndControls(
                     parsed = lyrics.parsed,
                     positionMs = positionMs,
                     loading = lyrics.loading,
-                    fontSizeSp = fontSizeSp,
+                    fontSizeSp = fontSizeTenths / 10f,
                 ) { seekMs -> scope.launch { runtime.core.seekTo(seekMs) } }
             }
         }
@@ -195,8 +221,8 @@ private fun PagerAndControls(
             onCycleMode = { scope.launch { runtime.togglePlayMethod() } },
             onToggleTranslation = onToggleTranslation,
             translationShown = translationShown,
-            onFontSmaller = { onFontSizeChange((fontSizeSp - 1f).coerceAtLeast(14f)) },
-            onFontLarger = { onFontSizeChange((fontSizeSp + 1f).coerceAtMost(30f)) },
+            onFontSmaller = { onFontSizeCommit((fontSizeTenths - 10).coerceAtLeast(MIN_FONT_TENTHS)) },
+            onFontLarger = { onFontSizeCommit((fontSizeTenths + 10).coerceAtMost(MAX_FONT_TENTHS)) },
             onOpenPlaylist = onOpenPlaylist,
         )
     }
@@ -206,6 +232,7 @@ private fun PagerAndControls(
 private fun PlayerHeader(
     title: String,
     onBack: () -> Unit,
+    onOpenMore: () -> Unit,
 ) {
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Row(
@@ -228,8 +255,8 @@ private fun PlayerHeader(
                     textAlign = TextAlign.Center,
                 ),
         )
-        // 右侧留出与返回键等宽的占位，让标题真正居中
-        Spacer(Modifier.width(44.dp))
+        // 与返回键等宽，标题保持居中
+        GlyphButton(Glyph.More, size = 44.dp, onClick = onOpenMore)
     }
 }
 
@@ -507,7 +534,7 @@ private fun TextAction(
     )
 }
 
-private enum class Glyph { Play, Pause, Prev, Next, Back }
+private enum class Glyph { Play, Pause, Prev, Next, Back, More }
 
 @Composable
 private fun GlyphButton(
@@ -600,6 +627,12 @@ private fun GlyphIcon(
                     color = color,
                     style = Stroke(width = w * 0.1f, cap = StrokeCap.Round),
                 )
+            }
+            Glyph.More -> {
+                val radius = w * 0.085f
+                listOf(0.18f, 0.5f, 0.82f).forEach { y ->
+                    drawCircle(color = color, radius = radius, center = Offset(w * 0.5f, h * y))
+                }
             }
         }
     }
