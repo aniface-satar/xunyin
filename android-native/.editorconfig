@@ -1,0 +1,5 @@
+root = true
+
+[*.{kt,kts}]
+# Compose 可组合函数按官方惯例用大驼峰取名（HomePage/ComponentsPage 等）
+ktlint_function_naming_ignore_when_annotated_with = Composable

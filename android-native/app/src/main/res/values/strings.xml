@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">寻音</string>
+    <string name="home_title">寻音 · 原生壳</string>
+    <string name="home_subtitle">B0 工程骨架 · Kotlin 2.4.20 + SaltUI 3.0.0-beta03</string>
+    <string name="components_title">组件抽查</string>
+</resources>

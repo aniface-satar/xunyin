@@ -1,0 +1,462 @@
+package cn.toside.music.nativeapp.ui
+
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import cn.toside.music.core.storage.StorageKeys
+import cn.toside.music.nativeapp.HomeNavigator
+import cn.toside.music.nativeapp.HomeTab
+import cn.toside.music.nativeapp.data.LeaderboardRuntime
+import cn.toside.music.nativeapp.data.ListRuntime
+import cn.toside.music.nativeapp.data.SearchRuntime
+import cn.toside.music.nativeapp.ui.leaderboard.LeaderboardDetailPage
+import cn.toside.music.nativeapp.ui.list.ListDetailPage
+import cn.toside.music.nativeapp.ui.search.SearchPage
+import com.moriafly.salt.ui.Item
+import com.moriafly.salt.ui.ItemSpacer
+import com.moriafly.salt.ui.SaltTheme
+import com.moriafly.salt.ui.Text
+import com.moriafly.salt.ui.UnstableSaltUiApi
+import com.moriafly.salt.ui.dialog.InputDialog
+import com.moriafly.salt.ui.dialog.YesNoDialog
+import kotlinx.coroutines.launch
+
+private enum class DiscoverSection {
+    RECOMMEND,
+    RANKING,
+    SONGLIST,
+}
+
+/** 首页正式导航壳：三个一级 tab、独立详情栈、迷你播放条与全局设置入口。 */
+@Composable
+fun HomePage(
+    navigator: HomeNavigator,
+    onOpenPlayer: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    var discoverSection by remember { mutableStateOf(DiscoverSection.RECOMMEND) }
+    val currentDetail = navigator.currentDetail()
+
+    BackHandler(enabled = currentDetail != null) {
+        navigator.back()
+    }
+
+    Column(Modifier.fillMaxSize().background(SaltTheme.colors.background)) {
+        if (currentDetail == null) {
+            HomeTopBar(
+                title =
+                    when (navigator.currentTab) {
+                        HomeTab.DISCOVER -> "发现"
+                        HomeTab.MY -> "我的"
+                        HomeTab.SEARCH -> "搜索"
+                    },
+                onOpenSettings = onOpenSettings,
+            )
+        }
+        RetainedContent(
+            visibleIndex = navigator.currentTab.ordinal,
+            modifier = Modifier.weight(1f),
+        ) {
+            HomeTab.entries.forEach { tab ->
+                HomeTabContent(
+                    tab = tab,
+                    navigator = navigator,
+                    discoverSection = discoverSection,
+                    onDiscoverSectionChange = { discoverSection = it },
+                    onOpenPlayer = onOpenPlayer,
+                    onOpenSettings = onOpenSettings,
+                )
+            }
+        }
+        MiniPlayer(onOpen = onOpenPlayer)
+        HomeBottomTabs(
+            currentTab = navigator.currentTab,
+            onSelect = { tab ->
+                val reset = navigator.selectTab(tab)
+                if (reset && tab == HomeTab.DISCOVER) {
+                    discoverSection = DiscoverSection.RECOMMEND
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun HomeTabContent(
+    tab: HomeTab,
+    navigator: HomeNavigator,
+    discoverSection: DiscoverSection,
+    onDiscoverSectionChange: (DiscoverSection) -> Unit,
+    onOpenPlayer: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    val detail = navigator.currentDetail(tab)
+    RetainedContent(
+        visibleIndex = if (detail == null) 0 else 1,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        when (tab) {
+            HomeTab.DISCOVER ->
+                DiscoverPage(
+                    section = discoverSection,
+                    onSectionChange = onDiscoverSectionChange,
+                    onOpenLeaderboard = { boardId, title ->
+                        navigator.push(HomeNavigator.Route.LeaderboardDetail(boardId, title))
+                    },
+                )
+            HomeTab.MY ->
+                MyPage(
+                    onOpenList = { listId, title ->
+                        navigator.push(HomeNavigator.Route.ListDetail(listId, title))
+                    },
+                    onOpenSettings = onOpenSettings,
+                )
+            HomeTab.SEARCH -> SearchPage(onBack = null, onOpenPlayer = onOpenPlayer)
+        }
+        when (detail) {
+            null -> Unit
+            is HomeNavigator.Route.ListDetail ->
+                ListDetailPage(
+                    listId = detail.listId,
+                    title = detail.title,
+                    onBack = { navigator.back() },
+                    onOpenPlayer = onOpenPlayer,
+                )
+            is HomeNavigator.Route.LeaderboardDetail ->
+                LeaderboardDetailPage(
+                    boardId = detail.boardId,
+                    title = detail.title,
+                    onBack = { navigator.back() },
+                    onOpenPlayer = onOpenPlayer,
+                )
+        }
+    }
+}
+
+@Composable
+private fun HomeTopBar(
+    title: String,
+    onOpenSettings: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .height(56.dp)
+                .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            color = SaltTheme.colors.text,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Box(
+            modifier =
+                Modifier
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onOpenSettings)
+                    .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(text = "设置", color = SaltTheme.colors.highlight)
+        }
+    }
+}
+
+@Composable
+private fun HomeBottomTabs(
+    currentTab: HomeTab,
+    onSelect: (HomeTab) -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(SaltTheme.colors.subBackground)
+                .navigationBarsPadding()
+                .height(56.dp),
+    ) {
+        HomeTab.entries.forEach { tab ->
+            val selected = tab == currentTab
+            val label =
+                when (tab) {
+                    HomeTab.DISCOVER -> "发现"
+                    HomeTab.MY -> "我的"
+                    HomeTab.SEARCH -> "搜索"
+                }
+            Box(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .height(56.dp)
+                        .clickable { onSelect(tab) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    color = if (selected) SaltTheme.colors.highlight else SaltTheme.colors.subText,
+                    fontSize = 15.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiscoverPage(
+    section: DiscoverSection,
+    onSectionChange: (DiscoverSection) -> Unit,
+    onOpenLeaderboard: (String, String) -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DiscoverSection.entries.forEach { item ->
+                val selected = item == section
+                val label =
+                    when (item) {
+                        DiscoverSection.RECOMMEND -> "推荐"
+                        DiscoverSection.RANKING -> "排行榜"
+                        DiscoverSection.SONGLIST -> "歌单"
+                    }
+                Box(
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (selected) {
+                                    SaltTheme.colors.highlight.copy(alpha = 0.12f)
+                                } else {
+                                    Color.Transparent
+                                },
+                            ).clickable { onSectionChange(item) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = label,
+                        color = if (selected) SaltTheme.colors.highlight else SaltTheme.colors.subText,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
+            }
+        }
+        when (section) {
+            DiscoverSection.RECOMMEND ->
+                DiscoverPlaceholder("推荐内容暂未接入")
+            DiscoverSection.RANKING ->
+                LeaderboardBoardsPage(onOpenLeaderboard = onOpenLeaderboard)
+            DiscoverSection.SONGLIST ->
+                DiscoverPlaceholder("在线歌单内容暂未接入")
+        }
+    }
+}
+
+@Composable
+private fun DiscoverPlaceholder(message: String) {
+    Box(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = message, color = SaltTheme.colors.subText)
+    }
+}
+
+/** 排行榜面板：源选择 + 榜单网格（B5 第九切片；kw/kg 可进详情，其余源提示未接入）。 */
+@Composable
+private fun LeaderboardBoardsPage(onOpenLeaderboard: (String, String) -> Unit) {
+    val context = LocalContext.current
+    var source by remember { mutableStateOf("kw") }
+    val boards = remember(source) { LeaderboardRuntime.boards(source) }
+    Column(Modifier.fillMaxSize()) {
+        // 源选择横滑条
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            SearchRuntime.SOURCES
+                .filter { it.first != "all" }
+                .forEach { (id, label) ->
+                    val selected = id == source
+                    Box(
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected) SaltTheme.colors.highlight.copy(alpha = 0.12f) else Color.Transparent)
+                                .clickable { source = id }
+                                .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = label.removeSuffix("音乐"),
+                            color = if (selected) SaltTheme.colors.highlight else SaltTheme.colors.subText,
+                            fontSize = 13.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    }
+                }
+        }
+        val detailSupported = LeaderboardRuntime.isDetailSupported(source)
+        LazyColumn(Modifier.fillMaxSize()) {
+            itemsIndexed(boards) { _, board ->
+                Item(
+                    onClick = {
+                        if (detailSupported) {
+                            onOpenLeaderboard(board.id, board.name)
+                        } else {
+                            Toast
+                                .makeText(context, "该源的榜单详情暂未接入", Toast.LENGTH_SHORT)
+                                .show()
+                        }
+                    },
+                    text = board.name,
+                )
+            }
+            item { ItemSpacer() }
+        }
+    }
+}
+
+@OptIn(UnstableSaltUiApi::class)
+@Composable
+private fun MyPage(
+    onOpenList: (listId: String, title: String) -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    val context = LocalContext.current
+    val lists = remember { ListRuntime.get(context) }
+    val listState by lists.store.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    var createName by remember { mutableStateOf("") }
+    var createVisible by remember { mutableStateOf(false) }
+    var duplicateName by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { lists.ensureLoaded() }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
+        ) {
+            Text(text = "我的列表", color = SaltTheme.colors.subText)
+            Item(
+                onClick = {
+                    createName = ""
+                    createVisible = true
+                },
+                text = "新建列表",
+            )
+            Item(
+                onClick = { onOpenList(StorageKeys.ListIds.DEFAULT, "试听列表") },
+                text = "试听列表",
+            )
+            Item(
+                onClick = { onOpenList(StorageKeys.ListIds.LOVE, "我的收藏") },
+                text = "我的收藏",
+            )
+            listState.userLists.forEach { info ->
+                Item(
+                    onClick = { onOpenList(info.id, info.name) },
+                    text = info.name,
+                )
+            }
+            ItemSpacer()
+            Item(onClick = onOpenSettings, text = "设置")
+        }
+        if (createVisible) {
+            InputDialog(
+                onDismissRequest = { createVisible = false },
+                onConfirm = {
+                    val normalized = lists.store.normalizeListName(createName)
+                    if (normalized.isNotEmpty()) {
+                        createVisible = false
+                        if (lists.store.hasUserListNamed(normalized)) {
+                            duplicateName = normalized
+                        } else {
+                            scope.launch { lists.store.createUserList(normalized) }
+                        }
+                    }
+                },
+                onChange = { createName = it },
+                title = "新建列表",
+                text = createName,
+                hint = "你想起啥名...",
+                cancelText = "取消",
+                confirmText = "确定",
+            )
+        }
+        duplicateName?.let { pendingName ->
+            YesNoDialog(
+                onDismissRequest = { duplicateName = null },
+                onConfirm = {
+                    duplicateName = null
+                    scope.launch { lists.store.createUserList(pendingName) }
+                },
+                title = "新建列表",
+                content = "已存在同名列表，是否继续创建？",
+                cancelText = "取消",
+                confirmText = "确定",
+            )
+        }
+    }
+}
+
+/** 仅测量并摆放当前页，未选中页仍留在组合中以保留一级页面与详情状态。 */
+@Composable
+internal fun RetainedContent(
+    visibleIndex: Int,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        val placeable = measurables.getOrNull(visibleIndex)?.measure(constraints)
+        layout(placeable?.width ?: constraints.minWidth, placeable?.height ?: constraints.minHeight) {
+            placeable?.place(0, 0)
+        }
+    }
+}

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Material Symbols music_note (Apache 2.0) -->
+    <group>
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M40,68 L40,38 L68,32 L68,58 C68,62.42 64.42,66 60,66 C55.58,66 52,62.42 52,58 C52,53.58 55.58,50 60,50 C61.78,50 63.43,50.58 64.78,51.57 L64.78,41.04 L46.5,44.41 L46.5,68 C46.5,72.42 42.92,76 38.5,76 C34.08,76 30.5,72.42 30.5,68 C30.5,63.58 34.08,60 38.5,60 C40.28,60 41.93,60.58 43.28,61.57 L43.28,68 Z M38.5,72 C40.71,72 42.5,70.21 42.5,68 C42.5,65.79 40.71,64 38.5,64 C36.29,64 34.5,65.79 34.5,68 C34.5,70.21 36.29,72 38.5,72 Z M60,62 C62.21,62 64,60.21 64,58 C64,55.79 62.21,54 60,54 C57.79,54 56,55.79 56,58 C56,60.21 57.79,62 60,62 Z" />
+    </group>
+</vector>

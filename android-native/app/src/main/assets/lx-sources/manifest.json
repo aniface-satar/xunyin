@@ -1,0 +1,177 @@
+{
+  "sources": [
+    {
+      "id": "builtin_hywmusic",
+      "key": "hywmusic",
+      "kind": "local",
+      "name": "HYWmusic_公益版",
+      "version": "v1.0.3",
+      "description": "qq群：1094095648；965503129",
+      "author": "Ryn",
+      "homepage": "https://github.com/Macrohard0001/HYWmusic_source",
+      "updateUrl": "http://103.79.184.97/api/releases?script=HYWmusic_%E5%85%AC%E7%9B%8A%E7%89%88&scriptType=free&releaseType=lx&version=v1.0.3",
+      "scriptUpdateUrl": "http://103.79.184.97/api/releases?script=HYWmusic_%E5%85%AC%E7%9B%8A%E7%89%88&scriptType=free&releaseType=lx&version=v1.0.3",
+      "legacyUpdateUrls": [],
+      "fallbackUpdateUrls": [],
+      "checkUpdateUrls": [],
+      "autoCheck": true,
+      "scriptFile": "hywmusic.js"
+    },
+    {
+      "id": "builtin_xinghai",
+      "key": "xinghai",
+      "kind": "local",
+      "name": "星海音乐源",
+      "version": "v3.2.13",
+      "description": "GDAPI | 聚合 | ChKSz API | 全平台支持24FLAC，网易、酷狗、QQ最高支持母带",
+      "author": "万去了了",
+      "homepage": "https://zrcdy.dpdns.org/",
+      "updateUrl": "",
+      "scriptUpdateUrl": "",
+      "legacyUpdateUrls": [],
+      "fallbackUpdateUrls": [],
+      "checkUpdateUrls": [
+        "https://zrcdy.dpdns.org/lx/versionh2.php?ver={version}",
+        "https://yy.zddyr.top/lx/versionh2.php?ver={version}"
+      ],
+      "autoCheck": true,
+      "scriptFile": "xinghai.js"
+    },
+    {
+      "id": "builtin_changqing",
+      "key": "changqing",
+      "kind": "local",
+      "name": "长青SVIP音源",
+      "version": "1.3.0",
+      "description": "音源更新，关注微信公众号: 元力菌",
+      "author": "SVIP",
+      "homepage": "微信公众号: 元力菌",
+      "updateUrl": "https://13413.kstore.vip/lxmusic/changqing.json",
+      "scriptUpdateUrl": "https://13413.kstore.vip/lxmusic/changqing.json",
+      "legacyUpdateUrls": [],
+      "fallbackUpdateUrls": [],
+      "checkUpdateUrls": [],
+      "autoCheck": true,
+      "scriptFile": "changqing.js"
+    },
+    {
+      "id": "builtin_nianxin",
+      "key": "nianxin",
+      "kind": "local",
+      "name": "念心音源",
+      "version": "1.0.2",
+      "description": "音源更新，关注微信公众号: 念心小站",
+      "author": "念心小站",
+      "homepage": "微信公众号: 念心小站",
+      "updateUrl": "https://gitee.com/nianxinxz1/emo-music/raw/master/wubian.json",
+      "scriptUpdateUrl": "https://gitee.com/nianxinxz1/emo-music/raw/master/wubian.json",
+      "legacyUpdateUrls": [],
+      "fallbackUpdateUrls": [],
+      "checkUpdateUrls": [],
+      "autoCheck": true,
+      "scriptFile": "nianxin.js"
+    },
+    {
+      "id": "builtin_qdy",
+      "key": "qdy",
+      "kind": "online",
+      "name": "全豆要[聚合音源]",
+      "version": "9.3 93特供版 DeepSeek优化",
+      "description": "迭代9.3版本，聚合 星海/溯音/念心/长青/歌一刀专属汽水音乐，多链路自动回退",
+      "author": "全豆要 and Gemini优化 Toskysun去混淆 TZB679兼容性处理",
+      "homepage": "",
+      "updateUrl": "https://fastly.jsdelivr.net/gh/pdone/lx-music-source@main/qdy/latest.js",
+      "scriptUpdateUrl": "",
+      "legacyUpdateUrls": [
+        "https://ghproxy.net/raw.githubusercontent.com/pdone/lx-music-source/main/qdy/latest.js"
+      ],
+      "fallbackUpdateUrls": [
+        "https://ghproxy.net/raw.githubusercontent.com/pdone/lx-music-source/main/qdy/latest.js",
+        "https://raw.githubusercontent.com/pdone/lx-music-source/main/qdy/latest.js"
+      ],
+      "checkUpdateUrls": [],
+      "autoCheck": true,
+      "scriptFile": "qdy.js"
+    },
+    {
+      "id": "builtin_moxi_cloud",
+      "key": "moxi_cloud",
+      "kind": "online",
+      "name": "落雪云更新音源(实测)",
+      "version": "2026.10.20",
+      "description": "启动自动拉取服务器最新实测音源配置，桌面端云端换源即时生效，移动端内置兜底+更新提醒",
+      "author": "ql-lx-source",
+      "homepage": "https://github.com/moxi5445/lx-music-cloud",
+      "updateUrl": "https://fastly.jsdelivr.net/gh/moxi5445/lx-music-cloud@main/lx-cloud.js",
+      "scriptUpdateUrl": "",
+      "legacyUpdateUrls": [],
+      "fallbackUpdateUrls": [
+        "https://raw.githubusercontent.com/moxi5445/lx-music-cloud/main/lx-cloud.js"
+      ],
+      "checkUpdateUrls": [],
+      "autoCheck": true,
+      "scriptFile": "moxi_cloud.js"
+    },
+    {
+      "id": "builtin_huanyin",
+      "key": "huanyin",
+      "kind": "online",
+      "name": "幻音音源",
+      "version": "v3",
+      "description": "",
+      "author": "竹佀",
+      "homepage": "",
+      "updateUrl": "https://fastly.jsdelivr.net/gh/pdone/lx-music-source@main/huanyin/latest.js",
+      "scriptUpdateUrl": "",
+      "legacyUpdateUrls": [
+        "https://ghproxy.net/raw.githubusercontent.com/pdone/lx-music-source/main/huanyin/latest.js"
+      ],
+      "fallbackUpdateUrls": [
+        "https://ghproxy.net/raw.githubusercontent.com/pdone/lx-music-source/main/huanyin/latest.js",
+        "https://raw.githubusercontent.com/pdone/lx-music-source/main/huanyin/latest.js"
+      ],
+      "checkUpdateUrls": [],
+      "autoCheck": true,
+      "scriptFile": "huanyin.js"
+    },
+    {
+      "id": "builtin_1010",
+      "key": "1010",
+      "kind": "online",
+      "name": "1010🎵音源",
+      "version": "1.1.0",
+      "description": "【手机版·全链路HTTPS】五大平台(wy/tx/kw/kg/mg)聚合直链音源｜每条链路均经真实取链实测(HTTP Range 206 音频校验)筛选｜优先级并发 + 串行兜底｜链路健康度自动降权｜结果缓存",
+      "author": "Lincoln",
+      "homepage": "",
+      "updateUrl": "https://fastly.jsdelivr.net/gh/Lingeng27/lx-music-1010-source@main/1010-mobile.js",
+      "scriptUpdateUrl": "",
+      "legacyUpdateUrls": [],
+      "fallbackUpdateUrls": [
+        "https://ghproxy.net/raw.githubusercontent.com/Lingeng27/lx-music-1010-source/main/1010-mobile.js",
+        "https://raw.githubusercontent.com/Lingeng27/lx-music-1010-source/main/1010-mobile.js"
+      ],
+      "checkUpdateUrls": [],
+      "autoCheck": true,
+      "scriptFile": "1010.js"
+    },
+    {
+      "id": "builtin_animemusic",
+      "key": "animemusic",
+      "kind": "local",
+      "name": "lx-animemusic",
+      "version": "3.0.1",
+      "description": "lx-animemusic，畅听十方平台旋律，多音质随心选",
+      "author": "惜缘惜梦（次惜科技）",
+      "homepage": "",
+      "updateUrl": "",
+      "scriptUpdateUrl": "",
+      "legacyUpdateUrls": [],
+      "fallbackUpdateUrls": [],
+      "checkUpdateUrls": [
+        "https://animemusic.bzxhkj.com/v1/index.php/script/lxmusic?checkUpdate=f50246eabbc1a141f9e1c46bcc352010&key="
+      ],
+      "autoCheck": true,
+      "scriptFile": "animemusic.js"
+    }
+  ]
+}
