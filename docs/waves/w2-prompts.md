@@ -29,7 +29,7 @@
 | AndroidManifest（overlay/服务） | — | ✔ 独占 | — |
 | `ui/play/MoreActionSheet.kt`（播放页 ⋮ 面板） | — | ✔ 只加一行 | — |
 | `core/.../lyric/` | — | 只新建文件 | — |
-| DefaultSetting.kt | — | 禁触（14 个键已齐全，改键契约测试） | 禁触 |
+| DefaultSetting.kt | — | 禁触（15 个键已齐全，改键契约测试） | 禁触 |
 | `ui/list/` + ListStore 新增方法 | 只调用 | — | ✔ 独占 |
 
 三车道文件面互不相交。Wave1 的教训已吸收：`DefaultSetting.kt` 本波**没有任何车道改**。
@@ -146,8 +146,9 @@
 - 入口文件是 android-native/app/src/main/kotlin/cn/toside/music/nativeapp/ui/play/
   MoreActionSheet.kt（调用点 PlayDetailPage.kt:161-173），只许加一行；该行必须
   自包含（进程级单例 + LocalContext），不要改 PlayDetailPage 的签名。
-- DefaultSetting.kt 禁触：14 个 desktopLyric.* 键已全部存在（DefaultSetting.kt:60-74），
-  改为键契约测试（默认值逐键对照 RN，含 :104 的新年皮肤覆盖）。
+- DefaultSetting.kt 禁触：15 个 desktopLyric.* 键已全部存在（DefaultSetting.kt:60-74），
+  改为键契约测试（默认值逐键对照 RN defaultSetting.ts:55-69，并锁 DefaultSetting.kt:106
+  的 1-2 月新年皮肤覆盖）。
 
 【硬约束（RULES 摘要）】
 - 只改任务书「范围」内的文件；缺口在禁触区 → 写进 lane 报告，不动手。

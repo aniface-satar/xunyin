@@ -28,18 +28,21 @@ RN 版桌面歌词 = `android/app/src/main/java/cn/toside/music/mobile/lyric/`�
 ## 任务
 
 1. **`DesktopLyricService`**（新目录 `app/.../lyric/`）：TYPE_APPLICATION_OVERLAY 悬浮窗，
-   对照 RN `LyricViewManager.java` 对应的 `LyricView.java`/`LyricTextView.java`
-   （布局参数、窗口标志、逐行滚动）。`AndroidManifest` 加 `SYSTEM_ALERT_WINDOW`
-   权限与服务注册（当前 manifest 只有 `PlaybackService`，**还没有**该权限），
+   对照 RN `LyricView.java`（607 行，窗口/浮窗与 `TYPE_APPLICATION_OVERLAY` 都在这里）
+   + `Lyric.java`（控制器）+ `LyricPlayer.java`（逐行推进）+ `LyricTextView.java`（行渲染）
+   + `LyricModule.java`（RN 桥，仅作接口对照）（布局参数、窗口标志、逐行滚动）。
+   `AndroidManifest` 加 `SYSTEM_ALERT_WINDOW` 权限与服务注册
+   （当前 manifest 只有 `PlaybackService`，**还没有**该权限），
    **不得动 `screenOrientation="portrait"`（现第 22 行）**。
 2. **歌词数据源**：订阅 `PlayerRuntime` 既有歌词流与播放进度，同步到浮窗
    （播放/暂停/切歌）。**不改 `core/lyric/` 与 `ui/play/` 内部**；歌词文本一律从
    `PlayerRuntime` 公开流取。
 3. **设置键：全部已存在，禁止追加**——`core/.../setting/DefaultSetting.kt:60-74`
-   已含 RN 的 14 个 `desktopLyric.*` 键（`enable/isLock/width/maxLineNum/isSingleLine/
+   已含 RN 的 15 个 `desktopLyric.*` 键（`enable/isLock/width/maxLineNum/isSingleLine/
    showToggleAnima/position.x/position.y/textPosition.x/textPosition.y/style.fontSize/
    style.opacity/style.lyricUnplayColor/style.lyricPlayedColor/style.lyricShadowColor`）。
-   本任务改为**键契约测试**（默认值逐键对照 RN，含 `:104` 的新年皮肤覆盖），
+   本任务改为**键契约测试**（默认值逐键对照 RN `defaultSetting.ts:55-69`，并锁住
+   Kotlin `DefaultSetting.kt:106` 的 1-2 月新年皮肤覆盖，对应 RN `:103-106`），
    `DefaultSetting.kt` 列为禁触。
 4. **入口**：`MoreActionSheet.kt` 加桌面歌词开关一行（含 overlay 权限检查 + 跳系统
    权限页，对照 RN `DesktopLyricEnable.tsx`）。这是本 lane 在 `ui/play/` 里
