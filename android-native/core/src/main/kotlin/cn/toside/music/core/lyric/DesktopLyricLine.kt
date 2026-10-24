@@ -4,8 +4,8 @@ package cn.toside.music.core.lyric
  * 桌面歌词浮窗的纯逻辑 —— RN `mobile/lyric/LyricPlayer.java` 与 `LyricView.java` 的静态部分。
  *
  * 只做「播放位置 → 显示哪些行」和「百分比 → 窗口坐标」；窗口创建、拖动、逐行动画
- * 属于 app 层。桌面歌词的 `offset` 是 150ms，与播放页的 100ms 不同
- * （RN `LyricPlayer.offset = 150`，播放页插件初始化固定 `offset: 100`）。
+ * 属于 app 层。桌面歌词的 `offset` 是 150ms，与 Kotlin 播放页的 100ms 不同
+ * （RN `LyricPlayer.offset = 150`，Kotlin `LyricParser.DEFAULT_OFFSET_MS = 100`）。
  */
 object DesktopLyricLine {
     /** RN `LyricPlayer.offset`：桌面歌词比播放位置提前 150ms 切行。 */
@@ -25,7 +25,7 @@ object DesktopLyricLine {
     /**
      * 浮窗要显示的文本行：当前行 + 该行的翻译/音译。
      * 对照 RN `LyricView.setLyric`：单行模式或 `maxLineNum <= 1` 只显示当前行，
-     * 否则最多 `maxLineNum` 行；空白扩展行跳过（RN 在 `Lyric.java` 已过滤）。
+     * 否则最多 `maxLineNum` 行；`Lyric.java` 只滤掉空串，这里连纯空白也跳过。
      */
     fun lines(
         parsed: ParsedLyric,
