@@ -61,12 +61,12 @@ B3 已完成音源运行时、更新流全链路，但自定义源仍无存储/�
 - commit：`79933e8`（纯规则 UserApiCatalog + 用例）、`cb5f451`（可写目录 + 更新设置读
   SettingsStore）、`a55761a`（三个页面 + 格式化 + 用例）；
   测试数 **core 333 + app 57 全绿**（基线 core 309 + app 19；`ktlintCheck test assembleDebug` 全绿）。
-- 触碰文件清单：
-  - `core/src/main/kotlin/cn/toside/music/core/userapi/UserApiCatalog.kt`（改：新增
-    `MAX_SOURCE_COUNT` / `canImport`，其余为 chunk1 播种、导入建条目、地址迁移、下架规则）
-  - `core/src/test/kotlin/cn/toside/music/core/userapi/UserApiCatalogTest.kt`（改：+25 用例）
-  - `app/src/main/kotlin/cn/toside/music/nativeapp/userapi/UserApiSourceStore.kt`（改：可写目录落盘层；
-    `importScript` 先查数量再验脚本）
+- 触碰文件清单（路径相对 `android-native/`）：
+  - `core/src/main/kotlin/cn/toside/music/core/userapi/UserApiCatalog.kt`（**新**：源清单的纯规则
+    ——播种、导入建条目、更新地址编辑与拉黑、下架交接、当前源挑选，含 `MAX_SOURCE_COUNT` / `canImport`）
+  - `core/src/test/kotlin/cn/toside/music/core/userapi/UserApiCatalogTest.kt`（**新**：24 用例）
+  - `app/src/main/kotlin/cn/toside/music/nativeapp/userapi/UserApiSourceStore.kt`（改：由只读内置清单
+    重写为可写目录落盘层；`importScript` 先查数量再验脚本）
   - `app/src/main/kotlin/cn/toside/music/nativeapp/userapi/UserApiSourceSelector.kt`（新：当前源解析与回落）
   - `app/src/main/kotlin/cn/toside/music/nativeapp/userapi/BuiltinSources.kt`（改：随包目录接口
     `BuiltinSourceCatalog`，脚本正文留在 assets）
@@ -80,7 +80,7 @@ B3 已完成音源运行时、更新流全链路，但自定义源仍无存储/�
   - `app/src/main/kotlin/cn/toside/music/nativeapp/ui/settings/UserApiManagePage.kt`（新）
   - `app/src/main/kotlin/cn/toside/music/nativeapp/ui/settings/UserApiLogsPage.kt`（新）
   - `app/src/main/kotlin/cn/toside/music/nativeapp/ui/settings/SettingsFormat.kt`（新：纯格式化）
-  - `app/src/test/kotlin/cn/toside/music/nativeapp/userapi/UserApiSourceStoreTest.kt`（改：+22 用例，
+  - `app/src/test/kotlin/cn/toside/music/nativeapp/userapi/UserApiSourceStoreTest.kt`（**新**：22 用例，
     含「导入→列表→启停→更新地址」全链路与数量上限）
   - `app/src/test/kotlin/cn/toside/music/nativeapp/userapi/UpdaterSettingsTest.kt`（新：4 用例）
   - `app/src/test/kotlin/cn/toside/music/nativeapp/ui/settings/SettingsFormatTest.kt`（新：12 用例）
