@@ -1,11 +1,13 @@
 package cn.toside.music.nativeapp.player
 
 import android.content.Context
+import android.os.PowerManager
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import cn.toside.music.core.lyric.LyricParser
 import cn.toside.music.core.lyric.ParsedLyric
 import cn.toside.music.core.player.CorePlaybackCommands
+import cn.toside.music.core.player.PlayProgressMemory
 import cn.toside.music.core.player.PlaybackCoordinator
 import cn.toside.music.core.player.PlayerCore
 import cn.toside.music.core.player.TogglePlayMethod
@@ -39,6 +41,7 @@ class PlayerRuntime private constructor(
     context: Context,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val appContext = context.applicationContext
 
     val platform = Media3PlayerPlatform(context.applicationContext)
 
@@ -78,6 +81,14 @@ class PlayerRuntime private constructor(
             urlProvider = PlayerCore.MusicUrlProvider { info -> urlResolver.getUrl(info) },
         )
 
+    /** 进度记忆（三键之一 `player.isSavePlayTime` 的消费者，落盘见 [PlayInfoStore]）。 */
+    private val progressMemory =
+        PlayProgressMemory(
+            storage = PlayInfoStore(appContext),
+            isSavePlayTime = { settings.store.bool("player.isSavePlayTime") },
+            isScreenOn = { isScreenOn() },
+        )
+
     // ---------- 音量均衡（对照 core/init/player/volumeBalancer.ts） ----------
     // 声明必须在 init 之前：init 里启动的协程会立刻读到默认值
 
@@ -100,6 +111,7 @@ class PlayerRuntime private constructor(
         PlaybackCoordinator(core, platform, scope).start()
         observeMetadata()
         observeSettings()
+        observeProgressMemory()
         observePlayForVolumeBalancer()
         observeLyrics()
         wireUserApiUpdates()
@@ -111,9 +123,71 @@ class PlayerRuntime private constructor(
         scope.launch {
             // 设置就绪后再挂均衡：默认关时什么也不做，开时等音频 session 出现再应用
             settings.ensureLoaded()
+            applyStartupSettings()
             if (isVolumeBalancerEnabled()) applyVolumeBalancer()
+            restoreSavedPlayback()
         }
     }
+
+    /**
+     * 三键回读（RN handlePlay 里的 `playerInitial`）：音量/倍率随播放器初始化一次下发，
+     * 缓存大小/音频焦点/音频卸载也走同一入口；音频卸载在音量均衡开启时强制关闭。
+     */
+    private suspend fun applyStartupSettings() {
+        val startup = PlayerStartupSettings.fromSetting(settings.store.state.value)
+        platform.initialize(
+            volume = startup.volume,
+            playRate = startup.playRate,
+            cacheSizeMiB = startup.cacheSizeMiB,
+            isHandleAudioFocus = startup.isHandleAudioFocus,
+            isEnableAudioOffload = startup.isEnableAudioOffload,
+        )
+        core.setVolume(startup.volume)
+        core.setRate(startup.playRate)
+        Log.d(
+            "PlayerRuntime",
+            "startup volume=${startup.volume} rate=${startup.playRate} cache=${startup.cacheSizeMiB}MiB " +
+                "focus=${startup.isHandleAudioFocus} offload=${startup.isEnableAudioOffload}",
+        )
+    }
+
+    /**
+     * 恢复上次播放（RN playInfo.ts）：列表/索引校验通过才恢复；`isSavePlayTime`
+     * 关闭时只还原曲目与总时长、进度从 0 开始；是否自动开播由 `player.startupAutoPlay` 决定。
+     */
+    private suspend fun restoreSavedPlayback() {
+        val saved = progressMemory.load() ?: return
+        val list = runCatching { listResolver(saved.listId) }.getOrDefault(emptyList())
+        if (list.getOrNull(saved.index) == null) return
+        val timeSec = if (settings.store.bool("player.isSavePlayTime")) saved.timeSec else 0f
+        if (!core.restorePlayList(saved.listId, saved.index, timeSec, saved.maxTimeSec)) return
+        if (settings.store.bool("player.startupAutoPlay")) core.play()
+    }
+
+    /** 进度保存的两个触发点（RN `musicToggled` + `delaySavePlayInfo`）。 */
+    private fun observeProgressMemory() {
+        scope.launch {
+            core.state
+                .map { it.playMusicInfo }
+                .distinctUntilChanged()
+                .collect { info ->
+                    // 换曲那一刻进度已被 PlayerCore 归零，落盘的是「新曲 + 0 秒」
+                    if (info.musicInfo == null) return@collect
+                    progressMemory.saveProgress(core.state.value, force = true)
+                }
+        }
+        scope.launch {
+            core.state
+                .map { it.progress }
+                .distinctUntilChanged()
+                .collect {
+                    // 开关/亮屏/临时曲/2 秒节流都在 PlayProgressMemory 内判定
+                    progressMemory.saveProgress(core.state.value)
+                }
+        }
+    }
+
+    private fun isScreenOn(): Boolean = (appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: true
 
     // ---------- 歌词（对照 RN player.ts 的 getLyricInfo + lyricUpdated） ----------
 

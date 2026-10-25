@@ -209,7 +209,15 @@ class PlayerCore(
                 }
             }
         }
-        update { it.copy(playMusicInfo = PlayMusicInfo(listId, musicInfo, isTempPlay), playerPlayIndex = playerPlayIndex) }
+        // RN playInfo.ts:121：换曲那一刻进度归零，旧曲的 nowPlayTime 不跟到新曲。
+        // 进度记忆的「换曲即保存」依赖这一点（落盘的必须是新曲 + 0 秒）。
+        update {
+            it.copy(
+                playMusicInfo = PlayMusicInfo(listId, musicInfo, isTempPlay),
+                playerPlayIndex = playerPlayIndex,
+                progress = PlayProgress(),
+            )
+        }
     }
 
     suspend fun setPlayerListId(listId: String?) = update { it.copy(playerListId = listId) }
@@ -296,6 +304,31 @@ class PlayerCore(
     /** 播放/暂停切换（togglePlay）。 */
     suspend fun togglePlay() {
         if (_state.value.isPlay) pause() else play()
+    }
+
+    /**
+     * 启动恢复上次播放（RN `playInfo.ts` + `player.ts#handleRestorePlay`）：
+     * 校验列表与索引后装载该曲，**不自动播放**；`timeSec/maxTimeSec` 由调用方按
+     * `player.isSavePlayTime` 决定（关闭时传 0，`maxTime` 总是还原）。
+     *
+     * @return 索引无效或取链失败时返回 false（调用方据此决定是否回退到普通播放）。
+     */
+    suspend fun restorePlayList(
+        listId: String,
+        index: Int,
+        timeSec: Float,
+        maxTimeSec: Float,
+    ): Boolean {
+        val list = listProvider(listId)
+        val target = list.getOrNull(index) ?: return false
+        val prevListId = _state.value.playerListId
+        setPlayerListId(listId)
+        setPlayMusicInfo(listId, target)
+        clearTempPlayList()
+        if (shouldClearPlayedList(prevListId, listId)) clearPlayedList()
+        setProgress(timeSec, maxTimeSec)
+        if (!_state.value.playMusicInfo.isTempPlay) syncRandomList()
+        return loadAndPlay(target, timeSec, autoPlay = false)
     }
 
     /** 恢复播放（play）。 */
@@ -521,16 +554,19 @@ class PlayerCore(
     private suspend fun loadAndPlay(
         musicInfo: JsonObject,
         startPositionSec: Float,
-    ) {
+        autoPlay: Boolean = true,
+    ): Boolean {
         val url = runCatching { urlProvider.getUrl(musicInfo) }.getOrNull()
         if (url == null) {
             onStatusText?.invoke("取链失败")
             onPlayError?.invoke(musicInfo)
             onLoadFailed?.invoke(musicInfo)
-            return
+            return false
         }
         platform.setResource(musicInfo.idKey() ?: "", url, (startPositionSec * 1000).toLong())
-        platform.play()
+        // 启动恢复（RN playList.ts:185-190）：装载后暂停，等用户自己按播放
+        if (autoPlay) platform.play() else platform.pause()
+        return true
     }
 
     /**
