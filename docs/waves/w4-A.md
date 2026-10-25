@@ -1,8 +1,10 @@
 # Wave 4 · Lane A 任务书 —— S13 推荐 M2：bandit 全家桶 + 个性电台 + 不感兴趣闭环
 
 > 本文件是 Lane A 会话的唯一任务指令。开始前先读 `docs/waves/RULES.md` 与本文全文。
-> **预草稿**（2026-10-26 起草，基线 = Wave3 并入后 core 558 + app 76 = 634，
-> APK 28,142,274 B）：投用前必须由协调会话在新快照上复核修订（教训 2）。
+> **已复核修订**（2026-10-26 协调会话；基线 = Wave3 并入后 core 558 + app 76 = 634，
+> APK 28,142,274 B）。复核结论：`@play_history` 仍无写入方
+> （`core/storage/StorageKeys.kt` 只有常量，`RecommendProfileRuntime` KDoc 也标注「原生尚无写入方」），
+> 任务 1 按原样从零实现；`HomeNavigator.kt` 实际路径是 `nativeapp/HomeNavigator.kt`（不在 `ui/` 下）。
 
 ## 背景与立项依据
 
@@ -36,8 +38,12 @@ onboarding.ts（问卷，**可选项**）。
 4. **电台 UI**：发现页电台卡片/进入电台/队列反馈（喜欢/不感兴趣→dislikeList
    持久化与过滤闭环）。路由不够用许加 `HomeNavigator.Route`（本波 HomePage/HomeNavigator
    归本 lane）。**「更多」分页与 onboarding 问卷为可选项**：主线收不完就写遗留，不硬赶。
-5. **OEM 保活**：以 `docs/waves/w3-A.md` 任务 5 的调研结论为输入，决定是否随电台
-   落地 FGS/OEM 白名单动作；不做就按调研结论登记收官遗留。
+5. **OEM 保活**：输入 = `docs/waves/w3-A.md` 的「### 任务 5：OEM 保活调研（仅调研，未实现）」
+   全节（现状盘点 / 系统层约束 / 厂商白名单表 / 三条建议 / 遗留 1）。复核结论：
+   `PlaybackService` 已是 `MediaSessionService` 且类型与权限齐备，**本波 Manifest 无需改动**；
+   `DesktopLyricService` 的 FGS 化与「后台播放帮助」页按 w3-A 建议 2/3 单独立项，
+   **本波不实现**。Lane A 只需在 lane 报告「遗留问题」节登记该决议（不实现 + 理由）；
+   只有电台主线确有硬需求时，才在本车道范围内做最小实现并单独记报告。
 6. **M3 禁触**：audioEmbedding/melSpectrogram/nativeAudio/diversity/similarity
    一个字不写；发现 M2 有依赖 M3 的分支，降级处理并记报告。
 
@@ -50,7 +56,8 @@ onboarding.ts（问卷，**可选项**）。
 - `android-native/app/src/main/kotlin/cn/toside/music/nativeapp/player/`、
   `data/`（电台 runtime 接线）
 - `android-native/app/src/main/kotlin/cn/toside/music/nativeapp/ui/HomePage.kt`、
-  `HomeNavigator.kt` + 新目录 `ui/radio/`
+  `android-native/app/src/main/kotlin/cn/toside/music/nativeapp/HomeNavigator.kt`
+  （注意：在 `nativeapp/` 根下，不在 `ui/`）+ 新目录 `ui/radio/`
 - `android-native/app/src/main/AndroidManifest.xml`（仅 OEM/FGS 相关行；禁动方向属性）
 - 新增测试放对应包
 

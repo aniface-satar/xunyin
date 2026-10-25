@@ -5,6 +5,23 @@
 sha256 `09678fe4…`）。Wave 4 任务书按该快照起草，投用前协调会话仍必须逐条复核
 （教训 2——前三波每次都靠复核抓到漂移）。
 
+**复核修订记录（2026-10-26 协调会话，快照前）**：
+
+- 基线真跑：`ktlintCheck test assembleDebug` 全绿，`--rerun-tasks` 复核测试数
+  core 558 + app 76 = 634；APK 28,142,274 B、sha256 `09678fe4…` 与 Wave3 一致。
+- w4-A：`@play_history` 仍无写入方（任务 1 保持从零实现）；`HomeNavigator.kt` 路径
+  修正为 `nativeapp/HomeNavigator.kt`；OEM 输入落点写死为 w3-A「任务 5」全节，
+  决议 = 本波不实现（Manifest 无需改）。
+- w4-B：入口文件写死 `ui/play/MoreActionSheet.kt`；`CoverImageLoader` 现行 API
+  （`suspend load(rawUrl): CoverArt?`，LRU 6 / 1200 / RGB_565 / blur 32）写死；
+  `PlayDetailPage.kt` / `LyricView.kt` / `TimeoutExitRuntime.kt` 禁触。
+- w4-C：首页列表**行**菜单在 `HomePage.kt` 的 `MyPage` 内（Lane A），本波菜单项入口
+  改落 `ui/list/ListDetailPage.kt`；链接粘贴入口限 `SonglistPanel` / `SonglistDetailPage`
+  （已有导航回调，零跨车道改动）；搜索页 `detailTarget` 页内覆盖的路由缺口本波不修；
+  `CoverImageLoader` 既有语义锁死。
+- 已建 worktree：`../music-w4/laneA|laneB|laneC`，分支 `w4/laneA|B|C`，
+  均从本快照 HEAD 建出并拷好 `android-native/local.properties`。
+
 用法不变：
 
 ```

@@ -1,8 +1,9 @@
 # Wave 4 · Lane B 任务书 —— S14 分享图卡片（Apple Music 风格音乐卡 + 歌词卡）
 
 > 本文件是 Lane B 会话的唯一任务指令。开始前先读 `docs/waves/RULES.md` 与本文全文。
-> **预草稿**（2026-10-26 起草，基线 = Wave3 并入后 core 558 + app 76 = 634）：
-> 投用前必须由协调会话在新快照上复核修订（教训 2）。
+> **已复核修订**（2026-10-26 协调会话；基线 = Wave3 并入后 core 558 + app 76 = 634）。
+> 复核结论：RN 对照文件全部存在；`MoreActionSheet.kt` 是 `ui/play/` 下唯一可改文件；
+> `CoverImageLoader` 当前公开 API 写死在第 5 条。
 
 ## 背景
 
@@ -32,9 +33,16 @@ Compose 无等价同步截屏，需用 `Canvas`/`android.graphics.Bitmap` + `Pic
 3. **导出到相册**：MediaStore 写入（`Pictures/寻音`），命名与去重对照 RN；
    **保存辅助类放本 lane `ui/share/` 内，不得在 `util/` 建文件**（`util/` 归 Lane C 本波独占）。
 4. **入口**：播放页「更多菜单」加「分享」一行 → 分享模式 sheet（音乐卡/歌词卡切换 +
-   保存）；这是本 lane 在 `ui/play/` 唯一允许改的文件（更多菜单 sheet，只加接线行）。
-5. **封面来源**：只调用 `CoverImageLoader` 既有公开 API 取封面，**不改该文件**
-   （磁盘缓存/getPicPath 归 Lane C 本波独占，避免同文件冲突）。
+   保存）。落地文件写死为
+   `android-native/app/src/main/kotlin/cn/toside/music/nativeapp/ui/play/MoreActionSheet.kt`，
+   这是本 lane 在 `ui/play/` 唯一允许改的文件，且只加接线行；
+   `PlayDetailPage.kt`、`LyricView.kt`、`TimeoutExitRuntime.kt` 禁触。
+5. **封面来源**：只调用 `CoverImageLoader` 既有公开 API，**不改该文件**
+   （磁盘缓存/getPicPath 归 Lane C 本波独占，避免同文件冲突）。当前 API 形状（已核实）：
+   `object CoverImageLoader { suspend fun load(rawUrl: String?): CoverArt? }`，
+   返回 `CoverArt(cover: ImageBitmap, blurSource: ImageBitmap?)`；内部是 6 张内存 LRU，
+   最长边 1200、`RGB_565`、`blurSource` 32px。只调 `load`；若需要缩略图/落盘路径等新能力，
+   写进 lane 报告交给 C，不要自己扩。
 6. 分享类型设置（对照 `ShareType.tsx`）为**可选项**：卡片能存能看即达 MVP，
    类型偏好键（`share.*`）需要加 `DefaultSetting` 时在本波**避免**——用进程级默认，
    设置持久化登记收官遗留（本波无人认领 `core/.../setting/`）。
