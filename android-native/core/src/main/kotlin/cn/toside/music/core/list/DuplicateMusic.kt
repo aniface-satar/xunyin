@@ -63,6 +63,5 @@ object DuplicateMusic {
         return stripped.ifEmpty { lower.replace(WHITESPACE, "") }
     }
 
-    private fun JsonObject.stringOrNull(key: String): String? =
-        (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
+    private fun JsonObject.stringOrNull(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
 }

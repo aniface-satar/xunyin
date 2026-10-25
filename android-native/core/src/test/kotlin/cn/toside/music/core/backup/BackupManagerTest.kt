@@ -2,6 +2,7 @@ package cn.toside.music.core.backup
 
 import cn.toside.music.core.data.DataRepository
 import cn.toside.music.core.list.ListStore
+import cn.toside.music.core.storage.GzipCodec
 import cn.toside.music.core.storage.InMemoryKvStore
 import cn.toside.music.core.storage.ShardedKvStore
 import kotlinx.coroutines.runBlocking
@@ -305,7 +306,13 @@ class BackupManagerTest {
                                 put("name", "文件里的名字")
                                 put("source", "kg")
                                 put("sourceListId", "abc")
-                                put("list", buildJsonArray { add(music("n1")); add(music("n2")) })
+                                put(
+                                    "list",
+                                    buildJsonArray {
+                                        add(music("n1"))
+                                        add(music("n2"))
+                                    },
+                                )
                             },
                         )
                     },
@@ -318,9 +325,11 @@ class BackupManagerTest {
             val result = bm.import(partBytes, BackupManager.PartConflictMode.OVERWRITE)
             assertTrue(result is BackupManager.ImportResult.PartImported)
             // RN handleImportListPart 覆盖分支：listData.name = targetList.name 后 overwriteList
-            assertEquals("本地名", ls.state.value.userLists.single().name)
-            assertEquals("kg", ls.state.value.userLists.single().source)
-            assertEquals("abc", ls.state.value.userLists.single().sourceListId)
+            val state = ls.state.value
+            val localInfo = state.userLists.single()
+            assertEquals("本地名", localInfo.name)
+            assertEquals("kg", localInfo.source)
+            assertEquals("abc", localInfo.sourceListId)
             assertEquals(listOf("n1", "n2"), ls.getListMusics("u1").map { it["id"]!!.primStr() })
         }
 
@@ -351,6 +360,37 @@ class BackupManagerTest {
         }
 
     @Test
+    fun partRenameCopyOfBuiltinCreatesUserList() =
+        runBlocking {
+            // RN：冲突时取消覆盖 → id 追加时间戳后 createList，内置列表本身不动
+            val partBytes =
+                gzipJson(
+                    buildJsonObject {
+                        put("type", "playListPart_v2")
+                        put(
+                            "data",
+                            buildJsonObject {
+                                put("id", "default")
+                                put("name", "试听列表")
+                                put("list", buildJsonArray { add(music("copy1")) })
+                            },
+                        )
+                    },
+                )
+
+            val (bm, ls, _) = newSystem()
+            ls.listMusicAdd("default", listOf(music("keep")), "bottom")
+            val result = bm.import(partBytes)
+            assertTrue(result is BackupManager.ImportResult.PartImported)
+            val state = ls.state.value
+            val listInfo = state.userLists.single()
+            assertTrue(listInfo.id.startsWith("default__"))
+            assertEquals("试听列表", listInfo.name)
+            assertEquals(listOf("copy1"), ls.getListMusics(listInfo.id).map { it["id"]!!.primStr() })
+            assertEquals(listOf("keep"), ls.getListMusics("default").map { it["id"]!!.primStr() })
+        }
+
+    @Test
     fun previewReportsFullBackupWithoutPartFields() =
         runBlocking {
             val (bm, _, _) = newSystem()
@@ -367,8 +407,7 @@ class BackupManagerTest {
             assertEquals(null, preview.partName)
         }
 
-    private fun gzipJson(root: JsonObject): ByteArray =
-        cn.toside.music.core.storage.GzipCodec.gzip(root.toString().toByteArray())
+    private fun gzipJson(root: JsonObject): ByteArray = GzipCodec.gzip(root.toString().toByteArray())
 
     private fun kotlinx.serialization.json.JsonElement.primStr(): String = (this as kotlinx.serialization.json.JsonPrimitive).content
 }

@@ -95,7 +95,8 @@ class BackupManager(
         listId: String,
         name: String,
     ): ByteArray {
-        val info = listStore.state.value.userLists.firstOrNull { it.id == listId }
+        val store = listStore.state.value
+        val info = store.userLists.firstOrNull { it.id == listId }
         val data =
             buildJsonObject {
                 put("id", listId)

@@ -148,7 +148,11 @@ fun ListDetailPage(
         when (id) {
             StorageKeys.ListIds.DEFAULT -> "试听列表"
             StorageKeys.ListIds.LOVE -> "我的收藏"
-            else -> runtime.lists.store.state.value.userLists.firstOrNull { it.id == id }?.name
+            else -> {
+                val store = runtime.lists.store.state.value
+                val found = store.userLists.firstOrNull { it.id == id }
+                found?.name
+            }
         }
 
     /** 执行导入：单列表按冲突策略落库，整表备份覆盖全部列表（RN importPlayList）。 */

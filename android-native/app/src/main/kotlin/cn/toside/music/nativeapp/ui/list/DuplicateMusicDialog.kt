@@ -114,9 +114,10 @@ fun DuplicateMusicDialog(
                             )
                         }
                         BasicText(
-                            text = listOfNotNull(music.text("source"), music.text("interval"))
-                                .filter { it.isNotBlank() }
-                                .joinToString(" · "),
+                            text =
+                                listOfNotNull(music.text("source"), music.text("interval"))
+                                    .filter { it.isNotBlank() }
+                                    .joinToString(" · "),
                             modifier = Modifier.padding(horizontal = 6.dp),
                             style = TextStyle(color = SaltTheme.colors.subText, fontSize = 12.sp),
                         )
