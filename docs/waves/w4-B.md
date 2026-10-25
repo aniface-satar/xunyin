@@ -70,3 +70,25 @@ Compose 无等价同步截屏，需用 `Canvas`/`android.graphics.Bitmap` + `Pic
 - 「导出方案选型」写报告（说清为何不用 view-shot、用什么同步绘制路径）；
 - lane 报告按 RULES 模板追加到本文件末尾并 commit；真机清单（卡片观感、存相册、
   命名/去重、release 包字体/品牌按像素验证）写报告。
+
+## Lane B 导出方案选型（2026-10-26，实现前定稿）
+
+- **RN 路线不可移植**：RN 用 `view-shot` 的 `captureRef` 把已上屏的卡片组件抓成临时 PNG
+  （`exportCard.ts`）。原生没有等价的同步截屏：Compose 没有「按组件出图」的公开 API；
+  `PixelCopy` 只能抓窗口表面且是异步的，要求真实上屏、受最小化/遮挡影响，预览与成品
+  还可能不是同一帧。继续沿用「截屏」思路会引入一整类就绪门与黑图问题。
+- **选型：主动重绘（Canvas/Picture 系）**。分工写死：
+  - `:core/share/` 产出全部**决策**：主题色、字号、卡片几何（`cardScale`/`shotRect`）、
+    歌词块取几号字/显示几句/是否截断、文件名与去重。全部 JVM 单测 + RN 黄金值对照。
+  - `ui/share/` 只有**执行器**：一个 `android.graphics.Bitmap + Canvas + Paint` 渲染器，
+    把同一份决策画成位图。预览直接显示这张位图，导出写出的也是这张位图（WYSIWYG），
+    不存在「预览对、导出歪」的两套排版。
+- **封面**：只调 `CoverImageLoader.load(picUrl)`，取 `ImageBitmap.asAndroidBitmap()`
+  画进封面框；背景用其 `blurSource`（32px 缩略图）放大铺满 + `#111114` 覆盖层近似 RN
+  的 expo-blur 背景（无 RenderScript/无第三方模糊库，不新增依赖）。
+- **文字**：`Paint` 按屏幕密度把 core 的 dp 值换成 px，直接排版；行高、间距、截断行数
+  全部来自 core 决策。由此天然绕开 RN 那套 `allowFontScaling` 顶穿问题（不读系统字号）。
+- **导出**：同一 Bitmap 压 PNG，`MediaStore` 写入 `Pictures/寻音`。命名/去重照 RN
+  （`cardFileName` 清非法字符、72 字符上限、同名追加 ` (n)`）。约束：`minSdk = 26` 且
+  manifest 禁触（无 `WRITE_EXTERNAL_STORAGE`），**29+ 可免权限写公共相册；26–28 只能
+  提示系统版本过低**——记入遗留，要支持需改 manifest（本波禁触）。
