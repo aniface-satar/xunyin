@@ -1,12 +1,15 @@
 package cn.toside.music.nativeapp.ui.songlist
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -15,6 +18,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -27,16 +31,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.toside.music.core.songlist.PlaylistItem
+import cn.toside.music.core.songlist.SonglistLinkParser
 import cn.toside.music.core.songlist.SonglistTags
 import cn.toside.music.nativeapp.data.SonglistRuntime
+import com.moriafly.salt.ui.Button
+import com.moriafly.salt.ui.ButtonAppearance
 import com.moriafly.salt.ui.SaltTheme
 import com.moriafly.salt.ui.UnstableSaltUiApi
+import com.moriafly.salt.ui.dialog.BasicDialog
+import com.moriafly.salt.ui.dialog.DialogTitle
 import kotlinx.coroutines.launch
 
 /**
@@ -73,7 +84,11 @@ fun SonglistPanel(onOpenSonglist: (source: String, id: String, title: String) ->
     var error by remember { mutableStateOf<String?>(null) }
     var generation by remember { mutableStateOf(0) }
     var retryTick by remember { mutableStateOf(0) }
+    var openVisible by remember { mutableStateOf(false) }
+    var openText by remember { mutableStateOf("") }
+    var openSource by remember { mutableStateOf(source) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LaunchedEffect(source) {
         tags = null
@@ -124,7 +139,15 @@ fun SonglistPanel(onOpenSonglist: (source: String, id: String, title: String) ->
     }
 
     Column(Modifier.fillMaxSize()) {
-        SourceRow(source = source, onSelect = { source = it })
+        SourceRow(
+            source = source,
+            onSelect = { source = it },
+            onOpenLink = {
+                openText = ""
+                openSource = source
+                openVisible = true
+            },
+        )
         SortRow(source = source, sortId = sortId, onSelect = { sortId = it })
         TagRow(
             hotTags = tags?.hotTags.orEmpty(),
@@ -190,14 +213,95 @@ fun SonglistPanel(onOpenSonglist: (source: String, id: String, title: String) ->
             }
         }
     }
+
+    if (openVisible) {
+        BasicDialog(onDismissRequest = { openVisible = false }) {
+            DialogTitle(text = "打开歌单")
+            BasicTextField(
+                value = openText,
+                onValueChange = { openText = it },
+                singleLine = true,
+                textStyle = TextStyle(color = SaltTheme.colors.text, fontSize = 15.sp),
+                cursorBrush = SolidColor(SaltTheme.colors.highlight),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(SaltTheme.colors.subBackground)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (openText.isEmpty()) {
+                            BasicText(
+                                text = "输入歌单链接或歌单 ID",
+                                style = TextStyle(color = SaltTheme.colors.subText, fontSize = 15.sp),
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                SonglistRuntime.SOURCES.forEach { (id, label) ->
+                    Chip(
+                        text = label.removeSuffix("音乐"),
+                        selected = id == openSource,
+                        modifier = Modifier.weight(1f),
+                        onClick = { openSource = id },
+                    )
+                }
+            }
+            BasicText(
+                text = OPEN_LINK_TIP,
+                modifier = Modifier.padding(top = 10.dp),
+                style = TextStyle(color = SaltTheme.colors.subText, fontSize = 12.sp),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { openVisible = false },
+                    text = "取消",
+                    appearance = ButtonAppearance.Subtle,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = {
+                        val parsed = SonglistLinkParser.parse(openText, openSource)
+                        if (parsed == null) {
+                            Toast
+                                .makeText(context, "无法识别这个歌单链接，请确认来源选择是否正确", Toast.LENGTH_SHORT)
+                                .show()
+                        } else {
+                            openVisible = false
+                            // 只有 id、还没有名称；详情加载后用返回的 info.name 覆盖标题
+                            onOpenSonglist(parsed.source, parsed.id, "歌单详情")
+                        }
+                    },
+                    text = "打开",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
 }
+
+/** RN `songlist_open_input_tip`：跨源/酷狗码/需 Token 等已知限制。 */
+private const val OPEN_LINK_TIP =
+    "1. 不支持跨源打开歌单，请确认要打开的歌单与当前选择的歌单来源是否对应\n" +
+        "2. 若遇到无法打开的歌单链接，欢迎反馈\n" +
+        "3. 酷狗源歌单不支持用歌单 ID 或概念版链接打开，但支持用普通版链接或酷狗码打开\n" +
+        "4. 网易源「私人雷达」歌单需要 Token 才能打开，企鹅源个人歌单需要将个人主页公开才能打开，请参阅软件文档的「常见问题」"
 
 @Composable
 private fun SourceRow(
     source: String,
     onSelect: (String) -> Unit,
+    onOpenLink: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         SonglistRuntime.SOURCES.forEach { (id, label) ->
             Chip(
                 text = label.removeSuffix("音乐"),
@@ -206,6 +310,15 @@ private fun SourceRow(
                 onClick = { onSelect(id) },
             )
         }
+        BasicText(
+            text = "打开",
+            modifier =
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onOpenLink)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+            style = TextStyle(color = SaltTheme.colors.highlight, fontSize = 13.sp),
+        )
     }
 }
 

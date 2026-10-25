@@ -42,6 +42,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cn.toside.music.core.list.ListStore
+import cn.toside.music.core.list.SourceListMatch
 import cn.toside.music.core.songlist.SonglistInfo
 import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.data.ListRuntime
@@ -96,6 +98,7 @@ fun SonglistDetailPage(
     var addTarget by remember { mutableStateOf<JsonObject?>(null) }
     var batchAddVisible by remember { mutableStateOf(false) }
     var cover by remember(source, id) { mutableStateOf<ImageBitmap?>(null) }
+    var importingAsList by remember(source, id) { mutableStateOf(false) }
 
     fun load(
         targetPage: Int,
@@ -136,6 +139,53 @@ fun SonglistDetailPage(
             .ifEmpty { "top" }
 
     fun toast(message: String) = Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+
+    /**
+     * 整单导入（对照 RN SonglistDetail/listAction.ts#handleImportAsList）：
+     * 整张外部歌单**新建一张自建歌单**（不是塞进已有列表），并写入 source/sourceListId，
+     * 同一源+歌单 id 已有自建歌单时只提示、不建第二张。
+     */
+    fun importAsList() {
+        if (importingAsList) return
+        val name = info?.name ?: title
+        scope.launch {
+            val existingLists = lists.store.state.value.userLists
+            if (SourceListMatch.find(existingLists, source, id) != null) {
+                toast("这个歌单已经在你的自建歌单里了")
+                return@launch
+            }
+            val normalized = lists.store.normalizeListName(name)
+            if (normalized.isEmpty()) {
+                toast("加入失败")
+                return@launch
+            }
+            importingAsList = true
+            toast("正在读取全部歌曲...")
+            val full = runCatching { SonglistRuntime.getListDetailAll(source, id) }.getOrNull()
+            if (full.isNullOrEmpty()) {
+                importingAsList = false
+                toast("加入失败")
+                return@launch
+            }
+            val now = System.currentTimeMillis()
+            val createdId = "userlist_$now"
+            lists.store.userListCreate(
+                ListStore.UserListInfo(
+                    id = createdId,
+                    name = normalized,
+                    source = source,
+                    sourceListId = id,
+                    locationUpdateTime = now,
+                ),
+                position = existingLists.size,
+            )
+            // bottom 插入保持在线歌单原始顺序
+            lists.store.listMusicAdd(createdId, full, "bottom")
+            runtime.core.handleListMusicsUpdated(listOf(createdId))
+            importingAsList = false
+            toast("已加入自建歌单")
+        }
+    }
 
     /** 单曲加入：先查目标列表是否已有，重复则只提示不落库。 */
     fun addOne(
@@ -278,7 +328,9 @@ fun SonglistDetailPage(
                                 fallbackTitle = title,
                                 cover = cover,
                                 selectedCount = if (editMode) selectedIds.size else 0,
+                                importingAsList = importingAsList,
                                 onPlayAll = { play(items, 0) },
+                                onImportAsList = { importAsList() },
                             )
                         }
                         if (items.isEmpty()) {
@@ -414,7 +466,9 @@ private fun InfoHeader(
     fallbackTitle: String,
     cover: ImageBitmap?,
     selectedCount: Int,
+    importingAsList: Boolean,
     onPlayAll: () -> Unit,
+    onImportAsList: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row {
@@ -476,11 +530,22 @@ private fun InfoHeader(
                 style = TextStyle(color = SaltTheme.colors.subText, fontSize = 12.sp),
             )
         }
-        Button(
-            onClick = onPlayAll,
-            text = "播放全部",
+        Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        )
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = onPlayAll,
+                text = "播放全部",
+                modifier = Modifier.weight(1f),
+            )
+            Button(
+                onClick = onImportAsList,
+                text = if (importingAsList) "读取中…" else "导入为新歌单",
+                enabled = !importingAsList,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
