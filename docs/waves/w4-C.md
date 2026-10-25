@@ -86,3 +86,91 @@
 - 本地文件/同步的评估结论 + 首页长按菜单、deeplink 两项遗留写清楚；
 - lane 报告按 RULES 模板追加到本文件末尾并 commit；真机清单（SAF 导入导出各安卓档、
   整单导入语义、封面断网占位）写报告。
+
+## Lane 报告（2026-10-26）
+
+- 结论：完成。任务 1（列表菜单去重）、2（lxmc SAF 导入导出）、3（整单导入 + 链接解析入口）、
+  5（封面磁盘缓存）全部落地；任务 4（本地文件 / 同步）按要求只做评估，结论见下；任务 6
+  （首页列表长按菜单）按任务书写遗留。未做真机验收（本 lane 无设备），真机清单见末节。
+- commit：`ef4fd9b`（core 去重分组/导入冲突/链接解析）、`1097d40`（列表菜单 + SAF + 去重弹层）、
+  `bf3f6cd`（内置列表改名复制用例 + ktlint）、`f0de3b1`（整单导入 + 链接打开）、
+  `f589887`（封面磁盘缓存）。
+  测试数 core 578 + app 76 全绿（基线 634 → 654，新增 20 条 core 用例）；
+  `gradlew.bat ktlintCheck test assembleDebug` 全绿。
+- 触碰文件清单：
+  - core 主代码：`core/.../backup/BackupManager.kt`、`core/.../list/DuplicateMusic.kt`（新增）、
+    `core/.../list/SourceListMatch.kt`（新增）、`core/.../songlist/SonglistLinkParser.kt`（新增）
+  - core 测试：`core/.../backup/BackupManagerTest.kt`、`core/.../list/DuplicateMusicTest.kt`（新增）、
+    `core/.../list/SourceListMatchTest.kt`（新增）、`core/.../songlist/SonglistLinkParserTest.kt`（新增）
+  - app 主代码：`app/.../ui/list/DuplicateMusicDialog.kt`（新增）、`app/.../ui/list/ListDetailPage.kt`、
+    `app/.../ui/songlist/SonglistDetailPage.kt`、`app/.../ui/songlist/SonglistPanel.kt`、
+    `app/.../ui/play/CoverImageLoader.kt`、`app/.../util/SafDocuments.kt`（新增）、
+    `app/.../MusicApp.kt`（越界，见末节 Rule 4 记录）
+  - 文档：`docs/waves/w4-C.md`（本报告）
+- 语义修正与实证发现：
+  1. **同名导出**：RN 导出文件名固定 `lx_list_part_${filterFileName(name)}.lxmc`
+     （`MyList/listAction.ts:66`），`utils/tools.ts:159 handleSaveFile` 直接
+     `gzipFile(temp, path)` 覆盖写，**无存在性检查/序号**；SAF `CreateDocument` 由系统把
+     同名自动改成 `(1)`、不覆盖原文件。已在导出确认弹窗明示「若已有同名文件，系统会自动改名
+     并追加「(1)」，不会覆盖原文件」。
+  2. **列表菜单导入类型**：RN 列表菜单只接受 `playListPart(_v2)`（`readListData` 的 type
+     switch，其余类型 `showImportTip` 拒绝）；原生列表菜单额外接受整表备份
+     （playList_v2/allData_v2/playList/allData），并套用 RN 设置页 `importPlayList` 的二次
+     确认文案。原因：原生尚无设置页备份入口，若照 RN 拒绝整表文件，整表导入将无任何入口；
+     该放宽是语义选择，非 RN 对齐。
+  3. **内置列表冲突语义**：RN `handleImportListPart` 冲突且取消覆盖 = id 追加 `__<ts>` 后
+     `createList`，内置列表本身不动；B1 原生实现对 default/love 的 RENAME_COPY 是"追加进
+     内置列表"，本波按 RN 修正，新增 `partRenameCopyOfBuiltinCreatesUserList` 单测钉住。
+  4. **"与爱心同认人不建两张"缺口**：原生爱心列表没有 `source`/`sourceListId` 元数据
+     （目前没有"收藏在线歌单进爱心"的写入路径），无法判定来源身份；整单导入的去重
+     （`SourceListMatch`，兼容 `sourceListId == id` 与 `${source}__${id}` 两种历史形态）
+     只覆盖 userLists。写遗留。
+  5. **kw 链接跨域**：RN kw `normalizeId` 不校验 host，任意域名的同路径链接都会被接受；
+     原生保持一致（跨源粘贴需用户手选来源），对话框提示文案照抄 RN
+     `songlist_open_input_tip` 四条。
+  6. **id 判定链覆盖**：kg 仅 `id_<数字>` 与 `.../special/single/<数字>.html`（既有
+     `normalizeId`），纯数字酷狗码/用户歌单 RN 走另外接口，本波未接；mg 支持纯 id、
+     `playlistId=`/`id=`、`/playlist/<id>`，短链 `c.migu.cn/xxx` 需跟重定向未接；
+     wy `###token` 整段原样透传给详情层。
+  7. **封面缓存无 RN 对照物**：RN `getPicPath` 只解析 URL（图片缓存由 Fresco 内部完成），
+     没有显式缓存目录/键规则；原生磁盘缓存为自设计：`cacheDir/cover_images/<sha1(url)>.cover`
+     存原始字节、解码失败删文件回源、tmp+rename 原子写、>300 张按 mtime 淘汰、读命中刷新
+     mtime。既有 `object`/`load(rawUrl: String?)`/`CoverArt`/LRU 6/最长边 1200/RGB_565/
+     blur 32 全部不变，`init(context)` 是新增 API，未调用时退化为原行为。
+  8. **SAF 文件类型过滤**：RN 在 picker 层按扩展名 json/lxmc/bin 过滤；Android `OpenDocument`
+     用 `*/*` + 读后按扩展名校验（部分 provider 把 .lxmc 报成 octet-stream/gzip，绑死 MIME
+     会误伤合法文件）。
+- 遗留问题与对后续波次的建议：
+  - **本地文件（只评估）**：RN 链路 = SAF 目录（`isPersist`）→ `handleImportMediaFile` →
+    `scanAudioFiles`/`readMetadata`（`react-native-local-media-metadata` 原生模块）→
+    构造 `source:'local'` + `meta.filePath` → 播放器直接播文件。原生缺口：①
+    `PlayerRuntime` 统一走 `userApi.getMusicUrl`，没有 `source=='local'` 直接读 `meta.filePath`
+    的分支；②需 `MediaMetadataRetriever` 读标签/内嵌封面/歌词（写 .lrc/封面的授权规则另定）；
+    ③SAF 目录需 `takePersistableUriPermission`；④`MusicInfoTools.sanitizeMusicInfo` 已能
+    兜住 local 的 `filePath`/`ext`。预计独立 M 级任务，建议 Wave5 单列。
+  - **同步（只评估，依赖已齐）**：RN `core/syncSourceList.ts` 仅需 `source`+`sourceListId`
+    → 全量拉取（`board__` 前缀走榜单整表）→ `overwriteListMusics` → 更新时间。原生已有
+    `SonglistRuntime.getListDetailAll`、`LeaderboardRuntime.getListDetailAll`、
+    `ListStore.listMusicOverwrite`、`locationUpdateTime`，且整单导入已写入 source/sourceListId，
+    下一波可直接在列表菜单加「同步」+ RN `list_sync_confirm_tip` 确认，无需后端。
+  - **首页「我的」列表行长按菜单**：`ui/HomePage.kt` 归 Lane A，本波未接；当前所有新菜单只在
+    列表详情页顶部操作行（已改为横向滚动以容纳 9 项）。
+  - **deeplink intent filter**（外部链接直接进歌单详情）未做。
+  - **其他长尾**：kg 酷狗码、mg 短链、wy 私人雷达（需 Token）、QQ 未公开个人主页，
+    按 RN 提示文案保留说明，实际打开由详情接口报错。
+  - **真机清单（本 lane 未执行，待集成后验收）**：
+    1) 导出：安卓 13/14/16 各一次，选同名文件确认系统生成 `(1)` 且原文件不被覆盖；
+    2) 单列表导入冲突：覆盖 → 本地名保留、歌曲被替换；取消 → 新建 `id__<ts>` 副本，原列表
+       不动（含 default/love）；无冲突 → 直接新建；
+    3) 整表备份导入：二次确认文案、导入后当前页刷新、当前列表已不存在时的返回；
+    4) `.json`（明文）与 `.lxmc`（gzip）两种文件，错误/不支持文件提示；
+    5) 在线歌单「导入为新歌单」：整单顺序、同源同单再次点击提示已存在、返回「我的」可见新
+       列表并可播放；
+    6) 歌单链接粘贴：五源各一条合法链接/id、错误链接提示、kw 跨域链接 + 手选来源、
+       wy `###token`；
+    7) 封面：断网首开显示占位不崩、联网后恢复、清空 `cacheDir/cover_images` 后恢复、
+       写坏缓存文件后自愈；
+    8) 去重弹层：分组排序、勾选移除确认、单条移除、空列表文案；
+    9) 操作行横滑：小屏下 9 项可滑到「导出」。
+- Rule 4 越界记录：`app/.../MusicApp.kt` 仅 +5 行，用于在应用根调用
+  `CoverImageLoader.init(applicationContext)`（公共 API 未变、无其他逻辑改动）。
