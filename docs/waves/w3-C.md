@@ -1,11 +1,14 @@
 # Wave 3 · Lane C 任务书 —— S12 歌单搜索（五源 songlist 类型）+ 在线歌单详情二轮
 
 > 本文件是 Lane C 会话的唯一任务指令。开始前先读 `docs/waves/RULES.md` 与本文全文。
-> **已按 Wave2 并入后快照复核修订**（2026-10-25，协调会话；快照提交为
-> `chore(wave3): 任务书按 Wave2 合并后快照修订` 的上一提交 `e7f390a`）。
-> **验证基线**：`:core` 470 + `:app` 68 = **538** 全绿（协调会话 `--rerun-tasks`
-> 强制实测：61 actionable tasks 全 executed，2m11s，failures/errors/skipped 全 0）。
+> **已按 Wave3 快照复核修订**（2026-10-25，协调会话；快照基点 = 含 Lane A 成果的
+> main `e6a31aa` 之上的任务书修订提交，见 git log）。
+> **验证基线**：`:core` 488 + `:app` 72 = **560** 全绿（协调会话 `--rerun-tasks`
+> 强制实测：61 actionable tasks 全 executed，1m39s，failures/errors/skipped 全 0，
+> APK 27,865,102 B）。
 > 开工自检只许等于或大于这个数。
+> 注：Lane A（播控/持久化二轮）已并入本基线；你范围的 `ui/play/CoverImageLoader.kt`
+> 与 Lane A 的 `ui/play/` 其余文件不相交，无冲突面。
 
 ## 背景
 

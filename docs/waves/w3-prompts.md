@@ -1,8 +1,9 @@
 # Wave 3 · 并行会话提示词（预草稿 2026-10-25）
 
-**前置条件**：Wave 2 已全部并入 main（现状核实于 e7f390a：core 470 + app 68 全绿，
-协调会话已用 `--rerun-tasks` 强制复跑：61 tasks 全 executed、failures/errors/skipped 全 0）。
-本套任务书按该状态起草并逐条复核修订完成。
+**前置条件**：Wave 2 已并入 main（`3a83b8c`，core 470 + app 68）；Wave 3 Lane A
+（播控/持久化二轮包 S8）已完成并并入 main（`e6a31aa`，实测 core 488 + app 72 = 560 全绿，
+failures/errors/skipped 全 0，APK 27,865,102 B）。
+B/C 两车道按该状态起草并逐条复核修订完成；A 车道提示词段保留存档、不再发放。
 
 用法不变：
 
@@ -48,7 +49,9 @@
    - 确认发现页推荐通道的 runtime 实际文件名与「重排」接入点，写死进 w3-B 范围；
    - 确认 ui/play/CoverImageLoader.kt 的类可见性现状，w3-C 是否只需一行改动；
    - 确认 core/.../music/search/ 下无 songlist 同名文件（w3-C 是纯新建）；
-   - 核对进度文档基线（应为 core 470 + app 68）并同步进三份任务书提示词。
+   - 核对进度文档基线并同步进三份任务书提示词（本波实测已核：进度文档仍记
+     Wave2 的 470+68，Lane A 并入后实测为 core 488 + app 72 = 560，任务书已按
+     488+72 修订；进度文档数字待集成会话收口时统一更新）。
 3. 跑基线（注意本机 Git Bash 约定）：cd android-native &&
    GRADLE_USER_HOME=E:/GradleHome ./gradlew.bat ktlintCheck test assembleDebug 必须全绿。
 4. 仓库卫生前置（本波独有，单独一笔提交，消息注明与波次无关）：
@@ -133,7 +136,7 @@ SleepTimer 收口/桌面歌词二轮/flaky 排查）。
 【开工自检（任何一项不过 → 停下报告，不要自行补救）】
 - git status 干净，当前分支是 w3/laneB
 - cd android-native && gradlew.bat ktlintCheck test assembleDebug 全绿，
-  测试数与基线一致（**基线 core 470 + app 68 = 538**，变少停下报告）
+  测试数与基线一致（**基线 core 488 + app 72 = 560**，变少停下报告）
 - android-native/local.properties 存在，缺失停下报告
 
 【本车道特别提醒】
@@ -179,7 +182,7 @@ SleepTimer 收口/桌面歌词二轮/flaky 排查）。
 【开工自检（任何一项不过 → 停下报告，不要自行补救）】
 - git status 干净，当前分支是 w3/laneC
 - cd android-native && gradlew.bat ktlintCheck test assembleDebug 全绿，
-  测试数与基线一致（**基线 core 470 + app 68 = 538**，变少停下报告）
+  测试数与基线一致（**基线 core 488 + app 72 = 560**，变少停下报告）
 - android-native/local.properties 存在，缺失停下报告
 
 【本车道特别提醒】

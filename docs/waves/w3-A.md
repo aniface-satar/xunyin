@@ -1,11 +1,10 @@
 # Wave 3 · Lane A 任务书 —— S8 播控与持久化二轮包
 
 > 本文件是 Lane A 会话的唯一任务指令。开始前先读 `docs/waves/RULES.md` 与本文全文。
-> **已按 Wave2 并入后快照复核修订**（2026-10-25，协调会话；快照提交为
-> `chore(wave3): 任务书按 Wave2 合并后快照修订` 的上一提交 `e7f390a`）。
-> **验证基线**：`:core` 470 + `:app` 68 = **538** 全绿（协调会话 `--rerun-tasks`
-> 强制实测：61 actionable tasks 全 executed，2m11s，failures/errors/skipped 全 0）。
-> 开工自检只许等于或大于这个数。
+> ~~已按 Wave2 并入后快照复核修订（快照基点 `e7f390a`，基线 core 470 + app 68）~~
+> **Lane A 已于 2026-10-25 完成并并入 main（`e6a31aa`），报告见文末「Lane 报告」节。**
+> 本文件对 Lane B/C 会话现为只读参考：基线与冲突面以 w3-B/w3-C 为准
+> （Lane A 并入后基线 **core 488 + app 72 = 560** 全绿，实测 APK 27,865,102 B）。
 
 ## 背景
 
