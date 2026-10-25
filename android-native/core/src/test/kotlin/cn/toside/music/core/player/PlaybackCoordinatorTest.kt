@@ -115,6 +115,44 @@ class PlaybackCoordinatorTest {
     }
 
     @Test
+    fun endedWhileWaitingForSongEndDoesNotAdvanceAndRequestsExit() =
+        runBlocking {
+            // RN handleEnded：isPlayedStop 时只写「播放结束」并返回；
+            // service.ts:134 在下一次播放器事件里 handleExitApp('Timeout Exit')
+            val f = fixture(lists = mapOf("default" to listOf(music("a"), music("b"))))
+            f.core.playListById("default", "a")
+            f.core.setPlayedStop(true)
+            var exits = 0
+            f.coordinator.onPlayedStopExit = { exits++ }
+            f.coordinator.handle(PlaybackEvent.Ended)
+            assertEquals(
+                "a",
+                f.core.state.value.playMusicInfo.musicInfo
+                    ?.stringFieldOr("id"),
+            )
+            assertEquals(1, exits)
+            assertEquals(0f, f.core.state.value.progress.nowPlayTimeSec)
+            f.scope.cancel()
+        }
+
+    @Test
+    fun pausedWhileWaitingForSongEndRequestsExit() =
+        runBlocking {
+            // RN core/init/player/player.ts:19 setPauseStatus：isPlayedStop 时补一次 pause；
+            // service.ts:143 PlaybackState 变化时退出
+            val f = fixture(lists = mapOf("default" to listOf(music("a"))))
+            f.core.playListById("default", "a")
+            f.core.setIsPlay(true)
+            f.core.setPlayedStop(true)
+            var exits = 0
+            f.coordinator.onPlayedStopExit = { exits++ }
+            f.coordinator.handle(PlaybackEvent.Paused)
+            assertFalse(f.core.state.value.isPlay)
+            assertEquals(1, exits)
+            f.scope.cancel()
+        }
+
+    @Test
     fun playingSetsIsPlayAndSamplesProgressImmediately() =
         runBlocking {
             val f = fixture(lists = mapOf("default" to listOf(music("a"))))

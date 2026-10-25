@@ -108,6 +108,15 @@ class DesktopLyricController private constructor(
 
     fun canDrawOverlays(): Boolean = Settings.canDrawOverlays(appContext)
 
+    /**
+     * 进程收尾用（RN exitApp 里的 `hideDesktopLyric()`）：只停浮窗服务，
+     * **不改** `desktopLyric.enable`，下次启动仍按用户开关恢复。
+     */
+    fun shutdown() {
+        waitingForPermission = false
+        stopService()
+    }
+
     private fun startService() {
         runCatching {
             appContext.startService(Intent(appContext, DesktopLyricService::class.java))

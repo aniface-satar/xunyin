@@ -158,6 +158,30 @@ class SleepTimerTest {
         assertEquals(-1, timer.remainingSeconds())
     }
 
+    @Test
+    fun playedStopFlagDelegatesToPlayerCoreWhenWired() {
+        // 任务书任务 3：标志位上升为 PlayerCore 的守卫点，SleepTimer 只做转发。
+        waitSongEnd = true
+        playing = true
+        var coreFlag = false
+        val timer =
+            SleepTimer(
+                currentTimeMs = { nowMs },
+                isPlaying = { playing },
+                waitUntilSongEnd = { waitSongEnd },
+                onExitApp = { exitCalls++ },
+                isPlayedStopProvider = { coreFlag },
+                setPlayedStop = { coreFlag = it },
+            )
+        timer.start(1)
+        timer.onDeadlineReached()
+        assertTrue(coreFlag)
+        assertTrue(timer.isPlayedStop)
+        timer.cancelPlayedStop()
+        assertFalse(coreFlag)
+        assertFalse(timer.isPlayedStop)
+    }
+
     // endregion
 
     // region 监听者与按钮三态（RN useTimeInfo）

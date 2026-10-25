@@ -216,6 +216,7 @@ private fun SettingsContent(
                     tag = VOLUME_LEVEL_OPTIONS.firstOrNull { it.first == level }?.second ?: "中",
                 )
             }
+            DesktopLyricSettingsSection(runtime)
             ItemSpacer()
             Text(text = "音源", color = SaltTheme.colors.subText, modifier = Modifier.padding(horizontal = 16.dp))
             Item(
