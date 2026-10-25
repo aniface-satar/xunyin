@@ -3,6 +3,7 @@ package cn.toside.music.core.backup
 import cn.toside.music.core.list.ListStore
 import cn.toside.music.core.music.MusicInfoTools
 import cn.toside.music.core.storage.GzipCodec
+import cn.toside.music.core.storage.StorageKeys
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -30,6 +31,19 @@ class BackupManager(
     private val listStore: ListStore,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** 单列表导入冲突策略（对照 RN handleImportListPart：覆盖 / 新建带时间戳副本）。 */
+    enum class PartConflictMode {
+        RENAME_COPY,
+        OVERWRITE,
+    }
+
+    /** 导入文件预览：单列表文件带 partId/partName，整份备份为 null。 */
+    data class BackupPreview(
+        val type: String,
+        val partId: String? = null,
+        val partName: String? = null,
+    )
 
     /** 导出全部列表为 .lxmc 字节流（RN exportAllList：type=playList_v2）。 */
     suspend fun exportAllLists(): ByteArray {
@@ -76,6 +90,50 @@ class BackupManager(
         return GzipCodec.gzip(envelope.toString().toByteArray(Charsets.UTF_8))
     }
 
+    /** 单列表导出：对照 RN MyList/listAction.ts#exportList（type=playListPart_v2）。 */
+    suspend fun exportSingleList(
+        listId: String,
+        name: String,
+    ): ByteArray {
+        val info = listStore.state.value.userLists.firstOrNull { it.id == listId }
+        val data =
+            buildJsonObject {
+                put("id", listId)
+                put("name", name)
+                info?.source?.let { put("source", it) }
+                info?.sourceListId?.let { put("sourceListId", it) }
+                put(
+                    "locationUpdateTime",
+                    info?.locationUpdateTime?.let { kotlinx.serialization.json.JsonPrimitive(it) }
+                        ?: kotlinx.serialization.json.JsonNull,
+                )
+                put("list", JsonArray(listStore.getListMusics(listId)))
+            }
+        val envelope =
+            buildJsonObject {
+                put("type", "playListPart_v2")
+                put("data", data)
+            }
+        return GzipCodec.gzip(envelope.toString().toByteArray(Charsets.UTF_8))
+    }
+
+    /** 导入前预览：只读 type 与单列表元信息，不落库（UI 用它决定是否弹覆盖确认）。 */
+    fun preview(bytes: ByteArray): BackupPreview? =
+        runCatching { previewJson(GzipCodec.gunzip(bytes).toString(Charsets.UTF_8)) }.getOrNull()
+
+    fun previewJson(jsonText: String): BackupPreview? {
+        val root =
+            runCatching { json.parseToJsonElement(jsonText).jsonObject }.getOrNull()
+                ?: return null
+        val type = root.str("type") ?: return null
+        val data = root["data"] as? JsonObject
+        return BackupPreview(
+            type = type,
+            partId = data?.str("id"),
+            partName = data?.str("name"),
+        )
+    }
+
     /** 导入结果。 */
     sealed class ImportResult {
         /** 整表导入成功（v1/v2 列表格式）。 */
@@ -106,13 +164,19 @@ class BackupManager(
     )
 
     /** 导入 .lxmc 字节流（RN importPlayList 的 switch 编排）。 */
-    suspend fun import(bytes: ByteArray): ImportResult {
+    suspend fun import(
+        bytes: ByteArray,
+        partConflict: PartConflictMode = PartConflictMode.RENAME_COPY,
+    ): ImportResult {
         val text = runCatching { GzipCodec.gunzip(bytes).toString(Charsets.UTF_8) }.getOrElse { return ImportResult.ParseError }
-        return importJson(text)
+        return importJson(text, partConflict)
     }
 
     /** JSON 直读（RN handleReadFile 对 .json 后缀的处理路径）。 */
-    suspend fun importJson(jsonText: String): ImportResult {
+    suspend fun importJson(
+        jsonText: String,
+        partConflict: PartConflictMode = PartConflictMode.RENAME_COPY,
+    ): ImportResult {
         val root = runCatching { json.parseToJsonElement(jsonText).jsonObject }.getOrElse { return ImportResult.ParseError }
         val type = (root["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content
 
@@ -133,8 +197,8 @@ class BackupManager(
                 val lists = root["playList"]?.jsonArray ?: return ImportResult.ParseError
                 fullImport(lists, legacy = true)
             }
-            "playListPart_v2" -> partImport(root["data"]?.jsonObject, legacy = false)
-            "playListPart" -> partImport(root["data"]?.jsonObject, legacy = true)
+            "playListPart_v2" -> partImport(root["data"]?.jsonObject, legacy = false, partConflict)
+            "playListPart" -> partImport(root["data"]?.jsonObject, legacy = true, partConflict)
             else -> ImportResult.Unsupported(type)
         }
     }
@@ -199,10 +263,11 @@ class BackupManager(
         return ImportResult.FullImported
     }
 
-    /** 单列表追加导入（RN handleImportListPart 语义：不弹确认，冲突改名由 UI 层）。 */
+    /** 单列表导入（RN handleImportListPart：冲突时覆盖原列表或新建时间戳副本）。 */
     private suspend fun partImport(
         listObj: JsonObject?,
         legacy: Boolean,
+        partConflict: PartConflictMode,
     ): ImportResult {
         if (listObj == null) return ImportResult.ParseError
         val id = listObj.str("id") ?: return ImportResult.ParseError
@@ -214,31 +279,67 @@ class BackupManager(
             } else {
                 rawList.map { MusicInfoTools.fixNewMusicInfoQuality(it as JsonObject) }
             }
+        val source = listObj.str("source")
+        val sourceListId = listObj.str("sourceListId")
+        val locationUpdateTime = listObj.str("locationUpdateTime")?.toLongOrNull()
+        val convertedObjects = converted.filterIsInstance<JsonObject>()
 
         val existing = listStore.state.value.userLists
-        val finalId = if (existing.any { it.id == id }) "${id}__${System.currentTimeMillis()}" else id
-
-        if (finalId != "default" && finalId != "love") {
-            listStore.userListCreate(
-                ListStore.UserListInfo(
-                    id = finalId,
-                    name = name,
-                    source = listObj.str("source"),
-                    sourceListId = listObj.str("sourceListId"),
-                    locationUpdateTime = listObj.str("locationUpdateTime")?.toLongOrNull(),
-                ),
-                position = existing.size,
-            )
+        val target = existing.firstOrNull { it.id == id }
+        val isBuiltin = id == StorageKeys.ListIds.DEFAULT || id == StorageKeys.ListIds.LOVE
+        if (target != null || isBuiltin) {
+            if (partConflict == PartConflictMode.OVERWRITE) {
+                // RN 覆盖分支：保留本地列表名，元信息与歌曲以文件为准
+                if (target != null) {
+                    listStore.userListsUpdate(
+                        listOf(
+                            target.copy(
+                                source = source,
+                                sourceListId = sourceListId,
+                                locationUpdateTime = locationUpdateTime,
+                            ),
+                        ),
+                    )
+                }
+                listStore.listMusicOverwrite(id, converted)
+                return ImportResult.PartImported(
+                    PartListInfo(
+                        id = id,
+                        name = target?.name ?: name,
+                        source = source,
+                        sourceListId = sourceListId,
+                        locationUpdateTime = locationUpdateTime,
+                        list = convertedObjects,
+                    ),
+                )
+            }
         }
+
+        val finalId =
+            if (target != null || isBuiltin) {
+                "${id}__${System.currentTimeMillis()}"
+            } else {
+                id
+            }
+        listStore.userListCreate(
+            ListStore.UserListInfo(
+                id = finalId,
+                name = name,
+                source = source,
+                sourceListId = sourceListId,
+                locationUpdateTime = locationUpdateTime,
+            ),
+            position = existing.size,
+        )
         listStore.listMusicAdd(finalId, converted, "bottom")
         return ImportResult.PartImported(
             PartListInfo(
                 id = finalId,
                 name = name,
-                source = listObj.str("source"),
-                sourceListId = listObj.str("sourceListId"),
-                locationUpdateTime = listObj.str("locationUpdateTime")?.toLongOrNull(),
-                list = converted.filterIsInstance<JsonObject>(),
+                source = source,
+                sourceListId = sourceListId,
+                locationUpdateTime = locationUpdateTime,
+                list = convertedObjects,
             ),
         )
     }
