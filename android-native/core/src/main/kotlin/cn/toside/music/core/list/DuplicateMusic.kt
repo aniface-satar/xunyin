@@ -6,11 +6,12 @@ import kotlinx.serialization.json.JsonPrimitive
 import java.text.Collator
 import java.util.Locale
 
-/** 去重列表项：index 指向原列表下标，group 是归一化后的歌名。 */
+/** 去重列表项：index 指向原列表下标，group 是归一化后的歌名，music 供 UI 直接展示。 */
 data class DuplicateMusicItem(
     val id: String,
     val index: Int,
     val group: String,
+    val music: JsonObject,
 )
 
 /**
@@ -39,6 +40,7 @@ object DuplicateMusic {
                     id = item.stringOrNull("id").orEmpty(),
                     index = index,
                     group = group,
+                    music = item,
                 ),
             )
         }
