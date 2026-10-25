@@ -63,6 +63,17 @@ class ShareCardLayoutTest {
     }
 
     @Test
+    fun anImpossibleCardShowsNoLyricLinesInsteadOfFailing() {
+        // 高度小到歌词预算为 0：五档兜底都数出 0 句，显示列表必须还是空表而不是负数切片
+        val card = buildShareCardLayout(false, RatioKey.FULLSCREEN, 120.0, 240.0)
+        assertEquals(0.0, card.lyricMaxHeight, 0.0)
+        val lyric = buildShareLyricLayout(listOf(LyricBlockLine("这一句很长".repeat(20))), card, lyricFontSizeDp = null)
+        assertEquals(0, lyric.fit.visibleCount)
+        assertTrue(lyric.fit.truncated)
+        assertTrue(lyric.shown.isEmpty())
+    }
+
+    @Test
     fun lyricBlockLinesDropsFullyBlankLinesAndResolvesNoWrapFromThePageGeometry() {
         val parsed =
             ParsedLyric(
