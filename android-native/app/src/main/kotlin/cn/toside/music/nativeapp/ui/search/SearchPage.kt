@@ -20,7 +20,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,30 +38,35 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cn.toside.music.core.music.search.SonglistSearchItem
 import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.data.ListRuntime
 import cn.toside.music.nativeapp.data.SearchRuntime
+import cn.toside.music.nativeapp.data.SonglistSearchRuntime
 import cn.toside.music.nativeapp.player.PlayerRuntime
+import cn.toside.music.nativeapp.ui.songlist.AddToListDialog
+import cn.toside.music.nativeapp.ui.songlist.SonglistDetailPage
 import com.moriafly.salt.ui.Button
-import com.moriafly.salt.ui.Item
-import com.moriafly.salt.ui.ItemArrowType
 import com.moriafly.salt.ui.SaltTheme
 import com.moriafly.salt.ui.Text
 import com.moriafly.salt.ui.UnstableSaltUiApi
-import com.moriafly.salt.ui.dialog.BasicDialog
-import com.moriafly.salt.ui.dialog.DialogTitle
 import com.moriafly.salt.ui.screen.BasicScreen
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+/** 搜索类型（对照 RN 提交版 `SearchTypeSelector`：只有歌曲/歌单两档）。 */
+private const val SEARCH_TYPE_MUSIC = "music"
+private const val SEARCH_TYPE_SONGLIST = "songlist"
+
 /**
- * 搜索页（B5 第二、三、八切片）—— 五源搜索 + 全部聚合 + 翻页加载更多。
+ * 搜索页（B5 第八切片 + S12 歌单类型）—— 五源单曲/歌单搜索 + 「全部」聚合 + 翻页。
  *
- * 对照 RN `screens/Home/Views/Search`：HeaderBar 的源下拉（含「全部」）+ OnlineList
- * 的 onEndReached 加载更多。点击播放 = 写入试听列表 → `playListById` → 进播放页
- * （RN `OnlineList.listAction.handlePlay` 语义）。
+ * 对照 RN `screens/Home/Views/Search`：HeaderBar 的源下拉（含「全部」）+
+ * SearchTypeSelector 的歌曲/歌单切换 + OnlineList 的 onEndReached 加载更多。
+ * 点击歌曲 = 写入试听列表 → `playListById` → 进播放页；点击歌单 = 在页内
+ * 打开在线歌单详情（HomeNavigator 本波禁触，路由缺口记在车道报告）。
  */
 @OptIn(UnstableSaltUiApi::class)
 @Composable
@@ -75,7 +79,10 @@ fun SearchPage(
     val scope = rememberCoroutineScope()
     var keyword by remember { mutableStateOf("") }
     var source by remember { mutableStateOf("kw") }
+    var searchType by remember { mutableStateOf(SEARCH_TYPE_MUSIC) }
     var items by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    var songlists by remember { mutableStateOf<List<SonglistSearchItem>>(emptyList()) }
+    var detailTarget by remember { mutableStateOf<SonglistSearchItem?>(null) }
     var loading by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -96,26 +103,45 @@ fun SearchPage(
         text: String,
         targetPage: Int,
     ) {
+        val type = searchType
         scope.launch {
             if (targetPage == 1) {
                 loading = true
                 items = emptyList()
+                songlists = emptyList()
             } else {
                 loadingMore = true
             }
             error = null
-            runCatching { SearchRuntime.search(text, targetPage, source) }
-                .onSuccess { result ->
-                    if (result == null) return@launch // 旧关键词的迟到响应，丢弃
-                    items = result.list
-                    page = targetPage
-                    searched = true
-                    activeKeyword = text
-                    reachedEnd = SearchRuntime.reachedEnd(source, targetPage)
-                }.onFailure {
-                    if (targetPage == 1) items = emptyList()
-                    error = it.message ?: "搜索失败"
-                }
+            if (type == SEARCH_TYPE_MUSIC) {
+                runCatching { SearchRuntime.search(text, targetPage, source) }
+                    .onSuccess { result ->
+                        if (result == null || type != searchType) return@launch // 旧关键词的迟到响应
+                        items = result.list
+                        page = targetPage
+                        searched = true
+                        activeKeyword = text
+                        reachedEnd = SearchRuntime.reachedEnd(source, targetPage)
+                    }.onFailure {
+                        if (type != searchType) return@launch
+                        if (targetPage == 1) items = emptyList()
+                        error = it.message ?: "搜索失败"
+                    }
+            } else {
+                runCatching { SonglistSearchRuntime.search(text, targetPage, source) }
+                    .onSuccess { result ->
+                        if (result == null || type != searchType) return@launch
+                        songlists = result.list
+                        page = targetPage
+                        searched = true
+                        activeKeyword = text
+                        reachedEnd = SonglistSearchRuntime.reachedEnd(source, targetPage)
+                    }.onFailure {
+                        if (type != searchType) return@launch
+                        if (targetPage == 1) songlists = emptyList()
+                        error = it.message ?: "搜索失败"
+                    }
+            }
             if (targetPage == 1) loading = false else loadingMore = false
         }
     }
@@ -130,6 +156,48 @@ fun SearchPage(
     fun loadMore() {
         if (loading || loadingMore || reachedEnd || activeKeyword.isEmpty()) return
         runSearch(activeKeyword, page + 1)
+    }
+
+    fun switchType(next: String) {
+        if (next == searchType) return
+        searchType = next
+        items = emptyList()
+        songlists = emptyList()
+        searched = false
+        error = null
+        reachedEnd = false
+        page = 1
+        // RN searchTypeChanged：用上一次提交的关键词立即重查（缓存命中则不发请求）
+        if (activeKeyword.isNotEmpty()) runSearch(activeKeyword, 1)
+    }
+
+    fun switchSource(picked: String) {
+        if (picked == source) return
+        source = picked
+        val text = keyword.trim()
+        searched = false
+        error = null
+        reachedEnd = false
+        if (text.isNotEmpty()) {
+            page = 1
+            runSearch(text, 1)
+        } else {
+            items = emptyList()
+            songlists = emptyList()
+        }
+    }
+
+    // 在线歌单详情：页内覆盖（HomeNavigator 禁触，详见车道报告路由缺口）
+    val target = detailTarget
+    if (target != null) {
+        SonglistDetailPage(
+            source = target.source,
+            id = target.id,
+            title = target.name,
+            onBack = { detailTarget = null },
+            onOpenPlayer = onOpenPlayer,
+        )
+        return
     }
 
     val searchContent: @Composable (Modifier) -> Unit = { contentModifier ->
@@ -160,24 +228,8 @@ fun SearchPage(
                     modifier = Modifier.heightIn(min = 48.dp),
                 )
             }
-            SourceTabs(
-                source = source,
-                onSelect = { picked ->
-                    if (picked == source) return@SourceTabs
-                    source = picked
-                    // RN handleSourceChange：立即用当前关键词重查（缓存命中则不发请求）
-                    val text = keyword.trim()
-                    searched = false
-                    error = null
-                    reachedEnd = false
-                    if (text.isNotEmpty()) {
-                        page = 1
-                        runSearch(text, 1)
-                    } else {
-                        items = emptyList()
-                    }
-                },
-            )
+            SourceTabs(source = source, onSelect = { switchSource(it) })
+            SearchTypeTabs(type = searchType, onSelect = { switchType(it) })
             when {
                 error != null ->
                     Text(
@@ -191,6 +243,24 @@ fun SearchPage(
                         modifier = Modifier.fillMaxWidth().padding(24.dp),
                         color = SaltTheme.colors.subText,
                     )
+                searchType == SEARCH_TYPE_SONGLIST -> {
+                    if (searched && songlists.isEmpty()) {
+                        Text(
+                            text = "没有找到歌单",
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            color = SaltTheme.colors.subText,
+                        )
+                    } else {
+                        SonglistResults(
+                            songlists = songlists,
+                            loadingMore = loadingMore,
+                            reachedEnd = reachedEnd,
+                            showSource = source == "all",
+                            onEndReached = { loadMore() },
+                            onOpen = { detailTarget = it },
+                        )
+                    }
+                }
                 searched && items.isEmpty() ->
                     Text(
                         text = "没有找到歌曲",
@@ -300,16 +370,16 @@ fun SearchPage(
                     }
                 }
             }
-            addTarget?.let { target ->
+            addTarget?.let { music ->
                 AddToListDialog(
-                    target = target,
+                    title = "把「${music.text("name").orEmpty()}」加入",
                     onDismiss = { addTarget = null },
                     onPick = { listId ->
                         addTarget = null
                         scope.launch {
-                            val existed = lists.musics(listId).any { it.text("id") == target.text("id") }
+                            val existed = lists.musics(listId).any { it.text("id") == music.text("id") }
                             if (!existed) {
-                                lists.store.listMusicAdd(listId, listOf(target), addLocation())
+                                lists.store.listMusicAdd(listId, listOf(music), addLocation())
                                 runtime.core.handleListMusicsUpdated(listOf(listId))
                             }
                             Toast
@@ -329,6 +399,99 @@ fun SearchPage(
     } else {
         BasicScreen(onBack = onBack, title = "搜索") { padding ->
             searchContent(Modifier.fillMaxSize().padding(padding))
+        }
+    }
+}
+
+/** 歌单结果列表（对照 RN Songlist/ListItem：标题 + 来源；原生不逐行取封面）。 */
+@Composable
+private fun SonglistResults(
+    songlists: List<SonglistSearchItem>,
+    loadingMore: Boolean,
+    reachedEnd: Boolean,
+    showSource: Boolean,
+    onEndReached: () -> Unit,
+    onOpen: (SonglistSearchItem) -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val last = listState.layoutInfo.totalItemsCount
+            val lastVisible =
+                listState.layoutInfo.visibleItemsInfo
+                    .lastOrNull()
+                    ?.index ?: -1
+            last > 0 && lastVisible >= last - 6
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) onEndReached()
+    }
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+        itemsIndexed(
+            songlists,
+            key = { index, item -> "${item.source}__${item.id}__$index" },
+        ) { _, item ->
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpen(item) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    BasicText(
+                        text = item.name,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        style =
+                            TextStyle(
+                                color = SaltTheme.colors.text,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                    )
+                    val meta =
+                        listOfNotNull(
+                            item.author.takeIf { it.isNotBlank() },
+                            item.playCount.takeIf { it.isNotBlank() },
+                            if (item.total > 0) "${item.total}首" else null,
+                        ).joinToString(" · ")
+                    if (meta.isNotEmpty()) {
+                        BasicText(
+                            text = meta,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = TextStyle(color = SaltTheme.colors.subText, fontSize = 12.sp),
+                        )
+                    }
+                }
+                if (showSource) {
+                    BasicText(
+                        text = sourceLabel(item.source),
+                        modifier = Modifier.padding(start = 8.dp),
+                        style = TextStyle(color = SaltTheme.colors.subText, fontSize = 11.sp),
+                    )
+                }
+            }
+        }
+        if (loadingMore) {
+            item(key = "loading-more") {
+                Text(
+                    text = "加载中…",
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    color = SaltTheme.colors.subText,
+                )
+            }
+        } else if (reachedEnd && songlists.isNotEmpty()) {
+            item(key = "end") {
+                Text(
+                    text = "到底啦~",
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    color = SaltTheme.colors.subText,
+                )
+            }
         }
     }
 }
@@ -370,37 +533,43 @@ private fun SourceTabs(
     }
 }
 
+/** 歌曲/歌单类型切换（对照 RN SearchTypeSelector：两档 + 选中下划线）。 */
 @Composable
-private fun AddToListDialog(
-    target: JsonObject,
-    onDismiss: () -> Unit,
-    onPick: (String) -> Unit,
+private fun SearchTypeTabs(
+    type: String,
+    onSelect: (String) -> Unit,
 ) {
-    val context = LocalContext.current
-    val lists = remember { ListRuntime.get(context) }
-    val listState by lists.store.state.collectAsState()
-    LaunchedEffect(Unit) { lists.ensureLoaded() }
-    BasicDialog(onDismissRequest = onDismiss) {
-        DialogTitle("把「${target.text("name").orEmpty()}」加入")
-        Item(
-            onClick = { onPick(StorageKeys.ListIds.DEFAULT) },
-            text = "试听列表",
-            arrowType = ItemArrowType.None,
-        )
-        Item(
-            onClick = { onPick(StorageKeys.ListIds.LOVE) },
-            text = "我的收藏",
-            arrowType = ItemArrowType.None,
-        )
-        listState.userLists.forEach { info ->
-            Item(
-                onClick = { onPick(info.id) },
-                text = info.name,
-                arrowType = ItemArrowType.None,
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        listOf(SEARCH_TYPE_MUSIC to "歌曲", SEARCH_TYPE_SONGLIST to "歌单").forEach { (id, label) ->
+            val selected = id == type
+            BasicText(
+                text = label,
+                modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onSelect(id) }
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                style =
+                    TextStyle(
+                        color = if (selected) SaltTheme.colors.highlight else SaltTheme.colors.text,
+                        fontSize = 14.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    ),
             )
         }
     }
 }
+
+private fun sourceLabel(source: String): String =
+    SearchRuntime.SOURCES
+        .firstOrNull { it.first == source }
+        ?.second
+        ?.removeSuffix("音乐")
+        ?.removeSuffix("搜索")
+        .orEmpty()
 
 private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
 
