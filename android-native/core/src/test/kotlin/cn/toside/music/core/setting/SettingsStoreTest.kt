@@ -54,6 +54,25 @@ class SettingsStoreTest {
         }
 
     @Test
+    fun mergeAcceptsDecimalJsonForIntegerDefaults() =
+        runBlocking {
+            // RN 的设置整表存 JSON 数字，桌面歌词滑杆写出来的 72 可能是 72.0。
+            // 按默认类型 Int 收窄时不能把小数形式整条丢掉（否则滑杆值每次重启都回默认）。
+            val (store, repo) = newStore()
+            repo.saveSetting(
+                buildJsonObject {
+                    put("desktopLyric.width", 72.0)
+                    put("desktopLyric.style.fontSize", 200.0)
+                    put("desktopLyric.position.x", 33.5)
+                },
+            )
+            store.load()
+            assertEquals(72, store.int("desktopLyric.width"))
+            assertEquals(200, store.int("desktopLyric.style.fontSize"))
+            assertEquals(33, store.int("desktopLyric.position.x"))
+        }
+
+    @Test
     fun setPersistsAcrossInstancesAndKeepsVersion() =
         runBlocking {
             val (store, repo) = newStore()

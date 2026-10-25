@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -104,10 +105,12 @@ class DesktopLyricService : Service() {
                 stopSelf()
                 return
             }
-        // 持久值可能在服务启动后才 merge 完：读到了就按它重配一次
+        // 持久值可能在服务启动后才 merge 完：读到了就按它重配一次；
+        // 之后订阅设置流，锁定/字号/透明度/颜色/对齐/宽度都实时生效，不用重启服务。
         scope.launch {
             settings.ensureLoaded()
             refreshConfig()
+            settings.state.collect { refreshConfig() }
         }
         scope.launch {
             runtime.lyrics.collect { state ->

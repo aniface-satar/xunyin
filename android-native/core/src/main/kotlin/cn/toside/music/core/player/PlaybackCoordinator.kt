@@ -36,6 +36,13 @@ class PlaybackCoordinator(
     private var retryNum = 0
     private var retryMusicId: String? = null
 
+    /**
+     * 定时退出到点后的收尾回调（RN service.ts:134/143 的 `handleExitApp('Timeout Exit')`）。
+     * 何时退出由本类按「Ended / Paused 且 [PlayerCore.isPlayedStop]」判定，
+     * 具体关服务/结束 Activity 的动作交给 app 层。
+     */
+    var onPlayedStopExit: (suspend () -> Unit)? = null
+
     fun start() {
         eventSource.onPlaybackEvent = { event ->
             scope.launch { handle(event) }
@@ -62,14 +69,25 @@ class PlaybackCoordinator(
             PlaybackEvent.Paused -> {
                 core.setIsPlay(false)
                 stopTicker()
+                if (core.isPlayedStop) {
+                    // RN core/init/player/player.ts:19 setPauseStatus：补一次 pause，
+                    // 随后 service.ts:143 在播放状态变化时执行退出
+                    core.pause()
+                    onPlayedStopExit?.invoke()
+                }
             }
             PlaybackEvent.Ended -> {
-                // RN handleEnded：进度归零后自动下一首（播放模式交给 PlayerCore.playNext(true)）
+                // RN handleEnded：进度归零后自动下一首；等定时退出时只写「播放结束」
                 stopTicker()
                 clearNextJob()
                 clearLoadTimer()
                 core.setProgress(0f, 0f)
-                core.playNext(isAutoToggle = true)
+                if (core.isPlayedStop) {
+                    core.onStatusText?.invoke("播放结束")
+                    onPlayedStopExit?.invoke()
+                } else {
+                    core.playNext(isAutoToggle = true)
+                }
             }
             is PlaybackEvent.Failed -> handleFailed()
         }
@@ -80,6 +98,8 @@ class PlaybackCoordinator(
      * 同一首再超时就直接跳下一首（prevTimeoutId 语义）。
      */
     private fun handleLoadStarted() {
+        // RN playerEvent.ts:64 handleLoadstart：isPlayedStop 时不启动装载计时
+        if (core.isPlayedStop) return
         val musicInfo = core.state.value.playMusicInfo.musicInfo ?: return
         val id = musicInfo.idKey()
         // 换曲即清掉「上次超时曲目」（RN musicToggled 里重置 prevTimeoutId）
@@ -97,6 +117,8 @@ class PlaybackCoordinator(
     }
 
     private suspend fun handleLoadTimeout() {
+        // RN addDelayNextTimeout：isPlayedStop 时连刷新/切歌都不做
+        if (core.isPlayedStop) return
         val musicInfo = core.state.value.playMusicInfo.musicInfo ?: return
         val id = musicInfo.idKey()
         if (loadTimedOutId == id) {
@@ -112,6 +134,8 @@ class PlaybackCoordinator(
     }
 
     private suspend fun handleFailed() {
+        // RN playerEvent.ts:94 handleError：isPlayedStop 时不再刷新 URL / 自动跳歌
+        if (core.isPlayedStop) return
         val musicInfo = core.state.value.playMusicInfo.musicInfo ?: return
         stopTicker()
         core.setIsPlay(false)
@@ -135,6 +159,8 @@ class PlaybackCoordinator(
     }
 
     private suspend fun handleLoadFailed(musicInfo: JsonObject) {
+        // RN setMusicUrl catch：isPlayedStop 时不再延时跳歌
+        if (core.isPlayedStop) return
         // 取链期间用户已切走则不处理（RN diffCurrentMusicInfo）
         val current = core.state.value.playMusicInfo
         if (current.musicInfo?.idKey() != musicInfo.idKey()) return
@@ -157,6 +183,10 @@ class PlaybackCoordinator(
         nextJob =
             scope.launch {
                 if (isAppActive()) delay(nextDelayMs)
+                if (core.isPlayedStop) {
+                    nextJob = null
+                    return@launch
+                }
                 val current = core.state.value.playMusicInfo.musicInfo
                 // RN 到点再确认：已停播或已换曲就不再自动跳
                 if (current != null && current.idKey() == scheduledId) core.playNext(isAutoToggle = true)

@@ -176,6 +176,21 @@ class PlayerCore(
     /** 是否自动清理已播放列表（player.isAutoCleanPlayedList 设置读取器）。 */
     var isAutoCleanPlayedListProvider: () -> Boolean = { false }
 
+    /**
+     * RN `global.lx.isPlayedStop`：定时停止到点后「等这首歌放完」的全局标志。
+     *
+     * 到点由 [SleepTimer] 置位（经 app 层转发），以下位置消费同一份事实：
+     * - 自动下一首（[playNext] 的 `isAutoToggle` 分支）直接忽略；
+     * - 手动切歌 [playNext] / [togglePlay] / [handlePlay] 清除标志（RN `&&= false`）；
+     * - 取链完成后若标志已立起则不再装载（RN getMusicPlayUrl 的 then 守卫）。
+     */
+    var isPlayedStop: Boolean = false
+        private set
+
+    fun setPlayedStop(value: Boolean) {
+        isPlayedStop = value
+    }
+
     private fun shouldClearPlayedList(
         prevListId: String?,
         listId: String,
@@ -209,7 +224,15 @@ class PlayerCore(
                 }
             }
         }
-        update { it.copy(playMusicInfo = PlayMusicInfo(listId, musicInfo, isTempPlay), playerPlayIndex = playerPlayIndex) }
+        // RN playInfo.ts:121：换曲那一刻进度归零，旧曲的 nowPlayTime 不跟到新曲。
+        // 进度记忆的「换曲即保存」依赖这一点（落盘的必须是新曲 + 0 秒）。
+        update {
+            it.copy(
+                playMusicInfo = PlayMusicInfo(listId, musicInfo, isTempPlay),
+                playerPlayIndex = playerPlayIndex,
+                progress = PlayProgress(),
+            )
+        }
     }
 
     suspend fun setPlayerListId(listId: String?) = update { it.copy(playerListId = listId) }
@@ -295,7 +318,34 @@ class PlayerCore(
 
     /** 播放/暂停切换（togglePlay）。 */
     suspend fun togglePlay() {
+        // RN togglePlay：global.lx.isPlayedStop &&= false
+        isPlayedStop = false
         if (_state.value.isPlay) pause() else play()
+    }
+
+    /**
+     * 启动恢复上次播放（RN `playInfo.ts` + `player.ts#handleRestorePlay`）：
+     * 校验列表与索引后装载该曲，**不自动播放**；`timeSec/maxTimeSec` 由调用方按
+     * `player.isSavePlayTime` 决定（关闭时传 0，`maxTime` 总是还原）。
+     *
+     * @return 索引无效或取链失败时返回 false（调用方据此决定是否回退到普通播放）。
+     */
+    suspend fun restorePlayList(
+        listId: String,
+        index: Int,
+        timeSec: Float,
+        maxTimeSec: Float,
+    ): Boolean {
+        val list = listProvider(listId)
+        val target = list.getOrNull(index) ?: return false
+        val prevListId = _state.value.playerListId
+        setPlayerListId(listId)
+        setPlayMusicInfo(listId, target)
+        clearTempPlayList()
+        if (shouldClearPlayedList(prevListId, listId)) clearPlayedList()
+        setProgress(timeSec, maxTimeSec)
+        if (!_state.value.playMusicInfo.isTempPlay) syncRandomList()
+        return loadAndPlay(target, timeSec, autoPlay = false)
     }
 
     /** 恢复播放（play）。 */
@@ -349,6 +399,8 @@ class PlayerCore(
 
     /** 下一曲（playNext）。 */
     suspend fun playNext(isAutoToggle: Boolean = false) {
+        // RN player.ts:53 / playerEvent.ts addDelayNextTimeout：等定时退出时不允许自动续播
+        if (isAutoToggle && isPlayedStop) return
         val s = _state.value
         if (s.tempPlayList.isNotEmpty()) {
             val next = s.tempPlayList.first()
@@ -509,6 +561,8 @@ class PlayerCore(
      *  注意：与 RN 一致，普通播放不把当前曲写入 playedList（playedList 仅个性电台
      *  临时曲经 musicToggled 事件写入，见 radio.ts:151）。 */
     private suspend fun handlePlay() {
+        // RN handlePlay：global.lx.isPlayedStop &&= false（手动播新曲即撤掉等待退出）
+        isPlayedStop = false
         val playMusicInfo = _state.value.playMusicInfo
         val musicInfo = playMusicInfo.musicInfo ?: return
 
@@ -521,16 +575,21 @@ class PlayerCore(
     private suspend fun loadAndPlay(
         musicInfo: JsonObject,
         startPositionSec: Float,
-    ) {
+        autoPlay: Boolean = true,
+    ): Boolean {
         val url = runCatching { urlProvider.getUrl(musicInfo) }.getOrNull()
         if (url == null) {
             onStatusText?.invoke("取链失败")
             onPlayError?.invoke(musicInfo)
             onLoadFailed?.invoke(musicInfo)
-            return
+            return false
         }
+        // RN getMusicPlayUrl 的 then 守卫：取链期间定时退出已到点，就不再装载
+        if (isPlayedStop) return false
         platform.setResource(musicInfo.idKey() ?: "", url, (startPositionSec * 1000).toLong())
-        platform.play()
+        // 启动恢复（RN playList.ts:185-190）：装载后暂停，等用户自己按播放
+        if (autoPlay) platform.play() else platform.pause()
+        return true
     }
 
     /**

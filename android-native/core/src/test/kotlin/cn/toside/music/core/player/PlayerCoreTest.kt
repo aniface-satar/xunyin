@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -118,6 +119,49 @@ class PlayerCoreTest {
         core.dislikeInfoProvider = { dislike }
         return Fixture(core, platform)
     }
+
+    @Test
+    fun autoNextIsIgnoredWhileWaitingForSongEnd() =
+        runBlocking {
+            // RN player.ts:53 / playerEvent.ts addDelayNextTimeout：isPlayedStop 时自动下一首直接返回
+            val f = fixture(lists = mapOf("default" to listOf(music("a"), music("b"))))
+            f.core.playListById("default", "a")
+            f.core.setPlayedStop(true)
+            f.core.playNext(isAutoToggle = true)
+            assertEquals(
+                "a",
+                f.core.state.value.playMusicInfo.musicInfo
+                    ?.stringFieldOr("id"),
+            )
+            assertEquals(1, f.platform.loaded.size)
+        }
+
+    @Test
+    fun manualNextClearsPlayedStop() =
+        runBlocking {
+            // RN handlePlay：global.lx.isPlayedStop &&= false，手动切歌会撤掉等待播完标志
+            val f = fixture(lists = mapOf("default" to listOf(music("a"), music("b"))))
+            f.core.playListById("default", "a")
+            f.core.setPlayedStop(true)
+            f.core.playNext(isAutoToggle = false)
+            assertEquals(
+                "b",
+                f.core.state.value.playMusicInfo.musicInfo
+                    ?.stringFieldOr("id"),
+            )
+            assertFalse(f.core.isPlayedStop)
+        }
+
+    @Test
+    fun togglePlayClearsPlayedStop() =
+        runBlocking {
+            // RN togglePlay：global.lx.isPlayedStop &&= false
+            val f = fixture(lists = mapOf("default" to listOf(music("a"))))
+            f.core.playListById("default", "a")
+            f.core.setPlayedStop(true)
+            f.core.togglePlay()
+            assertFalse(f.core.isPlayedStop)
+        }
 
     @Test
     fun playListByIdLoadsResourceAndPlays() =

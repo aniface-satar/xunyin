@@ -85,8 +85,16 @@ class SettingsStore(
                     result[key] =
                         when (default) {
                             is Boolean -> primitive.content.toBooleanStrictOrNull() ?: continue
-                            is Int -> primitive.content.toIntOrNull() ?: continue
-                            is Long -> primitive.content.toLongOrNull() ?: continue
+                            // RN 整表是 JSON 数字，整数键也可能以 72.0 的形式落盘（滑杆值）。
+                            // 先按整数解析，失败再按小数收窄，避免整条覆盖被丢掉。
+                            is Int ->
+                                primitive.content.toIntOrNull()
+                                    ?: primitive.content.toDoubleOrNull()?.toInt()
+                                    ?: continue
+                            is Long ->
+                                primitive.content.toLongOrNull()
+                                    ?: primitive.content.toDoubleOrNull()?.toLong()
+                                    ?: continue
                             is Double -> primitive.content.toDoubleOrNull() ?: continue
                             else -> primitive.content
                         }

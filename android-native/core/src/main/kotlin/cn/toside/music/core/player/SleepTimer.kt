@@ -31,10 +31,20 @@ class SleepTimer(
     private val waitUntilSongEnd: () -> Boolean = { true },
     /** RN `exitApp('Timeout Exit')`。 */
     private val onExitApp: () -> Unit = {},
+    /**
+     * 外部标志位（app 层指向 [PlayerCore.isPlayedStop]）。任务 3 起 RN 的
+     * `global.lx.isPlayedStop` 由 PlayerCore 提供，SleepTimer 只做转发，
+     * 不再自己持有第二份事实；JVM 单测不注入时退回本地字段。
+     */
+    private val isPlayedStopProvider: (() -> Boolean)? = null,
+    private val setPlayedStop: ((Boolean) -> Unit)? = null,
 ) {
+    /** 本地兜底（仅在未注入外部标志位时使用，保持既有单测兼容）。 */
+    private var localPlayedStop: Boolean = false
+
     /** RN `global.lx.isPlayedStop`：已到期、正在等这首歌放完。 */
-    var isPlayedStop: Boolean = false
-        private set
+    val isPlayedStop: Boolean
+        get() = isPlayedStopProvider?.invoke() ?: localPlayedStop
 
     /** RN `timeoutTools.time`：本次设定的总秒数，-1 = 未开启。 */
     var totalSeconds: Int = -1
@@ -68,7 +78,8 @@ class SleepTimer(
     fun onDeadlineReached() {
         cancel()
         if (waitUntilSongEnd() && isPlaying()) {
-            isPlayedStop = true
+            localPlayedStop = true
+            setPlayedStop?.invoke(true)
             notifyListeners()
         } else {
             onExitApp()
@@ -77,7 +88,8 @@ class SleepTimer(
 
     /** RN `cancelTimeoutExit()`：只撤「等待播完」标志并通知，倒计时不受影响。 */
     fun cancelPlayedStop() {
-        isPlayedStop = false
+        localPlayedStop = false
+        setPlayedStop?.invoke(false)
         notifyListeners()
     }
 

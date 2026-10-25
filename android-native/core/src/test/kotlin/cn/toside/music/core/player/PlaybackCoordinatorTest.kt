@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -115,6 +116,44 @@ class PlaybackCoordinatorTest {
     }
 
     @Test
+    fun endedWhileWaitingForSongEndDoesNotAdvanceAndRequestsExit() =
+        runBlocking {
+            // RN handleEnded：isPlayedStop 时只写「播放结束」并返回；
+            // service.ts:134 在下一次播放器事件里 handleExitApp('Timeout Exit')
+            val f = fixture(lists = mapOf("default" to listOf(music("a"), music("b"))))
+            f.core.playListById("default", "a")
+            f.core.setPlayedStop(true)
+            var exits = 0
+            f.coordinator.onPlayedStopExit = { exits++ }
+            f.coordinator.handle(PlaybackEvent.Ended)
+            assertEquals(
+                "a",
+                f.core.state.value.playMusicInfo.musicInfo
+                    ?.stringFieldOr("id"),
+            )
+            assertEquals(1, exits)
+            assertEquals(0f, f.core.state.value.progress.nowPlayTimeSec)
+            f.scope.cancel()
+        }
+
+    @Test
+    fun pausedWhileWaitingForSongEndRequestsExit() =
+        runBlocking {
+            // RN core/init/player/player.ts:19 setPauseStatus：isPlayedStop 时补一次 pause；
+            // service.ts:143 PlaybackState 变化时退出
+            val f = fixture(lists = mapOf("default" to listOf(music("a"))))
+            f.core.playListById("default", "a")
+            f.core.setIsPlay(true)
+            f.core.setPlayedStop(true)
+            var exits = 0
+            f.coordinator.onPlayedStopExit = { exits++ }
+            f.coordinator.handle(PlaybackEvent.Paused)
+            assertFalse(f.core.state.value.isPlay)
+            assertEquals(1, exits)
+            f.scope.cancel()
+        }
+
+    @Test
     fun playingSetsIsPlayAndSamplesProgressImmediately() =
         runBlocking {
             val f = fixture(lists = mapOf("default" to listOf(music("a"))))
@@ -222,6 +261,26 @@ class PlaybackCoordinatorTest {
             f.scope.cancel()
         }
 
+    /**
+     * 等当前曲目切到 [id]，最多 [timeoutMs]。
+     *
+     * 原来的固定 delay(100) 是在赌「切歌一定在 100ms 内完成」，并行负载下会偶发红。
+     * 改成条件等待后只在行为真的没发生时超时失败，结论不变。
+     */
+    private suspend fun awaitCurrentTrack(
+        f: Fixture,
+        id: String,
+        timeoutMs: Long = 3_000,
+    ) {
+        withTimeout(timeoutMs) {
+            var info = f.core.state.value.playMusicInfo.musicInfo
+            while (info?.stringFieldOr("id") != id) {
+                kotlinx.coroutines.delay(5)
+                info = f.core.state.value.playMusicInfo.musicInfo
+            }
+        }
+    }
+
     @Test
     fun loadFailureSchedulesNextTrack() =
         runBlocking {
@@ -234,7 +293,7 @@ class PlaybackCoordinatorTest {
                     nextDelayMs = 1L,
                 )
             f.core.playListById("default", "a")
-            kotlinx.coroutines.delay(100)
+            awaitCurrentTrack(f, "b")
             assertEquals(
                 "b",
                 f.core.state.value.playMusicInfo.musicInfo
