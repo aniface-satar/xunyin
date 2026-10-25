@@ -92,3 +92,85 @@ Compose 无等价同步截屏，需用 `Canvas`/`android.graphics.Bitmap` + `Pic
   （`cardFileName` 清非法字符、72 字符上限、同名追加 ` (n)`）。约束：`minSdk = 26` 且
   manifest 禁触（无 `WRITE_EXTERNAL_STORAGE`），**29+ 可免权限写公共相册；26–28 只能
   提示系统版本过低**——记入遗留，要支持需改 manifest（本波禁触）。
+
+## Lane 报告（2026-10-26）
+
+- 结论：完成 S14 分享卡 MVP（音乐卡 / 歌词卡 / 五档比例 / 保存到相册 / 更多菜单接线）。
+  导出走「主动重绘」，预览与导出是同一张 Bitmap（WYSIWYG）。未做：系统分享 chooser、
+  `share.*` 偏好持久化、26–28 保存路径（均见遗留）。
+- commit：`b59057e`（core 规则 + 单测）、`267bb12`（导出选型文档；同一提交里含
+  `CardTypography.kt → CardTextSizes.kt` 的 ktlint 文件名修正）、`661cb9f`（绘制层 /
+  保存 / 弹层 / 接线）；测试数 **core 619 + app 76 全绿**（基线 558 + 76；本波新增
+  share 包 61 项单测，无删减）。
+- 触碰文件清单：
+  - core main（新建）：`core/share/CardTheme.kt`、`Rounding.kt`、`CardTextSizes.kt`
+    （原 `CardTypography.kt`）、`CardScale.kt`、`FitLyricBlock.kt`、`CardFileName.kt`、
+    `ShareCardLayout.kt`
+  - core test（新建）：`CardThemeTest.kt`、`CardTypographyTest.kt`、`CardScaleTest.kt`、
+    `CardFileNameTest.kt`、`FitLyricBlockTest.kt`、`ShareCardLayoutTest.kt`
+  - app（新建）：`ui/share/ShareCardRenderer.kt`（Canvas 绘制执行器）、
+    `ui/share/ShareCardSaver.kt`（MediaStore 保存）、`ui/share/ShareCardOverlay.kt`
+    （模式/比例/预览/保存/关闭与渲染调度）
+  - app（改）：`ui/play/MoreActionSheet.kt`——只加 1 个 import、1 个 `showShare` 状态、
+    1 行「分享」Item、末尾 1 段 `ShareCardOverlay` 调用（无其他改动）
+  - docs：本文件（选型节 + 本报告）
+  - **未触**：`CoverImageLoader.kt`、`util/`、`PlayDetailPage.kt`、`LyricView.kt`、
+    `TimeoutExitRuntime.kt`、`AndroidManifest.xml`、`core/setting/`、gradle/版本目录
+- 语义修正与实证发现：
+  - **音乐卡没有进度条**：任务书写「封面 + 歌名歌手 + 进度条 + 品牌线」，但 RN
+    `MusicCard.tsx` 只有封面 / 歌名（3 行）/ 歌手（2 行）/ 品牌行。按 RN 实现，未画进度条；
+    若产品确实要，应先在 RN 加并同步 core 的高度预算（`MUSIC_CARD_TEXT_RESERVE=200`）。
+  - **歌词来源是整首**：RN 歌词卡的 `lyricLines` 来自歌词工具页的勾选行；原生本波没有
+    工具页，用 `runtime.lyrics.parsed` 全量（丢全空行）。core 的 `fitLyricBlock` 接口不变，
+    将来接选中行只换数据源。
+  - **`visibleCount = -1` 哨兵不可达**：RN `fitLyricBlock` 兜底初值 -1（JS 端消费是
+    `slice(0, -1)`，会少最后一句）。移植时两条路径都返回 ≥0：给了字号走连续下探（首档
+    即写入 best），不给字号走五档（0 > -1 必然接管）。新增单测
+    `anImpossibleCardShowsNoLyricLinesInsteadOfFailing` 锁死「预算为 0 → visibleCount 0、
+    shown 为空」，因此 `lines.take(visibleCount)` 不会出现负数切片。
+  - **卡色 = 系统深浅模式**：RN 取 `appTheme.isDark`；原生取 `isSystemInDarkTheme()`
+    （与 `MusicApp.kt` 主题同源）。播放页封面取色主题不参与卡色（RN 明确回挂
+    `SheetThemeProvider` 就是为了这个）。
+  - **比例默认全屏**（RN `DEFAULT_RATIO = 'fullscreen'`）；卡片按基准屏（360×800 类）
+    算一份整体，其余比例只做 `scale ≤ 1` 等缩，卡内比例不动。
+  - **行高近似**：RN 的音乐卡歌手、歌词卡页脚歌名/歌手没有显式 `lineHeight`（吃平台默认）；
+    原生统一按 1.25× 字号排。单行无差异，两行时每行差 <2dp，仍在 200/160 的预算内。
+  - **字距单位**：RN `letterSpacing: 0.2` 是 dp；`TextPaint.letterSpacing` 是 em，
+    所以取 `0.2 / 17`。
+  - **品牌图形资源替换**：RN 用裁到墨迹的 `app-icon-glyph.png`（218×204，唱片+音符）；
+    原生包内没有该图，改用 `ic_launcher_foreground`（Material Symbols music_note 矢量，
+    viewport 108、墨迹框 x 30.5..68 / y 32..76）。按墨迹框等比 contain 进 14×13.1 的框、
+    左对齐、`SRC_IN` 染色。**观感与 RN 的唱片图标不同**（只剩音符），属已知近似。
+  - **糊底近似**：RN 是 Fresco 20dp 框糊（边缘会读到图外、留一圈暗边）；原生用
+    `blurSource`（32px 缩略图）center-crop 放大 + 20% 黑 scrim，边缘干净但颗粒更粗。
+  - **noWrap 判定几何**：歌词页左右各 28dp（`LyricView`），所以 `pageTextWidth =
+    屏宽 − 56dp`、`pageFontSize = lrcFontSizeTenths / 10`，与 core 的估算宽度同源。
+  - **不做截屏的实证理由**：`:app` 没有 view-shot 等价物；Compose 无按组件出图 API，
+    `PixelCopy` 异步且依赖上屏。选型文档已单独提交（`267bb12`）。
+- 遗留问题与对后续波次的建议：
+  1. **系统分享未做**（RN 有 `shareCapturedCard`）：需要在保存后拿 MediaStore Uri 发
+     `ACTION_SEND`；本波验收只要求保存，建议下一波与「更多菜单其它动作」一起接。
+  2. **`share.*` 偏好持久化**（分享类型/默认比例）：本波用进程级默认，`core/setting/`
+     无人认领，需在 DefaultSetting 表尾追加后接线。
+  3. **26–28 无法免权限写相册**：manifest 禁触（无 `WRITE_EXTERNAL_STORAGE`），现为
+     可读提示「需要 Android 10 及以上」。要支持得改 manifest（`maxSdkVersion=28`）或
+     改用 SAF 让用户选目录（RN 旧路就是 SAF）。
+  4. **去重只看得见本应用条目**：29+ 作用域存储下 `RELATIVE_PATH` 查询只返回本应用贡献的
+     图片；重装/跨应用写入可能重名，最终由系统改显示名，不覆盖原文件。若要严格不重名，
+     需改用 MediaStore 查询全库（要权限）或 SAF。
+  5. **封面仅 http(s)**：`CoverImageLoader.normalizeUrl` 只认 http(s)（本地曲目
+     `picUrl` 为路径时无封面），属既有 API 限制，本波只调用不改；需要时交 Lane C 扩。
+  6. **分享层叠在更多菜单之上**：关闭分享回到面板（`PlayDetailPage` 禁触，无法把状态提升
+     到播放页直接开卡）。若产品要求「分享关掉即回播放页」，需在 PlayDetailPage 提升状态。
+  7. **真机清单（本波零项，待验收）**：
+     ① 深/浅色模式各开一次：卡底黑/白、文字对比正常，切换系统深色后重开生效；
+     ② 音乐卡：封面圆角+1px 边界线、歌名 ≤3 行、歌手 ≤2 行、品牌行不越卡；
+     ③ 歌词卡：字号从设置档下探到 14 地板、截断出现「…」、分隔线 35% 不抢眼；
+     ④ 五档比例逐档切：卡整体等比缩放、卡内比例不变、预览不拉伸；
+     ⑤ 保存后相册 `Pictures/寻音` 出现图片，像素与预览一致（全屏档 = 屏宽 px）；
+     ⑥ 同名连存 → `歌名 - 歌手.png` / `歌名 - 歌手 (1).png`；含 `/ : * ? " < > |` 的
+        歌名被清理；中英文混排正常；
+     ⑦ 断网/无封面：仍能生成并保存（纯色底、封面框只剩边界线）；
+     ⑧ 生成中/保存中：关闭与返回键无效；完成弹「已保存：x.png」；
+     ⑨ **release 包按像素验证**：`ic_launcher_foreground` 被资源改名后品牌字形仍在卡上、
+        字体未被资源收缩破坏；26–28 设备（若有）出现版本提示而不崩。
