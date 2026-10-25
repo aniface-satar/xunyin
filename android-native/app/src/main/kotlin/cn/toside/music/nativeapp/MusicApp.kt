@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import cn.toside.music.nativeapp.ui.HomePage
 import cn.toside.music.nativeapp.ui.RetainedContent
+import cn.toside.music.nativeapp.ui.play.CoverImageLoader
 import cn.toside.music.nativeapp.ui.play.PlayDetailPage
 import cn.toside.music.nativeapp.ui.settings.SettingsPage
 import com.moriafly.salt.ui.SaltConfigs
@@ -22,6 +24,9 @@ import com.moriafly.salt.ui.SaltTheme
  */
 @Composable
 fun MusicApp() {
+    val context = LocalContext.current
+    // 封面磁盘缓存需要 applicationContext（CoverImageLoader 其余 API 不变）
+    remember(context) { CoverImageLoader.init(context) }
     val isDark = isSystemInDarkTheme()
     SaltTheme(
         configs = SaltConfigs.default(isDarkTheme = isDark),

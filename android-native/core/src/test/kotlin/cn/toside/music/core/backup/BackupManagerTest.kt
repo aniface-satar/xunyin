@@ -2,6 +2,7 @@ package cn.toside.music.core.backup
 
 import cn.toside.music.core.data.DataRepository
 import cn.toside.music.core.list.ListStore
+import cn.toside.music.core.storage.GzipCodec
 import cn.toside.music.core.storage.InMemoryKvStore
 import cn.toside.music.core.storage.ShardedKvStore
 import kotlinx.coroutines.runBlocking
@@ -257,6 +258,156 @@ class BackupManagerTest {
             assertTrue(meta["_qualitys"]!!.jsonObject.containsKey("flac24bit"))
             assertTrue(!meta["_qualitys"]!!.jsonObject.containsKey("flac32bit"))
         }
+
+    @Test
+    fun exportSingleListRoundTrip() =
+        runBlocking {
+            val (bm1, ls1, _) = newSystem()
+            ls1.userListCreate(
+                ListStore.UserListInfo(
+                    id = "u1",
+                    name = "导出单",
+                    source = "kw",
+                    sourceListId = "2858093057",
+                    locationUpdateTime = 5L,
+                ),
+                -1,
+            )
+            ls1.listMusicAdd("u1", listOf(music("m1"), music("m2")), "bottom")
+
+            val bytes = bm1.exportSingleList("u1", "导出单")
+            val preview = bm1.preview(bytes)!!
+            assertEquals("playListPart_v2", preview.type)
+            assertEquals("u1", preview.partId)
+            assertEquals("导出单", preview.partName)
+
+            val (bm2, ls2, _) = newSystem()
+            val result = bm2.import(bytes)
+            assertTrue(result is BackupManager.ImportResult.PartImported)
+            val part = result as BackupManager.ImportResult.PartImported
+            assertEquals("u1", part.listInfo.id)
+            assertEquals("导出单", part.listInfo.name)
+            assertEquals("kw", part.listInfo.source)
+            assertEquals("2858093057", part.listInfo.sourceListId)
+            assertEquals(listOf("m1", "m2"), ls2.getListMusics("u1").map { it["id"]!!.primStr() })
+        }
+
+    @Test
+    fun partOverwriteModeKeepsLocalNameAndReplacesSongs() =
+        runBlocking {
+            val partBytes =
+                gzipJson(
+                    buildJsonObject {
+                        put("type", "playListPart_v2")
+                        put(
+                            "data",
+                            buildJsonObject {
+                                put("id", "u1")
+                                put("name", "文件里的名字")
+                                put("source", "kg")
+                                put("sourceListId", "abc")
+                                put(
+                                    "list",
+                                    buildJsonArray {
+                                        add(music("n1"))
+                                        add(music("n2"))
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+
+            val (bm, ls, _) = newSystem()
+            ls.userListCreate(ListStore.UserListInfo(id = "u1", name = "本地名"), -1)
+            ls.listMusicAdd("u1", listOf(music("old")), "bottom")
+
+            val result = bm.import(partBytes, BackupManager.PartConflictMode.OVERWRITE)
+            assertTrue(result is BackupManager.ImportResult.PartImported)
+            // RN handleImportListPart 覆盖分支：listData.name = targetList.name 后 overwriteList
+            val state = ls.state.value
+            val localInfo = state.userLists.single()
+            assertEquals("本地名", localInfo.name)
+            assertEquals("kg", localInfo.source)
+            assertEquals("abc", localInfo.sourceListId)
+            assertEquals(listOf("n1", "n2"), ls.getListMusics("u1").map { it["id"]!!.primStr() })
+        }
+
+    @Test
+    fun partOverwriteModeReplacesBuiltinList() =
+        runBlocking {
+            val partBytes =
+                gzipJson(
+                    buildJsonObject {
+                        put("type", "playListPart_v2")
+                        put(
+                            "data",
+                            buildJsonObject {
+                                put("id", "default")
+                                put("name", "试听列表")
+                                put("list", buildJsonArray { add(music("a1")) })
+                            },
+                        )
+                    },
+                )
+
+            val (bm, ls, _) = newSystem()
+            ls.listMusicAdd("default", listOf(music("d1"), music("d2")), "bottom")
+            val result = bm.import(partBytes, BackupManager.PartConflictMode.OVERWRITE)
+            assertTrue(result is BackupManager.ImportResult.PartImported)
+            assertEquals(listOf("a1"), ls.getListMusics("default").map { it["id"]!!.primStr() })
+            assertEquals(0, ls.state.value.userLists.size)
+        }
+
+    @Test
+    fun partRenameCopyOfBuiltinCreatesUserList() =
+        runBlocking {
+            // RN：冲突时取消覆盖 → id 追加时间戳后 createList，内置列表本身不动
+            val partBytes =
+                gzipJson(
+                    buildJsonObject {
+                        put("type", "playListPart_v2")
+                        put(
+                            "data",
+                            buildJsonObject {
+                                put("id", "default")
+                                put("name", "试听列表")
+                                put("list", buildJsonArray { add(music("copy1")) })
+                            },
+                        )
+                    },
+                )
+
+            val (bm, ls, _) = newSystem()
+            ls.listMusicAdd("default", listOf(music("keep")), "bottom")
+            val result = bm.import(partBytes)
+            assertTrue(result is BackupManager.ImportResult.PartImported)
+            val state = ls.state.value
+            val listInfo = state.userLists.single()
+            assertTrue(listInfo.id.startsWith("default__"))
+            assertEquals("试听列表", listInfo.name)
+            assertEquals(listOf("copy1"), ls.getListMusics(listInfo.id).map { it["id"]!!.primStr() })
+            assertEquals(listOf("keep"), ls.getListMusics("default").map { it["id"]!!.primStr() })
+        }
+
+    @Test
+    fun previewReportsFullBackupWithoutPartFields() =
+        runBlocking {
+            val (bm, _, _) = newSystem()
+            val bytes =
+                gzipJson(
+                    buildJsonObject {
+                        put("type", "playList_v2")
+                        put("data", buildJsonArray { })
+                    },
+                )
+            val preview = bm.preview(bytes)!!
+            assertEquals("playList_v2", preview.type)
+            assertEquals(null, preview.partId)
+            assertEquals(null, preview.partName)
+        }
+
+    private fun gzipJson(root: JsonObject): ByteArray = GzipCodec.gzip(root.toString().toByteArray())
 
     private fun kotlinx.serialization.json.JsonElement.primStr(): String = (this as kotlinx.serialization.json.JsonPrimitive).content
 }
