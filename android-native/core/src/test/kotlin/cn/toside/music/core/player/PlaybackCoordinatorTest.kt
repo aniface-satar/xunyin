@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -260,6 +261,26 @@ class PlaybackCoordinatorTest {
             f.scope.cancel()
         }
 
+    /**
+     * 等当前曲目切到 [id]，最多 [timeoutMs]。
+     *
+     * 原来的固定 delay(100) 是在赌「切歌一定在 100ms 内完成」，并行负载下会偶发红。
+     * 改成条件等待后只在行为真的没发生时超时失败，结论不变。
+     */
+    private suspend fun awaitCurrentTrack(
+        f: Fixture,
+        id: String,
+        timeoutMs: Long = 3_000,
+    ) {
+        withTimeout(timeoutMs) {
+            var info = f.core.state.value.playMusicInfo.musicInfo
+            while (info?.stringFieldOr("id") != id) {
+                kotlinx.coroutines.delay(5)
+                info = f.core.state.value.playMusicInfo.musicInfo
+            }
+        }
+    }
+
     @Test
     fun loadFailureSchedulesNextTrack() =
         runBlocking {
@@ -272,7 +293,7 @@ class PlaybackCoordinatorTest {
                     nextDelayMs = 1L,
                 )
             f.core.playListById("default", "a")
-            kotlinx.coroutines.delay(100)
+            awaitCurrentTrack(f, "b")
             assertEquals(
                 "b",
                 f.core.state.value.playMusicInfo.musicInfo
