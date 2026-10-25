@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import cn.toside.music.core.player.SleepTimer
 import cn.toside.music.nativeapp.lyric.DesktopLyricRow
 import cn.toside.music.nativeapp.player.PlayerRuntime
+import cn.toside.music.nativeapp.ui.share.ShareCardOverlay
 import com.moriafly.salt.ui.Button
 import com.moriafly.salt.ui.ButtonAppearance
 import com.moriafly.salt.ui.Item
@@ -79,6 +80,7 @@ fun MoreActionSheet(
     val scope = rememberCoroutineScope()
     val timeoutStatus by timeout.status.collectAsState()
     var showTimeout by remember { mutableStateOf(false) }
+    var showShare by remember { mutableStateOf(false) }
 
     // RN 的滑杆数值空间是整数（音量/倍速按百分比、字号按 ×10），这里保持同一空间再换算
     var volumePercent by remember { mutableFloatStateOf(storedVolumePercent(runtime).toFloat()) }
@@ -90,6 +92,10 @@ fun MoreActionSheet(
             onClick = { showTimeout = true },
             text = "定时关闭",
             sub = timeoutStatus.statusText,
+        )
+        Item(
+            onClick = { showShare = true },
+            text = "分享",
         )
         ItemSpacer()
         ItemSlider(
@@ -187,6 +193,15 @@ fun MoreActionSheet(
 
     if (showTimeout) {
         TimeoutExitSheet(timeout = timeout, onDismiss = { showTimeout = false })
+    }
+
+    if (showShare) {
+        // 全屏层叠在设置面板之上：关掉分享卡回到面板，与 RN 从播放页直接开卡等价
+        ShareCardOverlay(
+            runtime = runtime,
+            fontSizeTenths = fontSizeTenths,
+            onDismiss = { showShare = false },
+        )
     }
 }
 
