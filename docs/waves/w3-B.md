@@ -81,3 +81,73 @@ RN 对照（worktree 内只读，先通读实证再动手）：
 - 三个重排函数有对照 RN 的黄金测试；
 - 报告「语义修正」节写明七文件里任何与直觉不符的 RN 行为；
 - lane 报告按 RULES 模板追加到本文件末尾并 commit。
+
+## Lane 报告（2026-10-26）
+
+- **结论：完成（M1 画像重排）**。`:core` 新增 `recommend/` 纯规则包 + 画像装配/持久层，
+  发现页推荐歌单与新歌速递的排序已接上画像（取数逻辑与 UI 未动）；M2/M3
+  （bandit/candidate/queue/audioEmbedding/diversity）未碰。
+  开工自检基线 488+72 → 收尾 **core 528 + app 72 = 600 全绿**（+40 个 recommend 用例）。
+- **commit**：`564af4d` 纯规则与黄金测试；`961a0c3` 画像装配/持久/信号；`c804d4e` 运行时接线；
+  本报告单独一笔。验证：`ktlintCheck test assembleDebug` BUILD SUCCESSFUL，
+  APK 27,984,641 B，sha256 `78e0f334a530fe58ceb05e1d254538991dc46772e1a2cb5bff82850526e4d74a`。
+- **触碰文件清单**：
+  - 新增 `android-native/core/src/main/kotlin/cn/toside/music/core/recommend/`：
+    `RecommendModels.kt`、`TrackKeys.kt`、`ArtistPrior.kt`、`NameTokenFeedback.kt`、
+    `ThemeFeedback.kt`、`PlaylistRank.kt`、`RecommendProfile.kt`、
+    `RecommendProfileStore.kt`、`RecommendSignals.kt`、`RecommendSampling.kt`
+  - 新增 `android-native/core/src/test/kotlin/cn/toside/music/core/recommend/`：
+    `RecommendFactorsTest.kt`、`PlaylistRankTest.kt`、`RecommendProfileTest.kt`
+  - 新增 `android-native/app/src/main/kotlin/cn/toside/music/nativeapp/data/RecommendProfileRuntime.kt`
+  - 修改 `android-native/app/src/main/kotlin/cn/toside/music/nativeapp/data/SonglistRuntime.kt`
+    （只动 `object RecommendRuntime` 的排序/分类挑选行，`SonglistRuntime` 取数未动）
+  - **越界最小修复（RULES 4，接线必需）**：
+    `data/ListRuntime.kt`（+`appContext`、+`Companion.current()`）、
+    `player/PlayerRuntime.kt`（+`Companion.current()`）。
+    原因：消费方 `ui/songlist/RecommendPanel.kt` 任务书禁改，而 `RecommendRuntime` 是
+    无参 `object`，拿不到 `Context`/播放器实例；两处均只加只读访问器，不改既有行为。
+- **语义修正与实证发现**：
+  1. **JS `\s` ≠ Java `\s`**：RN `normalizeText` 的 `/\s+/g` 含全角空格 U+3000，
+     Kotlin 默认只认 ASCII 空白；`TrackKeys` 已改用 `(?U)\s` + `trim{isWhitespace()}`，
+     否则「A　B」会粘成一个词（单测 `textNormalizationMatchesRn` 复现过）。
+  2. **trimState 的限额归属**：`themeWeightLimit=200` 同时管 `themeWeights` 与
+     `tokenWeights`；`artistStats` 用独立的 `artistStatsLimit=800`（RN storage.ts:120-137）。
+     初版用例把 200 传给 artistStats，属测试写错，已改断言参数（未删测试）。
+  3. **词面学习是降级实现**：RN 用 segmentit 词典分词；Kotlin/JVM 无等价纯 Java 分词，
+     按空白切分。后果：中文无空格歌名在 M1 **基本学不到词面**（命不中即因子 1，
+     不会误加成）；歌手先验不受影响，是 M1 的主信号。待后续波次引分词后对齐。
+  4. **画像存储形状与 RN 不同**：同在 `xunyin_recommend_state_v2` 键下，RN 存原始学习
+     状态、Kotlin 存装配好的 `LearnedProfile`；两版数据互不解析（解析失败=空画像重建）。
+     原生版与 RN 版本来就不共享存储（B1 决策），键名对齐只为将来统一预留。
+  5. **信号真实性与留空**：
+     - 用了：收藏 `@list__love`、用户自建歌单（≤20 张）曲目、`@play_history`（解析器就绪）、
+       PlayerCore `playedList`（个性电台实时曲目）。
+     - `@play_history` 原生尚无写入方 → 当前恒空；`playedList` 无时间戳，按装配时刻计入，
+       与历史按「归一化歌名@歌手」去重（历史优先，保真实时间）。
+     - 留空：踩雷规则/「不感兴趣」隐藏名单没有原生入口与写入方 → 以空规则调用；
+       `themeWeights` 在 M1 无学习来源（RN 由主题级反馈结算）→ 分类排序只吃画像关键词亲和度，
+       其中「歌手名关键词 vs 分类名」通常不命中，所以**分类挑选在 M1 大多等于原序**，
+       只有风格词（如「国风」）能被分类名命中。这是 M1 边界，不是缺陷。
+  6. **playedList 仅个性电台**：PlayerCore 注释明确普通播放不写入 playedList，
+     因此它不能当「通用播放历史」用；通用历史要等 `@play_history` 写入方（见遗留）。
+  7. **随机源**：RN 卡片取样用 `Math.random`；原生沿用 Wave2 的轮次轮换（可复现），
+     `RecommendSampling.pickCardPlaylists` 保留注入式随机源供后续接真随机。
+- **真机验收清单（未跑，累计待清账）**：
+  1. 收藏某歌手 10 首后进发现页：推荐歌单里该歌手相关卡片前移，卡片集合不变；
+  2. 新歌速递前 3 首出现收藏/自建歌单里的常听歌手；
+  3. 有画像时下拉刷新：分类选择随画像关键词变化（风格词分类优先）；
+  4. 全新安装/清空收藏：两个区块顺序与 Wave2 完全一致（冷启动不过问）；
+  5. 清空收藏后重启 App：画像回到空、顺序恢复原序（不残留旧画像）；
+  6. 60s 内反复进出发现页/刷新：不重复读列表，无卡顿（内存缓存生效）；
+  7. 真机检查 `@xunyin_recommend_state_v2` 有写入且 JSON 可解析（与 RN 同键不互通已在报告说明）。
+- **遗留问题与对后续波次的建议**：
+  - **M2 立项输入（M1 落地后的真实边界）**：`themeWeights`、显式反馈结算
+    （applyThemeFeedback）、踩雷/dislike 原生 provider、隐藏歌单 UI、bandit 候选池与
+    audioEmbedding/melSpectrogram/diversity 全部未做；`rankState` 的 `blocked/hidden`
+    参数已预留，接上即可生效。
+  - `@play_history` 需要原生写入方（播放事件落盘），否则通用历史信号长期为空；
+    `playedList` 只能覆盖个性电台。
+  - 分词：若要中文无空格歌名的词面学习生效，需引入词典分词或自建停用词/后缀切分，
+    属 M2/M3 前置数据工程。
+  - RN 的 1500ms 存储防抖在原生是 60s 画像内存 TTL（读多写少，无对应高频写路径）；
+    若 M2 引入逐笔结算，需要再补 debounce/flush。

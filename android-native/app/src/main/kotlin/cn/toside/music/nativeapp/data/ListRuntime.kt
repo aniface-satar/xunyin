@@ -21,9 +21,12 @@ import kotlinx.serialization.json.JsonObject
 class ListRuntime private constructor(
     context: Context,
 ) {
+    /** 应用上下文（[RecommendProfileRuntime] 复用同一 DataStore 读画像信号）。 */
+    val appContext: Context = context.applicationContext
+
     private val repo =
         DataRepository(
-            ShardedKvStore(DataStoreKvStore(context.applicationContext)),
+            ShardedKvStore(DataStoreKvStore(appContext)),
         )
 
     val store = ListStore(repo)
@@ -61,5 +64,8 @@ class ListRuntime private constructor(
             instance ?: synchronized(this) {
                 instance ?: ListRuntime(context.applicationContext).also { instance = it }
             }
+
+        /** 已建实例；未初始化返回 null（无参 object 的装配层取上下文用）。 */
+        fun current(): ListRuntime? = instance
     }
 }

@@ -479,6 +479,9 @@ class PlayerRuntime private constructor(
             instance ?: synchronized(this) {
                 instance ?: PlayerRuntime(context.applicationContext).also { instance = it }
             }
+
+        /** 已建实例；未初始化返回 null（推荐画像读 `playedList` 用）。 */
+        fun current(): PlayerRuntime? = instance
     }
 }
 

@@ -1,6 +1,8 @@
 package cn.toside.music.nativeapp.data
 
 import cn.toside.music.core.music.search.SearchRequest
+import cn.toside.music.core.recommend.PlaylistRank
+import cn.toside.music.core.recommend.RecommendProfile
 import cn.toside.music.core.songlist.KgSonglist
 import cn.toside.music.core.songlist.KwSonglist
 import cn.toside.music.core.songlist.MgSonglist
@@ -214,6 +216,9 @@ object RecommendRuntime {
     ): CuratedPlaylists? {
         val sources = SonglistRuntime.SOURCES.map { it.first }
         if (sources.isEmpty()) return null
+        // 画像重排（M1）：只调顺序，不换源也不改取数；读不到画像时保持原序。
+        val now = System.currentTimeMillis()
+        val profile = runCatching { RecommendProfileRuntime.load(now, refresh = isRefresh) }.getOrNull()
         val start = Math.floorMod(playlistRotation, sources.size)
         playlistRotation++
         for (offset in sources.indices) {
@@ -222,13 +227,38 @@ object RecommendRuntime {
                 runCatching {
                     val tags = SonglistRuntime.getTags(source, isRefresh)
                     val catalogue = RecommendSelection.flattenTags(tags)
-                    val tag = RecommendSelection.pickTag(catalogue, playlistRotation + offset) ?: return@runCatching null
+                    val tag =
+                        if (profile != null && profile.keywords.isNotEmpty()) {
+                            PlaylistRank.pickPlaylistTag(
+                                catalogue,
+                                { it.name },
+                                emptyMap(),
+                                profile.keywords,
+                                playlistRotation + offset,
+                                now,
+                            )
+                        } else {
+                            RecommendSelection.pickTag(catalogue, playlistRotation + offset)
+                        } ?: return@runCatching null
                     val sort = RecommendSelection.pickHotSort(SonglistRuntime.sorts(source)) ?: return@runCatching null
                     val page = SonglistRuntime.getList(source, sort.id, tag.id, 1, isRefresh)
                     if (page.list.isEmpty()) {
                         null
                     } else {
-                        CuratedPlaylists(source, sort.id, tag.id, tag.name, page.list.take(count))
+                        val ordered =
+                            if (profile == null) {
+                                page.list
+                            } else {
+                                PlaylistRank.rankPlaylistsByProfile(
+                                    page.list,
+                                    { it.name },
+                                    { it.author },
+                                    { it.source to it.id },
+                                    RecommendProfile.rankState(profile),
+                                    now,
+                                )
+                            }
+                        CuratedPlaylists(source, sort.id, tag.id, tag.name, ordered.take(count))
                     }
                 }.getOrNull()
             if (result != null) return result
@@ -242,12 +272,33 @@ object RecommendRuntime {
             SonglistRuntime.SOURCES
                 .map { it.first }
                 .flatMap { source -> LeaderboardRuntime.boards(source).map { RecommendBoard(source, it.id, it.name) } }
+        // 画像重排（M1）：榜单取数不变，只把前几首按歌手先验/词面学习排一遍。
+        val now = System.currentTimeMillis()
+        val profile = runCatching { RecommendProfileRuntime.load(now) }.getOrNull()
         for (board in RecommendSelection.newSongBoardCandidates(boards).take(MAX_BOARD_ATTEMPTS)) {
             val tracks = runCatching { LeaderboardRuntime.getListDetail(board.id, 1).list }.getOrNull().orEmpty()
             if (tracks.isNotEmpty()) {
-                return CuratedNewSongs(board.source, board.id, board.name, tracks.take(count))
+                val ordered =
+                    if (profile == null) {
+                        tracks
+                    } else {
+                        PlaylistRank.rankTracksByProfile<JsonObject>(
+                            tracks,
+                            { it.recommendText("name") },
+                            { it.recommendText("singer") },
+                            RecommendProfile.factorState(profile),
+                            now,
+                        )
+                    }
+                return CuratedNewSongs(board.source, board.id, board.name, ordered.take(count))
             }
         }
         return null
     }
+
+    /** 曲目顶层文本字段（与 PlayerRuntime 的私有读取同语义，避免跨文件可见性调整）。 */
+    private fun JsonObject.recommendText(key: String): String? =
+        (this[key] as? kotlinx.serialization.json.JsonPrimitive)
+            ?.takeIf { it !is kotlinx.serialization.json.JsonNull }
+            ?.content
 }
