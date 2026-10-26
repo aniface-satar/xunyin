@@ -36,6 +36,8 @@ import cn.toside.music.nativeapp.data.ListRuntime
 import cn.toside.music.nativeapp.data.RecommendRuntime
 import cn.toside.music.nativeapp.data.RecommendStores
 import cn.toside.music.nativeapp.player.PlayerRuntime
+import cn.toside.music.nativeapp.ui.radio.OnboardingEntryCard
+import cn.toside.music.nativeapp.ui.radio.OnboardingSheet
 import com.moriafly.salt.ui.SaltTheme
 import com.moriafly.salt.ui.UnstableSaltUiApi
 import kotlinx.coroutines.launch
@@ -78,6 +80,16 @@ fun RecommendPanel(
     var newSongsLoaded by remember { mutableStateOf(false) }
 
     var hiddenHint by remember { mutableStateOf<String?>(null) }
+
+    // 偏好问卷：入口只在这里（任务书约束），问卷本体在 ui/radio/OnboardingSheet.kt
+    var onboardingAnswers by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
+    var onboardingLoaded by remember { mutableStateOf(false) }
+    var showOnboarding by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        onboardingAnswers = runCatching { runtime.radio.onboardingAnswers() }.getOrElse { emptyMap() }
+        onboardingLoaded = true
+    }
 
     LaunchedEffect(playlistsTick) {
         playlistsLoading = true
@@ -130,6 +142,12 @@ fun RecommendPanel(
     }
 
     LazyColumn(Modifier.fillMaxSize()) {
+        item(key = "onboarding-entry") {
+            OnboardingEntryCard(
+                answered = onboardingAnswers.isNotEmpty(),
+                onClick = { showOnboarding = true },
+            )
+        }
         item(key = "radio-entry") {
             RadioEntryCard(onClick = onOpenRadio)
         }
@@ -189,6 +207,24 @@ fun RecommendPanel(
                 )
             }
         }
+    }
+
+    if (showOnboarding) {
+        OnboardingSheet(
+            initial = onboardingAnswers,
+            onDismiss = { showOnboarding = false },
+            onSubmit = { submitted ->
+                scope.launch {
+                    onboardingAnswers = runCatching { runtime.radio.submitOnboarding(submitted) }.getOrElse { submitted }
+                    hiddenHint =
+                        if (onboardingAnswers.isEmpty()) {
+                            "已跳过偏好设置"
+                        } else {
+                            "偏好已保存，下一批候选就会按它调整"
+                        }
+                }
+            },
+        )
     }
 }
 
