@@ -109,3 +109,63 @@
 - `.lxmc`/备份/同步与搜索无关，一个字不许碰（Wave7）。
 - 若五源某个 `artist` 实现实际不可用（比如 `wy` 需要额外鉴权、实测 403），**允许只做四源**
   并在报告里逐源标注「可用/不可用 + 证据」。宁可四源准，不要五源假。
+
+## Lane 报告（2026-10-26）
+
+- **结论**：完成（段 1~4 全部落地）。专辑 = 五源搜索+详情；歌手 = 四源（tx 实测缺席），
+  kw/kg/wy 有详情（热歌+专辑），mg 仅搜索；app 侧四类型 tab + 专辑/歌手详情页 + 置灰规则。
+- **commit**：`943488c`（解析器修齐）→ `79d0f48`（core 黄金测试+编排用例）→ `e242f28`（app 侧接线）
+  → 最终 `W6-laneB: 搜索专辑歌手（core 954 + app 117 全绿）`；测试数 **core 954（883+71）+ app 117（111+6）全绿**，
+  闸门 `ktlintCheck test assembleDebug` 全绿，APK 29,013,789 B（基线 28,925,062 B）。
+- **触碰文件清单**：
+  - core 新增：`music/search/SearchDetailSupport.kt`；`music/search/album/`（AlbumSearchModels、AlbumSearchAggregator、AlbumSearchCoordinator、Kw/Kg/Tx/Wy/Mg AlbumSearch）；`music/search/artist/`（ArtistSearchModels、ArtistSearchAggregator、ArtistSearchCoordinator、Kw/Kg/Wy/Mg ArtistSearch）
+  - core 测试新增：`music/search/SearchTestJson.kt` + `album/` 7 个测试 + `artist/` 6 个测试
+  - app 改动：`data/SearchRuntime.kt`（追加 SearchTypes / AlbumSearchRuntime / ArtistSearchRuntime 三个 object）；`ui/search/SearchPage.kt`（四类型 tab + 专辑/歌手结果 + 置灰）；新增 `ui/search/AlbumDetailPage.kt`、`ui/search/ArtistDetailPage.kt`；`ui/search/SearchTypeRulesTest.kt`（app 新用例）
+  - **未触碰**：HomeNavigator.kt、HomePage.kt、既有五源单曲/歌单解析器、Manifest、gradle、recommend/RadioRuntime/LocalMusicRuntime/player/ui/share
+- **语义修正与实证发现**：
+  1. **RN 快照五源都没有 `artist.js`**（任务书 §0 第 3/5 条与实际不符）：`src/utils/musicSdk/{kw,kg,tx,wy,mg}/` 逐目录实测只有 `album.js` 无 `artist.js`，`albumNormalizers.ts/artistNormalizers.ts` 也不存在。歌手模块全部为按任务书模型 + 真实响应 fixture 的重构。
+  2. **tx 歌手实测不可用，歌手走四源**：①RN 无 tx/artist.js；②用 node 复刻 `zzcSign`（sha1+置乱表，与 TxSearch.kt 同参数）实测 `u.y.qq.com/cgi-bin/musics.fcg` 综合搜索（search_type=0，remoteplace txt.newclient.top / solosinger 变体、含 grp 去除变体），`body.singer.list` 恒为空（album fixture 同样 singer 分区 0）；③旧 web 端 `c.y.qq.com/soso/fcgi-bin/client_search_cp?t=8` 返回 HTTP 500。按「宁可四源准」只做 kw/kg/wy/mg。
+  3. **五源专辑/歌手字段映射表**（请求 → 列表路径 → 字段）：
+     | 源 | 专辑搜索 | 专辑列表 | id/名称/歌手/封面/时间/歌曲数 | 专辑详情 | total |
+     |:--|:--|:--|:--|:--|:--|
+     | kw | `search.kuwo.cn/r.s ft=album`（`albumlist`） | albumid/name/artist/img·hts_img/pub/musiccnt | `r.s stype=albuminfo` 一次 rn=1000 | **无 TOTAL**，整页→page+1 启发式 | |
+     | kg | `mobiles.kugou.com api/v3/search/album` | `data.info[]` albumid/albumname/singername/imgurl({size}→240)/publishtime/songcount | `api/v3/album/song`(pagesize=200) + `gateway.kugou.com/v3/album_audio/audio` 批量补全 + `api/v3/album/info` | `data.total`，ceil(total/limit) | |
+     | tx | `musicu.fcg DoSearchForQQMusicDesktop`（zzc 签名复用 TxSearch） | `req.data.body.album.list[]` **albumMID 为 id**（数字 albumID 弃用）| `GetAlbumDetail`(albumMid) `req.data.songList[].songInfo` | 专辑区**无 total**，整页启发式；详情 totalNum 一页装完 | |
+     | wy | eapi `/api/cloudsearch/pc` type=10（构造复用 WySonglistSearch 同构） | `result.albums[]` id/name/artist.name/picUrl/publishTime(ms→Y-M-D)/size | weapi `weapi/v1/album/{id}`（songs 内嵌 privilege） | `result.albumCount`，ceil | |
+     | mg | jadeite `searchAll` searchSwitch album=1（签名同 MgSonglistSearch） | `albumResultData.result[]` id/name/singer/imgItems[0].img/publishDate | `queryAlbumSong` + `MIGUM3.0/resource/album/v2.0`；曲目复用 MgLeaderboard.filterMusicInfoList | `totalCount` 是**字符串**，ceil；详情 limit=total 一页装完 | |
+     歌手：kw `r.s ft=artist`（abslist ARTIST/ARTISTID/AARTIST/ALBUMNUM/SONGNUM/PICPATH，TOTAL 有）；kg `api/v3/search/singer`（**data 纯数组无 total**）+ `api/v5/singer/info` + `api/v3/singer/song|album`；wy eapi type=100（`result.artists`/`artistCount`，alias/albumSize/musicSize）+ weapi `v1/artist/{id}` + `artist/albums/{id}`；mg jadeite searchAll singer=1（`singerResultData`，totalCount 字符串）。
+  4. **all 源聚合实证**：RN 无专辑/歌手搜索可对照（见发现 1），照 `SonglistSearchAggregator` 的形状实现——五源并发、拼接不去重、`similar(keyword,name)` 排序后 `asReversed()`（等分时顺序翻转，测试按此钉住）、total 取各源最大值、翻页时已翻尽的源（maxPage<page）不再请求（coordinator 测试实证）。
+  5. **翻页累积语义**：page≥2 时返回**累积列表**（previous + 当前页），与原版 `SonglistSearchAggregator.all/single` 一致；初期测试误写「只回当前页」，已按原版语义修正测试。
+  6. **coordinator 单源分支补写 maxPages**：Artist/Album 两个 coordinator 原先只有 ALL 分支写 `maxPages`，单源翻页后切 all 源时已翻尽的源不会被过滤；两处口径统一（单源分支也写）。
+  7. **kw `r.s` 响应容错（album-kw-search.txt 实证）**：真实响应存在三类 artifact——伪 `]` + 逗号（`'],'+','`）、**缺开括号的元素**（`}],'company':''` 直接以键开始）、闭合前尾逗号。整包修复不可行，`kwRsRoot` 退化为逐元素抽取重建（深度扫描 + 缺 `{` 补齐 + 尾逗号/连续逗号清理）。归一化顺序有讲究：先转引号再塌缩，反过来会把 `'],'`+`,'` 变成假键 `","`。
+  8. **品质表在 `meta.qualitys`**：新歌曲项沿用既有音乐项形状（qualitys 在 meta 内），测试初期读顶层路径失败后修正（非解析器 bug）。
+  9. **测试死锁教训**：coordinator 测试用 CompletableDeferred 门闩挡 ALL 源请求 → 第二次 search 走 ALL 分支 awaitAll 同一被门请求 → runBlocking 单线程死锁（卡 18 分钟）。runBlocking 单线程下**禁止用门闩等自己**，改用 delay + 换单源推进代次（协调会话修复，保留）。
+- **解析器覆盖矩阵**（71 条 core 用例；「正常/空/异常」+ 分页/total 语义全部钉住）：
+  | 解析器 | search | detail/信息 | 空 | 异常 | 请求构造 | 分页/total 钉子 |
+  |:--|:--|:--|:--|:--|:--|:--|
+  | KwAlbumSearch | 1 | 1 | 1 | 1 | 1 | 整页启发式 1 |
+  | KgAlbumSearch | 1 | 2(info+网关两步链) | 1 | 1 | 1 | ceil(total/limit)+网关分批 1 |
+  | TxAlbumSearch | 1 | 1 | — | 1 | 1 | albumMID 寻址+整页启发式 1 |
+  | WyAlbumSearch | 1 | 1 | 1 | 1 | 1 | albumCount ceil 1 |
+  | MgAlbumSearch | 1 | 2(songs+info)+1(串行 detail) | 1 | 1 | 1 | totalCount 字符串+一页装完 1 |
+  | KwArtistSearch | 1 | 2(songs/albums)+1(fallback detail) | 1 | 1 | — | TOTAL ceil 1 |
+  | KgArtistSearch | 1 | 2(info+gateway) | — | 1 | — | 纯数组无 total 启发式 1 |
+  | WyArtistSearch | 1 | 2(detail+albums) | — | 1 | 1 | artistCount ceil 1 |
+  | MgArtistSearch | 1 | —（仅搜索） | 1 | 1 | 1 | totalCount 字符串 1 |
+  | Aggregator×2 + Coordinator×2 | | | | | | 21 条（累积/代次/过滤/缓存/reachedEnd） |
+- **app 侧交互说明**：SearchPage 四类型 tab（歌曲/歌单/专辑/歌手，SearchTypes.ALL）；源横滑条按类型置灰——歌手类型 tx 灰显不可点（`SearchTypes.enabledSources`），切到歌手时若当前源是 tx 自动回落 kw（`effectiveSource`），`switchSource` 再兜底拒绝禁用源；专辑行（名称/歌手·发行时间·曲数/来源标签）点击进 `AlbumDetailPage`（头部信息+曲目列表+播放全部，曲目点击/播放全部写 TEMP 临时列表起播，复用 SonglistDetailPage 链路）；歌手行（名称/别名·专辑数·歌曲数）点击进 `ArtistDetailPage`（热门歌曲/专辑两分区，专辑行页内再叠专辑详情），mg 行不可点（canOpenDetail=false），tx 源根本不出结果。搜索翻页到底提示「到底啦~」，四类型切换保留关键词自动重查（coordinator 缓存命中不发请求）。
+- **真机清单**（至少覆盖任务书 §4）：
+  1. 五源各搜一次专辑名（建议「范特西」）与歌手名（建议「周杰伦」），确认 kw/kg/tx/wy/mg 专辑、kw/kg/wy/mg 歌手出结果、all 聚合排序合理；
+  2. 歌手类型下 tx 源灰显且点击无效；从 tx 源切到歌手类型自动回落酷我；
+  3. 每源翻页到底出现「到底啦~」，all 源翻页不重复请求已翻尽源（观察无卡顿即专线通过）；
+  4. 专辑详情：五源各开一次，头部信息完整、曲目可点击起播、「播放全部」从第一首起播；
+  5. 歌手详情：kw/kg/wy 热歌与专辑两分区齐全，专辑行可进二级详情；mg 歌手行点击无响应（置灰语义）；
+  6. 空结果提示（「没有找到专辑/歌手」）与网络失败提示（详情页错误 + 返回按钮）；
+  7. **竖屏**：搜索页与两张详情页全程竖屏、无横屏分支；
+  8. 专辑曲目起播后返回搜索页，关键词/结果/滚动位置不丢（页内覆盖返回）。
+- **遗留问题与对后续波次的建议**：
+  - 路由缺口依旧：SEARCH tab 的专辑/歌手详情沿用页内覆盖（songlist 详情同款），HomeNavigator sealed Route 由 HomePage 穷尽渲染、壳结构禁触；后续若统一路由需 HomePage 配合。
+  - kw `r.s` 容错为实测驱动的兜底（发现 7），若后续拿到更多真实响应建议核对逐元素抽取的边界（嵌套对象/字符串内大括号）。
+  - tx 歌手若未来拿到可用接口（如专用 singer 搜索模块），可补第五源，`SearchTypes.ARTIST_SOURCES` 一处改动即可。
+  - 歌手详情未做相似歌手/粉丝数（RN 本就没有，任务书 §5 明确不做）；专辑封面图未逐行加载（与歌单搜索同口径）。
+
