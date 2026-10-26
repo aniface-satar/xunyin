@@ -4,10 +4,15 @@ import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
+import android.widget.Toast
 import androidx.media3.common.util.UnstableApi
+import cn.toside.music.core.local.LocalTrack
 import cn.toside.music.core.lyric.LyricParser
 import cn.toside.music.core.lyric.ParsedLyric
 import cn.toside.music.core.player.CorePlaybackCommands
@@ -16,12 +21,14 @@ import cn.toside.music.core.player.PlaybackCoordinator
 import cn.toside.music.core.player.PlayerCore
 import cn.toside.music.core.player.TogglePlayMethod
 import cn.toside.music.nativeapp.data.ListRuntime
+import cn.toside.music.nativeapp.data.LocalMusicRuntime
 import cn.toside.music.nativeapp.data.PlayHistoryStore
 import cn.toside.music.nativeapp.data.RadioRuntime
 import cn.toside.music.nativeapp.data.SettingsRuntime
 import cn.toside.music.nativeapp.lyric.DesktopLyricController
 import cn.toside.music.nativeapp.lyric.DesktopLyricKeys
 import cn.toside.music.nativeapp.userapi.UserApiRuntime
+import cn.toside.music.nativeapp.util.SafDocuments
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -64,9 +71,16 @@ class PlayerRuntime private constructor(
     /** 设置运行时（B5 设置层）：音质/歌词开关/音量均衡共用一个事实来源。 */
     val settings = SettingsRuntime.get(context.applicationContext)
 
-    /** 取链（走当前音源脚本；初始化失败时返回 null，由失败链路跳下一首）。 */
+    /**
+     * 取链 —— **两段式**（Wave5 波前复核结论）：
+     * 这里是可替换的默认 provider，[core] 在下面通过 `urlResolver.getUrl(info)` 绑定。
+     * 本地曲目（`source == "local"`）分支**必须写在默认 provider 内部**：
+     * `RadioRuntime` 等会整体替换 [urlResolver]，只改 core 那侧绑定会被绕过。
+     */
     var urlResolver: PlayerCore.MusicUrlProvider =
-        PlayerCore.MusicUrlProvider { info -> userApi.getMusicUrl(info) { playQuality() } }
+        PlayerCore.MusicUrlProvider { info ->
+            if (info.localFileUri() != null) localMusicUrl(info) else userApi.getMusicUrl(info) { playQuality() }
+        }
 
     /** 播放音质设置（设置页可改；默认值对齐 RN defaultSetting）。 */
     var playQuality: () -> String = { settings.store.string("player.playQuality") }
@@ -195,6 +209,37 @@ class PlayerRuntime private constructor(
      * 停播 → 关桌面歌词浮窗 → 释放均衡/播放器 → 停播放服务 → 结束任务。
      * 进程随任务结束由系统回收，不再主动杀自己。
      */
+    // ---------- 本地曲库（Wave5 Lane B） ----------
+
+    /** `source == "local"` 时的文件地址（document URI 字符串）；非本地曲目返回 null。 */
+    private fun JsonObject.localFileUri(): String? =
+        if (text("source") == LocalTrack.SOURCE) metaText("filePath") ?: text("id") else null
+
+    /**
+     * 本地直连取链：返回 `content://…` 字符串（Media3 原生支持 content URI），**绕开 userApi**。
+     *
+     * 取链前做一次可读性探测：文件被删/授权失效时给可读提示再返回 null，
+     * 之后的「跳下一首」由既有失败链路（`PlayerCore.loadAndPlay`）决定，本波不改它。
+     */
+    private suspend fun localMusicUrl(info: JsonObject): String? {
+        val path = info.localFileUri()
+        if (path.isNullOrEmpty()) return null
+        val readable =
+            runCatching { SafDocuments.canRead(appContext, Uri.parse(path)) }.getOrDefault(false)
+        if (!readable) {
+            toast("本地文件无法访问，可能已删除或授权失效：${info.text("name").orEmpty()}")
+            return null
+        }
+        return path
+    }
+
+    private fun toast(message: String) {
+        if (message.isEmpty()) return
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
     fun shutdown() {
         if (shuttingDown) return
         shuttingDown = true
@@ -322,7 +367,12 @@ class PlayerRuntime private constructor(
                     _lyrics.value = LyricsState(musicId = key, loading = true)
                     val data =
                         try {
-                            userApi.getLyric(info)
+                            // 本地曲目读同目录同名 .lrc（RN getMusicFileLyric 的等价物，内嵌歌词本波不做）
+                            if (info.text("source") == LocalTrack.SOURCE) {
+                                LocalMusicRuntime.readLyricJson(appContext, info)
+                            } else {
+                                userApi.getLyric(info)
+                            }
                         } catch (e: Exception) {
                             Log.d("PlayerLyric", "load failed: ${e.message}")
                             null

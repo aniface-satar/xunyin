@@ -14,20 +14,20 @@ object LocalImportPlan {
     const val METADATA_CONCURRENCY: Int = 5
     const val FLUSH_DELAY_MS: Long = 1_000L
 
-    fun batches(paths: List<String>): List<List<String>> = chunks(paths, METADATA_BATCH_SIZE)
+    fun <T> batches(items: List<T>): List<List<T>> = chunks(items, METADATA_BATCH_SIZE)
 
     /** 固定窗口切分（与 RN 的 `slice(index+1, index+11)` 等价，末批可短）。 */
-    fun chunks(
-        paths: List<String>,
+    fun <T> chunks(
+        items: List<T>,
         size: Int,
-    ): List<List<String>> {
+    ): List<List<T>> {
         require(size > 0) { "chunk size must be positive" }
-        if (paths.isEmpty()) return emptyList()
-        val result = mutableListOf<List<String>>()
+        if (items.isEmpty()) return emptyList()
+        val result = mutableListOf<List<T>>()
         var index = 0
-        while (index < paths.size) {
-            val end = minOf(index + size, paths.size)
-            result.add(paths.subList(index, end).toList())
+        while (index < items.size) {
+            val end = minOf(index + size, items.size)
+            result.add(items.subList(index, end).toList())
             index = end
         }
         return result
