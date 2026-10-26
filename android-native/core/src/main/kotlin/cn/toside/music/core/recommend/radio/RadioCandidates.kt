@@ -199,4 +199,47 @@ object RadioCandidates {
         }
         return candidates
     }
+
+    /**
+     * 探索通道 C：关键词/语种补货搜到的散曲（没有所属歌单，只有搜索关键词）。
+     *
+     * 与 A 的区别是**刻意压低亲和度、抬高探索度**：A 是「画像歌手的热门歌」，
+     * C 是「用你表态过的语种/分类去撞陌生歌」。C 的候选进池后还要过 `Channels.plan`
+     * 的 A7/B5/C4/D2/E2 配额，所以这里不需要额外限量。
+     */
+    fun createDiscoveryCandidates(
+        tracks: List<JsonObject>,
+        keyword: String,
+        params: CandidateBuildParams,
+        channel: ChannelId = ChannelId.C,
+    ): List<PoolCandidate> {
+        val candidates = mutableListOf<PoolCandidate>()
+        for (musicInfo in tracks) {
+            if (isExcluded(musicInfo, params)) continue
+            val artistAffinity =
+                RadioTrackKeys.getArtistKeys(musicInfo).sumOf { artist ->
+                    params.profile.topArtists
+                        .firstOrNull { it.artist == artist }
+                        ?.weight ?: 0.0
+                }
+            candidates.add(
+                RadioPool.createCandidate(
+                    CreatePoolCandidateInput(
+                        musicInfo = musicInfo,
+                        channel = channel,
+                        sourceId = "discovery:$keyword",
+                        now = params.now,
+                        // 命中画像歌手时顺带算 A 的份额，但主通道仍是 C
+                        channels = if (artistAffinity > 0) listOf(channel, ChannelId.A) else listOf(channel),
+                        affinity = max(0.2, min(0.6, artistAffinity * 0.5)),
+                        coOccurrence = 0.0,
+                        exploration = 0.9,
+                        confirmedSeedPlaylist = false,
+                        reason = "discovery:$keyword",
+                    ),
+                ),
+            )
+        }
+        return candidates
+    }
 }
