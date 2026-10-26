@@ -268,7 +268,8 @@ object RadioPool {
                     channels = channels,
                     channelSourceId =
                         if (confirmed) {
-                            candidate.channelSourceId + (ChannelId.A.name to (candidate.channelSourceId[ChannelId.A.name] ?: "seed_playlist"))
+                            candidate.channelSourceId +
+                                (ChannelId.A.name to (candidate.channelSourceId[ChannelId.A.name] ?: "seed_playlist"))
                         } else {
                             candidate.channelSourceId
                         },

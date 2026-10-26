@@ -301,10 +301,10 @@ class RadioEngine(
             lastRefreshAt = nowMs
             lastRefreshReasons =
                 result.reasons +
-                    listOfNotNull(
-                        "cooccurrence:$coOccurrenceHits".takeIf { coOccurrenceHits > 0 },
-                        "cooccurrence_empty".takeIf { coOccurrenceHits == 0 && cache.isNotEmpty() },
-                    )
+                listOfNotNull(
+                    "cooccurrence:$coOccurrenceHits".takeIf { coOccurrenceHits > 0 },
+                    "cooccurrence_empty".takeIf { coOccurrenceHits == 0 && cache.isNotEmpty() },
+                )
             if (result.candidates.isNotEmpty()) lastRefreshRevision = profileRevision
             emitState()
             result.candidates.isNotEmpty() ||
@@ -451,7 +451,9 @@ class RadioEngine(
             )
         lastSelectionReasons =
             selectionReasons(finalItems, langTargets, selection.reasons) +
-                listOfNotNull("session_cooccurrence:${sessionCoOccurrence.size}".takeIf { sessionCoOccurrence.isNotEmpty() })
+                listOfNotNull(
+                    "session_cooccurrence:${sessionCoOccurrence.size}".takeIf { sessionCoOccurrence.isNotEmpty() },
+                )
         if (selection.items.isEmpty()) return false
         val byKey = state.candidateCache.associateBy { it.trackKey }
         batchId += 1

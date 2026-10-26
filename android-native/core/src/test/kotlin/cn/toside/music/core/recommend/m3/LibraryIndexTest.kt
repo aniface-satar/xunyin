@@ -182,7 +182,15 @@ class LibraryIndexTest {
         assertTrue(LibraryIndex.buildSessionCoOccurrence(history, emptySet(), LibraryIndex.SessionCoOccurrenceOptions(now = now)).isEmpty())
         assertTrue(LibraryIndex.buildSessionCoOccurrence(emptyList(), setOf("s1")).isEmpty())
         // 踩雷结束不是中性收听
-        val disliked = listOf(record("s1", now, 1.0, PlayEndReason.NATURAL_END), record("x", now + 1_000, 0.9, PlayEndReason.DISLIKE))
-        assertTrue(LibraryIndex.buildSessionCoOccurrence(disliked, setOf("s1"), LibraryIndex.SessionCoOccurrenceOptions(now = now)).isEmpty())
+        val disliked =
+            listOf(
+                record("s1", now, 1.0, PlayEndReason.NATURAL_END),
+                record("x", now + 1_000, 0.9, PlayEndReason.DISLIKE),
+            )
+        assertTrue(
+            LibraryIndex
+                .buildSessionCoOccurrence(disliked, setOf("s1"), LibraryIndex.SessionCoOccurrenceOptions(now = now))
+                .isEmpty(),
+        )
     }
 }

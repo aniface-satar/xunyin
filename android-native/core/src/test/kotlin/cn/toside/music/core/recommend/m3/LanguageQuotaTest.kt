@@ -182,9 +182,10 @@ class LanguageQuotaTest {
         // 详情额度只有 1 格时常规摘要优先：桶让位会让画像通道（A/B）饿死
         assertEquals(
             0,
-            LanguageQuota.planBucketReserve(
-                LanguageQuota.BucketReserveOptions(detailBudget = 1, poolSize = 100, bucketSummaries = 3),
-            ).reserve,
+            LanguageQuota
+                .planBucketReserve(
+                    LanguageQuota.BucketReserveOptions(detailBudget = 1, poolSize = 100, bucketSummaries = 3),
+                ).reserve,
         )
     }
 

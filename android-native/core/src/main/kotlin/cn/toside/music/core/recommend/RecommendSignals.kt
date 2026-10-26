@@ -10,8 +10,7 @@ import kotlinx.serialization.json.jsonArray
 const val LOCAL_SOURCE = "local"
 
 /** 曲目 `source` 字段：缺失/非字符串返回 null，与 RadioTrackKeys 的读法同语义。 */
-fun JsonObject.sourceField(): String? =
-    (this["source"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
+fun JsonObject.sourceField(): String? = (this["source"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
 
 /** 是否本地曲（`source == "local"`）：推荐画像与词面学习不吃本地曲（W5-13）。 */
 fun JsonObject.isLocalTrack(): Boolean = sourceField() == LOCAL_SOURCE
