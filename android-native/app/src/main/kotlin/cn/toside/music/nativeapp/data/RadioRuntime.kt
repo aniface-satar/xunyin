@@ -31,8 +31,8 @@ import cn.toside.music.core.recommend.radio.TempQueueOrder
 import cn.toside.music.core.songlist.RecommendSelection
 import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.player.PlayerRuntime
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -813,8 +813,10 @@ class RadioRuntime(
         val catalogue = RecommendSelection.flattenTags(tags)
         if (catalogue.isEmpty()) return 1
         val prefKeywords =
-            runCatching { RecommendStores.onboarding.weights() }.getOrNull()
-                ?.let { Onboarding.computePreferenceKeywords(it) }.orEmpty()
+            runCatching { RecommendStores.onboarding.weights() }
+                .getOrNull()
+                ?.let { Onboarding.computePreferenceKeywords(it) }
+                .orEmpty()
         val tag =
             if (prefKeywords.isEmpty()) {
                 RecommendSelection.pickTag(catalogue, rotation)

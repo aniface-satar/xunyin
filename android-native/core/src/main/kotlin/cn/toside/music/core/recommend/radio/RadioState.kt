@@ -22,7 +22,6 @@ data class RadioState(
     val themeWeights: Map<String, ThemePreference> = emptyMap(),
     val tokenWeights: Map<String, ThemePreference> = emptyMap(),
     val artistStats: Map<String, ThemePreference> = emptyMap(),
-
     /**
      * 问卷答案（选项 id → 百分比）与其**已播种分量**（分类键 → 初值分量）。
      * 两者必须与 [themeWeights] 同生共死：重答问卷时先按 [onboardingSeeded] 对称回退再播新的，

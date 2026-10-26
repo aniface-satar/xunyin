@@ -56,10 +56,11 @@ class ArtistLangStore(
                 if (loaded == null) {
                     mutableMapOf()
                 } else {
-                    runCatching { Json.decodeFromJsonElement(serializer, loaded) }.getOrElse {
-                        persistAllowed = false
-                        mutableMapOf()
-                    }.toMutableMap()
+                    runCatching { Json.decodeFromJsonElement(serializer, loaded) }
+                        .getOrElse {
+                            persistAllowed = false
+                            mutableMapOf()
+                        }.toMutableMap()
                 }
             table = parsed
             parsed

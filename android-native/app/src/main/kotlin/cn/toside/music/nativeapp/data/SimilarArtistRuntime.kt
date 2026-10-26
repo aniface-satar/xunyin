@@ -214,7 +214,8 @@ class SimilarArtistRuntime(
 
     private suspend fun fetchJson(url: String): JsonElement? =
         withContext(Dispatchers.IO) {
-            val connection = runCatching { URI.create(url).toURL().openConnection() as HttpURLConnection }.getOrNull() ?: return@withContext null
+            val connection =
+                runCatching { URI.create(url).toURL().openConnection() as HttpURLConnection }.getOrNull() ?: return@withContext null
             connection.connectTimeout = POLICY.REQUEST_TIMEOUT_MS.toInt()
             connection.readTimeout = POLICY.REQUEST_TIMEOUT_MS.toInt()
             connection.setRequestProperty("User-Agent", MUSICBRAINZ_UA)
@@ -270,10 +271,12 @@ class SimilarArtistRuntime(
 
         fun buildMusicBrainzLookupUrl(mbid: String): String = "$MB_API/artist/${encode(mbid)}?inc=aliases+tags&fmt=json"
 
-        fun buildListenBrainzSimilarUrl(mbid: String): String =
-            "$LB_SIMILAR_API?artist_mbids=${encode(mbid)}&algorithm=$LB_ALGORITHM"
+        fun buildListenBrainzSimilarUrl(mbid: String): String = "$LB_SIMILAR_API?artist_mbids=${encode(mbid)}&algorithm=$LB_ALGORITHM"
 
-        private fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+        private fun encode(value: String): String =
+            java.net.URLEncoder
+                .encode(value, "UTF-8")
+                .replace("+", "%20")
     }
 }
 

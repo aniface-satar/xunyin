@@ -173,7 +173,12 @@ fun RecommendPanel(
                 val item = playlistItems[index]
                 PlaylistRow(
                     item = item,
-                    onLongClick = { hidePlaylist(item, onHidden = { hiddenHint = it; playlistsTick++ }) },
+                    onLongClick = {
+                        hidePlaylist(item, onHidden = {
+                            hiddenHint = it
+                            playlistsTick++
+                        })
+                    },
                     onClick = { onOpenSonglist(item.source, item.id, item.name) },
                 )
             }

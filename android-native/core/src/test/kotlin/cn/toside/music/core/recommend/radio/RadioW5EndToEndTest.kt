@@ -155,9 +155,14 @@ class RadioW5EndToEndTest {
             engine.onLiked(first.musicInfo)
 
             // 喜欢会改主题净权/词面权重，但问卷播种的那份分量不能被冲掉
-            val zhKey = cn.toside.music.core.recommend.TrackKeys.normalizeText("华语")
+            val zhKey =
+                cn.toside.music.core.recommend.TrackKeys
+                    .normalizeText("华语")
             assertTrue("华语播种丢了", (engine.state.themeWeights[zhKey]?.positiveWeight ?: 0.0) >= 4.0)
-            assertTrue(engine.state.themeWeights.keys.containsAll(beforeLike.keys))
+            assertTrue(
+                engine.state.themeWeights.keys
+                    .containsAll(beforeLike.keys),
+            )
 
             // 再取曲：链路还能继续出歌（喜欢的那首已被排除，靠补充刷新续上）
             val more = engine.getRecommendations(3)
