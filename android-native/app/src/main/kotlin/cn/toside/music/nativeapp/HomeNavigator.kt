@@ -55,6 +55,15 @@ class HomeNavigator {
         detailStacks.getValue(currentTab).add(route)
     }
 
+    /**
+     * deeplink 进入的详情：先切到「发现」再压栈（RN 的 deeplink 一律在主页栈顶打开，
+     * 不跟随当前 tab —— 否则从「我的」进来的歌单会叠在列表详情上面，返回层级会乱）。
+     */
+    fun openFromDeeplink(route: Route) {
+        currentTab = HomeTab.DISCOVER
+        detailStacks.getValue(HomeTab.DISCOVER).add(route)
+    }
+
     /** @return 当前 tab 是否成功 pop 一层；根页面返回 false。 */
     fun back(): Boolean {
         val stack = detailStacks.getValue(currentTab)
