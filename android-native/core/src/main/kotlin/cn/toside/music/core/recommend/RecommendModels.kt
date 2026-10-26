@@ -78,9 +78,11 @@ object RecommendConfig {
         val ceiling: Double = 1.15,
     )
 
+    /** M3 补：问卷播种（`m3/Onboarding.computeSeedWeights`）需要饱和度当量纲基准。 */
     class ThemeFeedbackConfig(
         val positiveFactor: Double = 0.6,
         val negativeFactor: Double = 1.5,
         val halfLifeDays: Double = 45.0,
+        val saturation: Double = 4.0,
     )
 }
