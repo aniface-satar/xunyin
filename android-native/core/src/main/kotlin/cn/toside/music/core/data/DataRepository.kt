@@ -7,7 +7,10 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.put
 
 /**
  * 持久化数据仓库 —— RN 侧 src/utils/data.ts 的核心存取函数移植。
@@ -87,6 +90,39 @@ class DataRepository(
         url: String,
     ) = kv.saveString(StorageKeys.MUSIC_URL_PREFIX + "${musicId}_$type", url)
 
+    // ---------- 音乐 URL 缓存（W6-1：带写入时间的取链缓存） ----------
+
+    /** 读缓存记录（无记录 / 记录损坏都返回 null，等价于未命中）。 */
+    suspend fun getMusicUrlEntry(
+        musicId: String,
+        type: String,
+    ): MusicUrlEntry? {
+        // 键上存过非对象值（手工改过 / 历史数据）时 getData 的泛型擦除会炸，这里按元素取再判类型
+        val obj = kv.getData<JsonElement>(MusicUrlCache.key(musicId, type)) as? JsonObject ?: return null
+        val url = (obj["url"] as? JsonPrimitive)?.contentOrNull ?: return null
+        val savedAt = (obj["t"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() ?: return null
+        return MusicUrlEntry(url = url, savedAt = savedAt)
+    }
+
+    /** 写缓存记录（键与 [getMusicUrl] 分开，不覆盖 RN 口径的纯 url 值）。 */
+    suspend fun saveMusicUrlEntry(
+        musicId: String,
+        type: String,
+        url: String,
+        savedAt: Long,
+    ) = kv.saveData(
+        MusicUrlCache.key(musicId, type),
+        buildJsonObject {
+            put("url", url)
+            put("t", savedAt)
+        },
+    )
+
+    suspend fun clearMusicUrlEntry(
+        musicId: String,
+        type: String,
+    ) = kv.removeData(MusicUrlCache.key(musicId, type))
+
     // ---------- 其他源信息 ----------
 
     suspend fun getOtherSource(musicId: String): List<JsonElement> =
@@ -125,4 +161,57 @@ class DataRepository(
     suspend fun getTempListMeta(): JsonObject = kv.getData(StorageKeys.TEMP_LIST_META) ?: JsonObject(emptyMap())
 
     suspend fun saveTempListMeta(meta: JsonObject) = kv.saveData(StorageKeys.TEMP_LIST_META, meta)
+}
+
+/** 一条取链缓存记录：[url] 是直链，[savedAt] 是写入时刻（毫秒）。 */
+data class MusicUrlEntry(
+    val url: String,
+    val savedAt: Long,
+)
+
+/**
+ * 取链缓存规则（W6-1）—— RN `src/utils/data.ts#getMusicUrl/saveMusicUrl` 的原生接线口径。
+ *
+ * ## RN 实证（2026-10-26）
+ *
+ * | 路径 | 键 | 读侧 | 写侧 |
+ * |:--|:--|:--|:--|
+ * | 在线取链 | `<id>_<quality>`，**音质入键** | 取链前（`cachedUrl && !isRefresh`，online.ts:56） | 成功后无条件覆盖；换源另存目标曲目键（online.ts:60-61） |
+ * | 本地兜底直链 | **本地曲目 id + 固定 `128k`** | 取链前（utils.ts:161） | 成功后（local.ts:83） |
+ * | 六级阶梯命中 | **在线目标曲目 id + 实际音质** | 取链前（utils.ts:263） | 成功后（local.ts:94，RN 自己留了 `// TODO: save url ?`） |
+ *
+ * ## 原生唯一增强：TTL
+ *
+ * RN 没有过期时间（只有 `isRefresh` 才跳过缓存），过期直链会一路播失败且没人兜。
+ * 原生给每条记录带写入时间，[DEFAULT_TTL_MS] 之外按未命中处理（代价是一次重新取链，
+ * 远小于播一个 403 直链的代价）。
+ */
+object MusicUrlCache {
+    /** 缓存记录键后缀：与 RN 口径的纯 url 键（[DataRepository.saveMusicUrl]）分开存，互不覆盖。 */
+    const val CACHE_KEY_SUFFIX: String = "_c"
+
+    /** 本地兜底直链的音质键 —— RN `getOnlineOtherSourceMusicUrlByLocal` 固定 `128k`（utils.ts:159）。 */
+    const val LOCAL_FALLBACK_QUALITY: String = "128k"
+
+    /** 默认有效期 6 小时。 */
+    const val DEFAULT_TTL_MS: Long = 6L * 60 * 60 * 1000
+
+    fun key(
+        musicId: String,
+        type: String,
+    ): String = StorageKeys.MUSIC_URL_PREFIX + "${musicId}_$type$CACHE_KEY_SUFFIX"
+
+    /** 记录在有效期内才算命中（写入时间为 0 / 未来时间都算坏记录）。 */
+    fun isFresh(
+        savedAt: Long,
+        now: Long,
+        ttlMs: Long = DEFAULT_TTL_MS,
+    ): Boolean = savedAt > 0 && now >= savedAt && now - savedAt < ttlMs
+
+    /** 命中返回直链，未命中/过期返回 null。 */
+    fun pick(
+        entry: MusicUrlEntry?,
+        now: Long,
+        ttlMs: Long = DEFAULT_TTL_MS,
+    ): String? = entry?.url?.takeIf { it.isNotEmpty() && isFresh(entry.savedAt, now, ttlMs) }
 }

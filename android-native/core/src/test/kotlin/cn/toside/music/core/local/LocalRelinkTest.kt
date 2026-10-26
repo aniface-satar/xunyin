@@ -153,4 +153,45 @@ class LocalRelinkTest {
             )
         assertEquals("content://new/夜曲", plan.matched["old://uri"])
     }
+
+    // ---------- 歧义候选（W6-3：列给用户挑） ----------
+
+    @Test
+    fun `ambiguous candidates are listed by rule level`() {
+        val expect = expectation(name = "晴天", singer = "周杰伦", stem = "cd1_04")
+        val listed =
+            LocalRelink.candidatesFor(
+                expectation = expect,
+                candidates =
+                    listOf(
+                        candidate("晴天 - 周杰伦", "u-singer"), // R2
+                        candidate("cd1_04", "u-stem"), // R1
+                        candidate("晴天", "u-name"), // R3
+                        candidate("七里香 - 周杰伦", "u-other"), // 不命中
+                    ),
+            )
+        assertEquals(listOf("u-stem", "u-singer", "u-name"), listed.map { it.uri })
+    }
+
+    @Test
+    fun `ambiguous candidates skip taken uris and dedupe`() {
+        val expect = expectation(name = "晴天", stem = "cd1_04")
+        val listed =
+            LocalRelink.candidatesFor(
+                expectation = expect,
+                candidates = listOf(candidate("cd1_04", "u1"), candidate("cd1_04", "u1"), candidate("cd1_04", "u2")),
+                takenUris = setOf("u2"),
+            )
+        assertEquals(listOf("u1"), listed.map { it.uri })
+    }
+
+    @Test
+    fun `blank name has no candidates`() {
+        val listed =
+            LocalRelink.candidatesFor(
+                expectation = expectation(name = "", stem = ""),
+                candidates = listOf(candidate("anything")),
+            )
+        assertEquals(emptyList<String>(), listed.map { it.uri })
+    }
 }
