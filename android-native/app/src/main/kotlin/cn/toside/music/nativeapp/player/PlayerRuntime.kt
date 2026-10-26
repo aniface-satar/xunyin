@@ -17,6 +17,7 @@ import cn.toside.music.core.player.PlayerCore
 import cn.toside.music.core.player.TogglePlayMethod
 import cn.toside.music.nativeapp.data.ListRuntime
 import cn.toside.music.nativeapp.data.PlayHistoryStore
+import cn.toside.music.nativeapp.data.RadioRuntime
 import cn.toside.music.nativeapp.data.SettingsRuntime
 import cn.toside.music.nativeapp.lyric.DesktopLyricController
 import cn.toside.music.nativeapp.lyric.DesktopLyricKeys
@@ -90,6 +91,12 @@ class PlayerRuntime private constructor(
             urlProvider = PlayerCore.MusicUrlProvider { info -> urlResolver.getUrl(info) },
         )
 
+    /**
+     * 个性电台编排（M2）：引擎 + 临时队列补位 + 不感兴趣闭环。
+     * 声明在 [core] 之后——它要读同一份播放状态。
+     */
+    val radio = RadioRuntime(this, context)
+
     /** 进度记忆（三键之一 `player.isSavePlayTime` 的消费者，落盘见 [PlayInfoStore]）。 */
     private val progressMemory =
         PlayProgressMemory(
@@ -132,6 +139,10 @@ class PlayerRuntime private constructor(
         platform.commandHandler = CorePlaybackCommands(core, scope)
         core.togglePlayMethodProvider = { core.state.value.playMethod }
         core.onAddPlayHistory = { playHistory.add(it) }
+        // 切歌事件转给电台：playedList 只由电台写（RN radio.ts:151），
+        // 踩雷集合也由电台侧缓存后同步提供（切歌判定不能等 IO）。
+        core.onMusicToggled = { info -> radio.onMusicToggled(info) }
+        core.dislikeInfoProvider = { radio.dislikeInfo() }
         coordinator.onPlayedStopExit = { shutdown() }
         coordinator.start()
         observeActivity()

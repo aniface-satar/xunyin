@@ -1,5 +1,6 @@
 package cn.toside.music.nativeapp.ui.songlist
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,18 +41,20 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * 发现页「推荐」面板（Wave2 Lane A）—— 只包含与个性化引擎解耦的官方内容通道：
+ * 发现页「推荐」面板（Wave2 Lane A 建立，Wave4 Lane A 接电台入口）。
  *
+ * - 个性电台：顶部卡片进入 [cn.toside.music.nativeapp.ui.radio.RadioPage]（S13 M2）；
  * - 推荐歌单：轮换源/分类取一页封面歌单，点卡片进歌单详情；
  * - 新歌速递：新歌榜（无则飙升榜）前几首，点歌起播（临时列表链路）。
  *
- * RN 的电台/探索卡片、画像重排、「不感兴趣」等依赖 bandit/audioEmbedding/
- * 画像引擎，本波不移植；两块取不到内容时显示空态而不是假数据。
+ * 「更多」分页与 onboarding 问卷仍属可选项，本波未做（见 lane 报告遗留）。
+ * 两块取不到内容时显示空态而不是假数据。
  */
 @OptIn(UnstableSaltUiApi::class)
 @Composable
 fun RecommendPanel(
     onOpenSonglist: (source: String, id: String, title: String) -> Unit,
+    onOpenRadio: () -> Unit,
     onOpenPlayer: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -110,6 +113,9 @@ fun RecommendPanel(
     }
 
     LazyColumn(Modifier.fillMaxSize()) {
+        item(key = "radio-entry") {
+            RadioEntryCard(onClick = onOpenRadio)
+        }
         item(key = "playlists-header") {
             SectionHeader(
                 title = "推荐歌单",
@@ -159,6 +165,44 @@ fun RecommendPanel(
                 )
             }
         }
+    }
+}
+
+/** 发现页「推荐」顶部的电台入口卡（S13 M2 主线入口）。 */
+@OptIn(UnstableSaltUiApi::class)
+@Composable
+private fun RadioEntryCard(onClick: () -> Unit) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(SaltTheme.colors.highlight.copy(alpha = 0.12f))
+                .clickable(onClick = onClick)
+                .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            BasicText(
+                text = "个性电台",
+                style =
+                    TextStyle(
+                        color = SaltTheme.colors.text,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+            )
+            BasicText(
+                text = "按你的口味连着放；不喜欢就说一声，立刻换掉并记住",
+                modifier = Modifier.padding(top = 4.dp),
+                style = TextStyle(color = SaltTheme.colors.subText, fontSize = 12.sp),
+            )
+        }
+        BasicText(
+            text = "进入 ›",
+            style = TextStyle(color = SaltTheme.colors.highlight, fontSize = 13.sp, fontWeight = FontWeight.Medium),
+        )
     }
 }
 

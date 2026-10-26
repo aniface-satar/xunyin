@@ -29,6 +29,9 @@ class HomeNavigator {
             val id: String,
             val title: String,
         ) : Route
+
+        /** 个性电台（S13 M2）：发现页「推荐」顶部卡片进入。 */
+        data object Radio : Route
     }
 
     var currentTab by mutableStateOf(HomeTab.DISCOVER)

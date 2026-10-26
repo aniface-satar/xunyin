@@ -181,6 +181,16 @@ class PlayerCore(
      */
     var onAddPlayHistory: (suspend (PlayMusicInfo) -> Unit)? = null
 
+    /**
+     * 切歌事件（RN `global.app_event.musicToggled`，radio.ts:141-153 的唯一订阅点）。
+     *
+     * 只发事件不改状态：`playedList` 的唯一写入方是**个性电台**——
+     * RN `radio.ts:151` 仅在「临时曲 + 属于电台队列」时 `addPlayedList`，
+     * 普通切歌一律不写（B2 语义修正表第一条）。撤队、停播、写历史等
+     * 决策都留给订阅方（app `RadioRuntime`），core 不感知电台存在。
+     */
+    var onMusicToggled: (suspend (PlayMusicInfo) -> Unit)? = null
+
     /** 是否自动清理已播放列表（player.isAutoCleanPlayedList 设置读取器）。 */
     var isAutoCleanPlayedListProvider: () -> Boolean = { false }
 
@@ -241,6 +251,9 @@ class PlayerCore(
                 progress = PlayProgress(),
             )
         }
+        // RN `app_event.musicToggled` 在 playMusicInfo 更新后发出；电台订阅后决定是否
+        // 写 playedList / 停播（radio.ts:141-153）。清空音轨（stop）不发事件。
+        if (musicInfo != null) onMusicToggled?.invoke(PlayMusicInfo(listId, musicInfo, isTempPlay))
     }
 
     suspend fun setPlayerListId(listId: String?) = update { it.copy(playerListId = listId) }

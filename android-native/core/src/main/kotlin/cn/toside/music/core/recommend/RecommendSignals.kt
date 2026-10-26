@@ -50,6 +50,48 @@ object DislikeRulesParser {
 
     /** RN getDislikeListRules 的原始文本读取等价物：KvStore 直接给文本。 */
     fun parseFromStorage(raw: String?): DislikeRules = parse(raw ?: "")
+
+    /** RN DISLIKE_NAME_ALIAS：规则文本里不允许出现裸分隔符，与 RN 一致转义成 `#`。 */
+    private const val SPLIT_CHAR_ALIAS = "#"
+
+    private fun normalizeRulePart(part: String): String = part.replace(SPLIT_CHAR, SPLIT_CHAR_ALIAS).lowercase().trim()
+
+    /**
+     * 规则文本归一化 —— RN `utils/dislikeManage.ts` 的 `updateDislikeInfo` 写侧。
+     *
+     * 不感兴趣写入时 RN 会整体重写规则文本：逐行归一化、去空行、去重（保序）。
+     * 归一化结果与 [parse] 的读取语义必须一致，因此两侧都走同一份规则格式。
+     */
+    fun normalize(raw: String): String {
+        val list = mutableListOf<String>()
+        for (item in raw.split('\n')) {
+            if (item.isEmpty()) continue
+            val idx = item.indexOf(SPLIT_CHAR)
+            if (idx >= 0) {
+                val name = normalizeRulePart(item.substring(0, idx))
+                val singer = normalizeRulePart(item.substring(idx + 1))
+                when {
+                    name.isNotEmpty() && singer.isNotEmpty() -> list.add("$name$SPLIT_CHAR$singer")
+                    name.isNotEmpty() -> list.add(name)
+                    singer.isNotEmpty() -> list.add("$SPLIT_CHAR$singer")
+                }
+            } else {
+                val name = normalizeRulePart(item)
+                if (name.isNotEmpty()) list.add(name)
+            }
+        }
+        return list.distinct().joinToString("\n")
+    }
+
+    /** RN `addDislikeInfo`：追加一条 `歌名@歌手` 规则后整体重写（空字段按规则退化）。 */
+    fun appendRule(
+        raw: String,
+        name: String?,
+        singer: String?,
+    ): String {
+        val line = "${name.orEmpty()}$SPLIT_CHAR${singer.orEmpty()}"
+        return normalize(if (raw.isEmpty()) line else "$raw\n$line")
+    }
 }
 
 /**
