@@ -68,6 +68,9 @@ class AlbumSearchCoordinator(
                 AlbumSearchAggregator.all(keyword, results, page, previous)
             } else {
                 val searched = checkNotNull(sources[source])(keyword, page, limit)
+                // 单源也要记 maxPage（与 ArtistSearchCoordinator 口径一致）：
+                // 之后切到 all 源时按它过滤已翻尽的源
+                maxPages[source] = maxPageOf(searched)
                 AlbumSearchAggregator.single(searched, page, previous)
             }
         if (gen != generation) return null

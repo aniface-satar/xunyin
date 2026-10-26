@@ -41,15 +41,109 @@ internal object SearchDetailSupport {
     // ---------- kw ----------
 
     /**
-     * kw `r.s` 响应 → JsonObject。单引号对象串 + 实测的空槽容错。
+     * kw `r.s` 响应 → JsonObject。单引号对象串 + 实测空槽容错。
+     *
+     * 归一化顺序有讲究（fixture 实证，见 lane 报告）：
+     * 1. 先转引号——塌缩若在前，会把 `'],'` + `,'company'` 的双逗号先缩成一个，
+     *    转引号后造出 `","` 这样的假键；
+     * 2. 再塌缩连续逗号（`],,` 空槽）；
+     * 3. 最后去掉闭合符前的尾逗号（`],}`）。
      * 解析失败返回 null（调用方决定重试语义）。
      */
     fun kwRsRoot(body: String): JsonObject? {
-        val normalized = body.replace(",,", ",")
-        return runCatching {
-            json.parseToJsonElement(SonglistSearchSupport.singleQuotesToJson(normalized)).jsonObject
-        }.getOrNull()
+        val converted = SonglistSearchSupport.singleQuotesToJson(body)
+        // 实测 artifact：`],'` + `','` 转引号后变成 `],"` + `","`（一个只含逗号的假键），
+        // 见 album-kw-search.txt fixture；摘掉假键但保留后续元素的开引号
+        val artifactRemoved = converted.replace(Regex("\\],\",\""), "],\"")
+        val collapsed = artifactRemoved.replace(Regex(",{2,}"), ",")
+        val trailingRemoved = collapsed.replace(Regex(",\\s*([}\\]])"), "$1")
+        runCatching { return json.parseToJsonElement(trailingRemoved).jsonObject }
+        // 整包仍解析失败时退化为「逐元素抽取」：kw r.s 实测响应的列表数组中间会混入
+        // 伪 `]`、缺开括号的元素（album-kw-search.txt fixture 实证），按深度扫描把
+        // 每个元素拆出来单独解析后重建整个对象（见 lane 报告）
+        return runCatching { kwRepairList(trailingRemoved) }.getOrNull()
     }
+
+    /** 逐元素抽取重建：对 albumlist/abslist/musiclist 做深度扫描，元素缺 `{` 时补齐。 */
+    private fun kwRepairList(text: String): JsonObject? {
+        for (key in listOf("albumlist", "abslist", "musiclist")) {
+            val marker = "\"$key\":["
+            val markerStart = text.indexOf(marker)
+            if (markerStart < 0) continue
+            val elements = mutableListOf<String>()
+            var index = markerStart + marker.length
+            var elementStart = -1
+            var braceless = false
+            var depth = 0
+            var inString = false
+            var escaped = false
+            var arrayEnd = -1
+            while (index < text.length && arrayEnd < 0) {
+                val c = text[index]
+                if (inString) {
+                    when {
+                        escaped -> escaped = false
+                        c == '\\' -> escaped = true
+                        c == '"' -> inString = false
+                    }
+                } else {
+                    when {
+                        c == '"' -> inString = true
+                        c == '{' && elementStart < 0 -> {
+                            elementStart = index
+                            braceless = false
+                            depth = 1
+                        }
+                        c == '{' && elementStart >= 0 -> depth++
+                        c == '}' && braceless -> {
+                            // 缺开括号的元素：内容全是标量，遇到 `}` 即结束
+                            val raw = "{${text.substring(elementStart, index + 1)}"
+                            parseKwElement(raw)?.let(elements::add)
+                            elementStart = -1
+                            braceless = false
+                        }
+                        c == '}' && elementStart >= 0 -> {
+                            depth--
+                            if (depth == 0) {
+                                val raw = text.substring(elementStart, index + 1)
+                                parseKwElement(raw)?.let(elements::add)
+                                elementStart = -1
+                            }
+                        }
+                        c == '"' && elementStart < 0 -> {
+                            // 元素缺开括号：直接以键名开始（kw r.s 空槽实证）
+                            elementStart = index
+                            braceless = true
+                            depth = 0
+                        }
+                        c == ']' && elementStart < 0 -> {
+                            // 伪 `]`（后随逗号）跳过；真数组结尾（后随 `}` 等）停
+                            val next = text.drop(index + 1).firstOrNull { !it.isWhitespace() }
+                            if (next != ',') arrayEnd = index
+                        }
+                        else -> {}
+                    }
+                }
+                index++
+            }
+            if (elements.isEmpty()) continue
+            val head = text.substring(0, markerStart)
+            val tail = if (arrayEnd >= 0 && arrayEnd + 1 < text.length) text.substring(arrayEnd + 1) else "}"
+            val repaired = head + marker + elements.joinToString(",") + "]" + tail
+            return json.parseToJsonElement(repaired).jsonObject
+        }
+        return null
+    }
+
+    private fun parseKwElement(raw: String): String? =
+        runCatching {
+            val repaired =
+                raw
+                    .replace(Regex(",{2,}"), ",")
+                    .replace(Regex(",\\s*([}\\]])"), "$1")
+            json.parseToJsonElement(repaired)
+            repaired
+        }.getOrNull()
 
     /**
      * RN `kw/album.js#filterListDetail` 的 FORMATS → 音质表：
