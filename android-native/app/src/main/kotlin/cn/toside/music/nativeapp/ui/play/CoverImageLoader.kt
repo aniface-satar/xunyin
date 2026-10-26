@@ -38,6 +38,10 @@ object CoverImageLoader {
     private const val TIMEOUT_MS = 10_000
     private const val DISK_DIR = "cover_images"
     private const val MAX_DISK_FILES = 300
+
+    /** 本地曲目内嵌封面的落盘目录（Wave5 Lane B 新增；与 [DISK_DIR] 分开，互不挤淘汰额度）。 */
+    private const val LOCAL_DIR = "local_cover"
+    private const val LOCAL_CACHE_PREFIX = "local:"
     private val cache = LruCache<String, CoverArt>(6)
 
     @Volatile
@@ -49,6 +53,9 @@ object CoverImageLoader {
     }
 
     suspend fun load(rawUrl: String?): CoverArt? {
+        // 本地曲目的 picUrl 是 file:// 绝对路径（Wave5 Lane B 新增分支；http 路径行为不变）
+        val raw = rawUrl?.trim().orEmpty()
+        if (raw.startsWith("file://") || raw.startsWith("/")) return loadLocal(raw)
         val url = normalizeUrl(rawUrl) ?: return null
         cache.get(url)?.let { return it }
         return withContext(Dispatchers.IO) {
@@ -62,6 +69,66 @@ object CoverImageLoader {
             art
         }
     }
+
+    /**
+     * 本地文件封面（内嵌图提取后的缓存文件）—— 只新增入口，[load] 的 http 分支语义未改。
+     *
+     * RN 的等价物是 `readPic(filePath)`：把内嵌图导出到临时目录后由图片库直接读文件。
+     */
+    suspend fun loadLocal(rawPath: String?): CoverArt? {
+        val path = rawPath?.trim()?.removePrefix("file://").orEmpty()
+        if (path.isEmpty()) return null
+        val key = LOCAL_CACHE_PREFIX + path
+        cache.get(key)?.let { return it }
+        return withContext(Dispatchers.IO) {
+            val file = File(path)
+            if (!file.isFile) return@withContext null
+            val bitmap = runCatching { decodeBitmap(file.readBytes()) }.getOrNull() ?: return@withContext null
+            val art =
+                CoverArt(
+                    cover = bitmap.asImageBitmap(),
+                    blurSource = runCatching { Bitmap.createScaledBitmap(bitmap, BLUR_SIZE, BLUR_SIZE, true).asImageBitmap() }.getOrNull(),
+                )
+            cache.put(key, art)
+            art
+        }
+    }
+
+    /**
+     * 把内嵌封面写进 `cacheDir/local_cover/<sha1(key)>.cover`，返回**文件绝对路径**（失败 null）。
+     *
+     * 与 [DISK_DIR] 的 sha1 命名/临时文件 + rename 原子写约定保持一致，方便日后统一清理。
+     */
+    fun writeLocalCover(
+        key: String,
+        bytes: ByteArray,
+    ): String? {
+        if (bytes.isEmpty()) return null
+        val context = appContext ?: return null
+        val dir = File(context.cacheDir, LOCAL_DIR)
+        if (!dir.isDirectory && !dir.mkdirs()) return null
+        val file = File(dir, "${sha1(key)}.cover")
+        if (!localCoverWritable(file, bytes)) return null
+        return file.absolutePath
+    }
+
+    private fun localCoverWritable(
+        file: File,
+        bytes: ByteArray,
+    ): Boolean =
+        runCatching {
+            val dir = file.parentFile ?: return@runCatching false
+            val tmp = File(dir, "${file.name}.${System.nanoTime()}.tmp")
+            tmp.writeBytes(bytes)
+            if (!tmp.renameTo(file)) {
+                file.delete()
+                if (!tmp.renameTo(file)) {
+                    tmp.delete()
+                    return@runCatching false
+                }
+            }
+            true
+        }.getOrDefault(false)
 
     private fun normalizeUrl(rawUrl: String?): String? {
         val url = rawUrl?.trim().orEmpty()

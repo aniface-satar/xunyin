@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -56,6 +57,7 @@ import cn.toside.music.core.backup.BackupManager
 import cn.toside.music.core.list.MusicSort
 import cn.toside.music.core.list.MusicSortId
 import cn.toside.music.core.storage.StorageKeys
+import cn.toside.music.nativeapp.data.LocalMusicRuntime
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import cn.toside.music.nativeapp.util.SafDocuments
 import com.moriafly.salt.ui.Button
@@ -135,6 +137,12 @@ fun ListDetailPage(
     var duplicateVisible by remember(listId) { mutableStateOf(false) }
     var exportHintVisible by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
+    // 本地曲库导入（Wave5 Lane B）
+    var localImportVisible by remember { mutableStateOf(false) }
+    var localImportTitle by remember { mutableStateOf("") }
+    val localImportProgress by LocalMusicRuntime.progress.collectAsState()
+    val localImportOutcome by LocalMusicRuntime.outcome.collectAsState()
+    val localImportingListId by LocalMusicRuntime.importingListId.collectAsState()
     var importConflict by remember { mutableStateOf<ImportPartConflict?>(null) }
     var fullImportConfirm by remember { mutableStateOf<PendingImport?>(null) }
     val backup = remember { BackupManager(runtime.lists.store) }
@@ -263,6 +271,36 @@ fun ListDetailPage(
             }
         }
 
+    /**
+     * 本地曲库：目录树选择器。拿到的授权必须立刻持久化，
+     * 否则重启后 `content://` 全部失效（RN 用真实路径没这问题）。
+     */
+    val localTreeLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            val persisted = SafDocuments.takePersistablePermission(context, uri)
+            if (!persisted || !SafDocuments.hasPersistedPermission(context, uri)) {
+                toast("目录授权未能持久保存，重启应用后可能无法继续播放")
+            }
+            localImportVisible = true
+            LocalMusicRuntime.importTree(context, listId, localImportTitle.ifEmpty { displayTitle }, uri)
+        }
+
+    // 把「拉起目录选择」的能力挂到运行时（Lane C 的首页长按菜单也走同一个入口）
+    val localPickerOwner = remember(listId) { Any() }
+    DisposableEffect(localPickerOwner) {
+        LocalMusicRuntime.registerPicker(localPickerOwner) { _, title ->
+            localImportTitle = title
+            localTreeLauncher.launch(null)
+        }
+        onDispose { LocalMusicRuntime.unregisterPicker(localPickerOwner) }
+    }
+
+    // 导入过程中列表在变，跟着进度刷新，别等弹层关掉才更新
+    LaunchedEffect(localImportProgress) {
+        if (localImportProgress != null) items = runtime.lists.musics(listId)
+    }
+
     fun addLocation(): String =
         runtime.settings.store
             .string("list.addMusicLocationType")
@@ -371,6 +409,11 @@ fun ListDetailPage(
                         importLauncher.launch(arrayOf("*/*"))
                     }
                     ActionText("导出") { exportHintVisible = true }
+                    ActionText("本地文件", enabled = localImportingListId == null) {
+                        if (!LocalMusicRuntime.importTo(listId, displayTitle)) {
+                            toast("当前没有可用的目录选择入口")
+                        }
+                    }
                 }
             }
             Button(
@@ -740,6 +783,18 @@ fun ListDetailPage(
                         )
                     }
                 }
+            }
+            if (localImportVisible) {
+                LocalFileImportDialog(
+                    listTitle = localImportTitle.ifEmpty { displayTitle },
+                    progress = localImportProgress,
+                    outcome = localImportOutcome,
+                    onCancel = { LocalMusicRuntime.cancel() },
+                    onDismiss = {
+                        localImportVisible = false
+                        scope.launch { items = runtime.lists.musics(listId) }
+                    },
+                )
             }
             fullImportConfirm?.let { pending ->
                 YesNoDialog(

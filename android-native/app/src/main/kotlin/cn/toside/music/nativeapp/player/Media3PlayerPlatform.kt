@@ -13,6 +13,7 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheWriter
@@ -274,16 +275,23 @@ class Media3PlayerPlatform(
                 .setUserAgent(
                     "Mozilla/5.0 (Linux; Android 10; Pixel 3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Mobile Safari/537.36",
                 )
+        // 本地曲库（Wave5 Lane B）：`content://` 不能交给 DefaultHttpDataSource（会报
+        // Unsupported scheme），按 scheme 分流到 DefaultDataSource（内容/文件 URI）。
+        // HTTP 分支保持原样（缓存 + UA + 超时），本地文件不进磁盘缓存。
         val dataSourceFactory: androidx.media3.datasource.DataSource.Factory =
-            if (localCache != null) {
-                CacheDataSource
-                    .Factory()
-                    .setCache(localCache)
-                    .setUpstreamDataSourceFactory(httpFactory)
-                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-            } else {
-                httpFactory
-            }
+            SchemeRoutingDataSourceFactory(
+                httpFactory =
+                    if (localCache != null) {
+                        CacheDataSource
+                            .Factory()
+                            .setCache(localCache)
+                            .setUpstreamDataSourceFactory(httpFactory)
+                            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                    } else {
+                        httpFactory
+                    },
+                localFactory = DefaultDataSource.Factory(context),
+            )
 
         val p =
             ExoPlayer
@@ -436,4 +444,57 @@ class Media3PlayerPlatform(
         cache = null
         scope.cancel()
     }
+}
+
+/**
+ * 按 URI scheme 分流的数据源工厂（Wave5 Lane B 的最小修补）。
+ *
+ * 原实现把 `DefaultHttpDataSource` 直接当上游，本地曲目的 `content://…` 会在
+ * ExoPlayer 打开时抛 `Unsupported scheme`。这里只做一件事：
+ * http(s) 走原来的「缓存 + HTTP」链，其余 scheme（content/file）走
+ * [DefaultDataSource]（Media3 内置 ContentDataSource/FileDataSource），两者行为都不变。
+ */
+@UnstableApi
+private class SchemeRoutingDataSourceFactory(
+    private val httpFactory: androidx.media3.datasource.DataSource.Factory,
+    private val localFactory: androidx.media3.datasource.DataSource.Factory,
+) : androidx.media3.datasource.DataSource.Factory {
+    override fun createDataSource(): androidx.media3.datasource.DataSource =
+        object : androidx.media3.datasource.DataSource {
+            private var delegate: androidx.media3.datasource.DataSource? = null
+            private var currentUri: Uri? = null
+
+            override fun open(dataSpec: DataSpec): Long {
+                val factory =
+                    if (dataSpec.uri.scheme?.startsWith("http") == true) httpFactory else localFactory
+                val source = factory.createDataSource()
+                delegate = source
+                currentUri = dataSpec.uri
+                return source.open(dataSpec)
+            }
+
+            override fun read(
+                buffer: ByteArray,
+                offset: Int,
+                length: Int,
+            ): Int {
+                val source = delegate ?: throw IllegalStateException("DataSource 未打开")
+                return source.read(buffer, offset, length)
+            }
+
+            override fun getUri(): Uri? = currentUri
+
+            override fun close() {
+                try {
+                    delegate?.close()
+                } finally {
+                    delegate = null
+                    currentUri = null
+                }
+            }
+
+            override fun addTransferListener(transferListener: androidx.media3.datasource.TransferListener) {
+                // 委托对象在 open() 时才确定，监听器由各自的工厂配置
+            }
+        }
 }
