@@ -1,0 +1,15 @@
+{
+ "status": 1,
+ "errcode": 0,
+ "data": [
+  {
+   "singername": "周杰伦",
+   "singerid": 3520
+  },
+  {
+   "singername": "十分想见周杰伦",
+   "singerid": 7351282
+  }
+ ],
+ "error": ""
+}

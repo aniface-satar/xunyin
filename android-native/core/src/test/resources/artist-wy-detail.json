@@ -1,0 +1,340 @@
+{
+ "artist": {
+  "img1v1Id": 109951169164936940,
+  "topicPerson": 0,
+  "musicSize": 582,
+  "albumSize": 45,
+  "briefDesc": "周杰伦（Jay Chou），1979年1月18日出生于台湾省新北市，祖籍福建省永春县，华语流行乐男歌手、音乐人、演员、导演，毕业于淡江中学 。\n2000年，发行个人首张音乐专辑《Jay》 ，并在华语乐坛获得广泛关注 。2001年，凭借音乐专辑《范特西》奠定其在乐坛的地位 ，并获得三座台湾金曲奖 [38]。2003年，登上美国《时代》杂志封面 ；此后，推出《叶惠美》《七里香》《11月的萧邦》《依然范",
+  "picId": 109951169164936450,
+  "picUrl": "https://p2.music.126.net/NWv6PtSBkyWZzqbJVzBr7g==/109951169164936450.jpg",
+  "img1v1Url": "https://p2.music.126.net/_ECPuM0s0qtWhkpQOSTZUg==/109951169164936940.jpg",
+  "followed": false,
+  "trans": "",
+  "alias": [
+   "Jay Chou",
+   "周董"
+  ],
+  "name": "周杰伦",
+  "id": 6452,
+  "publishTime": 1516594084751,
+  "picId_str": "109951169164936450",
+  "img1v1Id_str": "109951169164936940",
+  "mvSize": 9
+ },
+ "hotSongs": [
+  {
+   "rtUrls": [],
+   "ar": [
+    {
+     "id": 7219,
+     "name": "蔡依林",
+     "alia": [
+      "Jolin Cai"
+     ]
+    },
+    {
+     "id": 6452,
+     "name": "周杰伦",
+     "alia": [
+      "Jay Chou",
+      "周董"
+     ]
+    }
+   ],
+   "al": {
+    "id": 21349,
+    "name": "看我72变",
+    "picUrl": "https://p2.music.126.net/8D2Pd7EuvGboMyE2xWc47A==/109951172453712025.jpg",
+    "pic_str": "109951172453712025",
+    "pic": 109951172453712025
+   },
+   "st": 1,
+   "noCopyrightRcmd": null,
+   "artistClassics": null,
+   "songJumpInfo": null,
+   "djId": 0,
+   "no": 5,
+   "fee": 1,
+   "mv": 186025,
+   "cd": "1",
+   "t": 0,
+   "v": 64,
+   "dt": 294600,
+   "rtype": 0,
+   "rurl": null,
+   "pst": 0,
+   "alia": [
+    "单元剧《上班女郎》主题曲"
+   ],
+   "pop": 100.0,
+   "rt": "600902000000210868",
+   "mst": 9,
+   "cp": 7001,
+   "crbt": null,
+   "cf": "",
+   "h": {
+    "br": 320000,
+    "fid": 0,
+    "size": 11786493,
+    "vd": -56486.0,
+    "sr": 44100
+   },
+   "sq": {
+    "br": 948239,
+    "fid": 0,
+    "size": 34918981,
+    "vd": -56815.0,
+    "sr": 44100
+   },
+   "hr": null,
+   "l": {
+    "br": 128000,
+    "fid": 0,
+    "size": 4714623,
+    "vd": -52333.0,
+    "sr": 44100
+   },
+   "rtUrl": null,
+   "ftype": 0,
+   "mark": 17179877376,
+   "a": null,
+   "m": {
+    "br": 192000,
+    "fid": 0,
+    "size": 7071913,
+    "vd": -53918.0,
+    "sr": 44100
+   },
+   "name": "布拉格广场",
+   "id": 210049,
+   "privilege": {
+    "id": 210049,
+    "fee": 1,
+    "payed": 0,
+    "st": 0,
+    "pl": 0,
+    "dl": 0,
+    "sp": 0,
+    "cp": 0,
+    "subp": 1,
+    "cs": false,
+    "maxbr": 999000,
+    "fl": 0,
+    "toast": false,
+    "flag": 4,
+    "preSell": false,
+    "playMaxbr": 999000,
+    "downloadMaxbr": 999000,
+    "maxBrLevel": "lossless",
+    "playMaxBrLevel": "lossless",
+    "downloadMaxBrLevel": "lossless",
+    "plLevel": "none",
+    "dlLevel": "none",
+    "flLevel": "none",
+    "rscl": null,
+    "freeTrialPrivilege": {
+     "resConsumable": true,
+     "userConsumable": false,
+     "listenType": null,
+     "cannotListenReason": null,
+     "playReason": null,
+     "freeLimitTagType": null
+    },
+    "rightSource": 0,
+    "chargeInfoList": [
+     {
+      "rate": 128000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     },
+     {
+      "rate": 192000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     },
+     {
+      "rate": 320000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     },
+     {
+      "rate": 999000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     }
+    ],
+    "code": 0,
+    "message": null,
+    "plLevels": null,
+    "dlLevels": null,
+    "ignoreCache": null,
+    "bd": null
+   },
+   "eq": "pop"
+  },
+  {
+   "rtUrls": [],
+   "ar": [
+    {
+     "id": 6452,
+     "name": "周杰伦",
+     "alia": [
+      "Jay Chou",
+      "周董"
+     ]
+    },
+    {
+     "id": 9612,
+     "name": "温岚",
+     "alia": [
+      "Landy Wen"
+     ]
+    },
+    {
+     "id": 5360,
+     "name": "吴宗宪",
+     "alia": [
+      "Jacky Wu"
+     ]
+    }
+   ],
+   "al": {
+    "id": 512175,
+    "name": "男女情歌对唱冠军全记录",
+    "picUrl": "https://p1.music.126.net/81BsxxhomJ4aJZYvEbyPkw==/109951165671182684.jpg",
+    "pic_str": "109951165671182684",
+    "pic": 109951165671182684
+   },
+   "st": 1,
+   "noCopyrightRcmd": null,
+   "artistClassics": null,
+   "songJumpInfo": null,
+   "djId": 0,
+   "no": 1,
+   "fee": 8,
+   "mv": 0,
+   "cd": "1",
+   "t": 0,
+   "v": 686,
+   "dt": 319039,
+   "rtype": 0,
+   "rurl": null,
+   "pst": 0,
+   "alia": [],
+   "pop": 100.0,
+   "rt": "600902000009484210",
+   "mst": 9,
+   "cp": 7001,
+   "crbt": null,
+   "cf": "",
+   "h": {
+    "br": 320001,
+    "fid": 0,
+    "size": 12764517,
+    "vd": -37140.0,
+    "sr": 44100
+   },
+   "sq": {
+    "br": 1619359,
+    "fid": 0,
+    "size": 64579972,
+    "vd": -37132.0,
+    "sr": 44100
+   },
+   "hr": null,
+   "l": {
+    "br": 128001,
+    "fid": 0,
+    "size": 5105833,
+    "vd": -32841.0,
+    "sr": 44100
+   },
+   "rtUrl": null,
+   "ftype": 0,
+   "mark": 17179877376,
+   "a": null,
+   "m": {
+    "br": 192001,
+    "fid": 0,
+    "size": 7658728,
+    "vd": -34534.0,
+    "sr": 44100
+   },
+   "name": "屋顶",
+   "id": 5257138,
+   "privilege": {
+    "id": 5257138,
+    "fee": 8,
+    "payed": 0,
+    "st": 0,
+    "pl": 320000,
+    "dl": 0,
+    "sp": 7,
+    "cp": 1,
+    "subp": 1,
+    "cs": false,
+    "maxbr": 999000,
+    "fl": 320000,
+    "toast": false,
+    "flag": 260,
+    "preSell": false,
+    "playMaxbr": 999000,
+    "downloadMaxbr": 999000,
+    "maxBrLevel": "lossless",
+    "playMaxBrLevel": "lossless",
+    "downloadMaxBrLevel": "lossless",
+    "plLevel": "exhigh",
+    "dlLevel": "none",
+    "flLevel": "exhigh",
+    "rscl": null,
+    "freeTrialPrivilege": {
+     "resConsumable": false,
+     "userConsumable": false,
+     "listenType": null,
+     "cannotListenReason": null,
+     "playReason": null,
+     "freeLimitTagType": null
+    },
+    "rightSource": 0,
+    "chargeInfoList": [
+     {
+      "rate": 128000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 0
+     },
+     {
+      "rate": 192000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 0
+     },
+     {
+      "rate": 320000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 0
+     },
+     {
+      "rate": 999000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     }
+    ],
+    "code": 0,
+    "message": null,
+    "plLevels": null,
+    "dlLevels": null,
+    "ignoreCache": null,
+    "bd": null
+   }
+  }
+ ],
+ "more": true,
+ "code": 200
+}

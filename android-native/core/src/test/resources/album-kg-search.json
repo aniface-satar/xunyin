@@ -1,0 +1,54 @@
+{
+ "status": 1,
+ "errcode": 0,
+ "data": {
+  "timestamp": 1793000626,
+  "total": 435,
+  "info": [
+   {
+    "auxiliary": "",
+    "category": 1,
+    "publishtime": "2001-09-14 00:00:00",
+    "albumid": 958706,
+    "trans_param": {
+     "special_tag": "56918016"
+    },
+    "singerid": 0,
+    "songcount": 10,
+    "cd_url": "",
+    "singername": "周杰伦",
+    "albumname": "范特西",
+    "privilege": 0,
+    "isfirst": 0,
+    "moviesmark": "",
+    "buycount": 0,
+    "intro": "",
+    "imgurl": "http://imge.kugou.com/stdmusic/{size}/20250221/20250221180749429614.jpg"
+   },
+   {
+    "auxiliary": "",
+    "category": 1,
+    "publishtime": "2022-07-09 00:00:00",
+    "albumid": 58951066,
+    "trans_param": {
+     "special_tag": "4210688"
+    },
+    "singerid": 0,
+    "songcount": 2,
+    "cd_url": "",
+    "singername": "KenYl",
+    "albumname": "范特西",
+    "privilege": 0,
+    "isfirst": 0,
+    "moviesmark": "",
+    "buycount": 0,
+    "intro": "",
+    "imgurl": "http://imge.kugou.com/stdmusic/{size}/20220709/20220709105601975700.jpg"
+   }
+  ],
+  "correctiontype": 0,
+  "correctiontip": "",
+  "correctionforce": 0
+ },
+ "error": ""
+}

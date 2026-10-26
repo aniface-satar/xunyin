@@ -1,0 +1,128 @@
+{
+ "result": {
+  "albums": [
+   {
+    "name": "范特西 - 流行Pop x 周杰伦 Type Beat",
+    "id": 272566217,
+    "idStr": "272566217",
+    "type": "Single",
+    "size": 1,
+    "picId": 109951171007564000,
+    "blurPicUrl": "http://p1.music.126.net/jc_OYdDolxZ0ILYsti8vkg==/109951171007564000.jpg",
+    "companyId": 0,
+    "pic": 109951171007564000,
+    "picUrl": "http://p1.music.126.net/jc_OYdDolxZ0ILYsti8vkg==/109951171007564000.jpg",
+    "publishTime": 1747756800000,
+    "description": "",
+    "tags": "",
+    "company": null,
+    "briefDesc": "",
+    "artist": {
+     "name": "YKFireVibes",
+     "id": 48816818,
+     "picId": 109951171402756653,
+     "img1v1Id": 0,
+     "briefDesc": "",
+     "picUrl": "http://p1.music.126.net/A_j-bfrAJQAYPHhXy8OEOw==/109951171402756653.jpg",
+     "img1v1Url": "http://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
+     "albumSize": 325,
+     "alias": [
+      "中国人中国风"
+     ],
+     "trans": "",
+     "musicSize": 424,
+     "topicPerson": 0,
+     "picId_str": "109951171402756653"
+    },
+    "songs": [],
+    "alias": [],
+    "status": 1,
+    "copyrightId": 0,
+    "commentThreadId": "R_AL_3_272566217",
+    "artists": [
+     {
+      "name": "YKFireVibes",
+      "id": 48816818,
+      "picId": 0,
+      "img1v1Id": 0,
+      "briefDesc": "",
+      "picUrl": "http://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
+      "img1v1Url": "http://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
+      "albumSize": 0,
+      "alias": [],
+      "trans": "",
+      "musicSize": 0,
+      "topicPerson": 0
+     }
+    ],
+    "onSale": false,
+    "mark": 0,
+    "gapless": 0,
+    "picId_str": "109951171007564000",
+    "isSub": false
+   },
+   {
+    "name": "范特西",
+    "id": 275997537,
+    "idStr": "275997537",
+    "type": "专辑",
+    "size": 10,
+    "picId": 109951171346477901,
+    "blurPicUrl": "http://p1.music.126.net/pmepGG30qKA6KpLBz80EeQ==/109951171346477901.jpg",
+    "companyId": 0,
+    "pic": 109951171346477901,
+    "picUrl": "http://p1.music.126.net/pmepGG30qKA6KpLBz80EeQ==/109951171346477901.jpg",
+    "publishTime": 1751212800000,
+    "description": "",
+    "tags": "",
+    "company": "Jinhua Jue",
+    "briefDesc": "",
+    "artist": {
+     "name": "Jinhua Jue",
+     "id": 98853778,
+     "picId": 109951171801159746,
+     "img1v1Id": 0,
+     "briefDesc": "",
+     "picUrl": "http://p1.music.126.net/QSdGgDQ7c0DGxvkNrg8hRA==/109951171801159746.jpg",
+     "img1v1Url": "http://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
+     "albumSize": 34,
+     "alias": [
+      "觉觉"
+     ],
+     "trans": "",
+     "musicSize": 415,
+     "topicPerson": 0,
+     "picId_str": "109951171801159746"
+    },
+    "songs": [],
+    "alias": [],
+    "status": 1,
+    "copyrightId": 1416692,
+    "commentThreadId": "R_AL_3_275997537",
+    "artists": [
+     {
+      "name": "Jinhua Jue",
+      "id": 98853778,
+      "picId": 0,
+      "img1v1Id": 0,
+      "briefDesc": "",
+      "picUrl": "http://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
+      "img1v1Url": "http://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
+      "albumSize": 0,
+      "alias": [],
+      "trans": "",
+      "musicSize": 0,
+      "topicPerson": 0
+     }
+    ],
+    "onSale": false,
+    "mark": 0,
+    "gapless": 0,
+    "picId_str": "109951171346477901",
+    "isSub": false
+   }
+  ],
+  "albumCount": 215
+ },
+ "code": 200
+}

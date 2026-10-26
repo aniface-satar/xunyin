@@ -1,0 +1,1002 @@
+{
+ "code": "000000",
+ "info": "操作成功",
+ "data": {
+  "songList": [
+   {
+    "resourceType": "2",
+    "copyrightId": "60054701898",
+    "contentId": "600902000006889466",
+    "songId": "2498",
+    "songName": "爱在西元前",
+    "singerId": "112",
+    "singer": "周杰伦",
+    "albumId": "7948",
+    "album": "范特西",
+    "albumImgs": [
+     {
+      "imgSizeType": "01",
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/87f56b4e673846c093084166cb03a5f3.webp",
+      "imgOri": "",
+      "fileId": "6a2a0e60570ee00b5c462abc",
+      "webpImg": ""
+     },
+     {
+      "imgSizeType": "02",
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/fbf00e3d96cd47a6b367218cedcb708b.webp",
+      "imgOri": "",
+      "fileId": "6a2a0e60570ee00b5c462abb",
+      "webpImg": ""
+     },
+     {
+      "imgSizeType": "03",
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/bbb92a1f71344c15be758e1835d7954e.webp",
+      "imgOri": "",
+      "fileId": "6a2a0e60570ee00b5c462ab9",
+      "webpImg": ""
+     }
+    ],
+    "opNumItem": {
+     "playNum": 0,
+     "playNumDesc": "0",
+     "keepNum": 0,
+     "keepNumDesc": "0",
+     "commentNum": 0,
+     "commentNumDesc": "0",
+     "shareNum": 0,
+     "shareNumDesc": "0",
+     "orderNumByWeek": 0,
+     "orderNumByWeekDesc": "0",
+     "orderNumByTotal": 0,
+     "orderNumByTotalDesc": "0",
+     "thumbNum": 0,
+     "thumbNumDesc": "0",
+     "followNum": 0,
+     "followNumDesc": "0",
+     "subscribeNum": 0,
+     "subscribeNumDesc": "0",
+     "livePlayNum": 0,
+     "livePlayNumDesc": "0",
+     "popularNum": 0,
+     "popularNumDesc": "0",
+     "bookingNum": 0,
+     "bookingNumDesc": "0",
+     "settingNum": 0,
+     "settingNumDesc": "0",
+     "callNum": 0,
+     "callNumDesc": "0",
+     "callingPlayNum": 0,
+     "callingPlayNumDesc": "0",
+     "callingPlayDuration": 0,
+     "callingPlayDurationDesc": "0",
+     "calledPlayDuration": 0,
+     "calledPlayDurationDesc": "0",
+     "ringtoneAppPlayNum": 0,
+     "ringtoneAppPlayNumDesc": "0",
+     "ringtoneAppSettingNum": 0,
+     "ringtoneAppSettingNumDesc": "0",
+     "callingPlayDefaultNum": 0,
+     "callingPlayDefaultNumDesc": "0",
+     "playDefaultNum": 0,
+     "playDefaultDesc": "0",
+     "rewardUserNum": 0,
+     "rewardUserNumDesc": "0",
+     "rewardTotalNum": 0,
+     "rewardTotalNumDesc": "0",
+     "aiSongTotalNum": 0,
+     "aiSongTotalNumDesc": "0"
+    },
+    "toneControl": "111111",
+    "relatedSongs": [
+     {
+      "resourceType": "E",
+      "resourceTypeName": "无损",
+      "copyrightId": "60054701898",
+      "productId": "600902000006889466"
+     },
+     {
+      "resourceType": "1",
+      "resourceTypeName": "振铃",
+      "copyrightId": "60054701898",
+      "productId": "600902000006889465"
+     },
+     {
+      "resourceType": "0",
+      "resourceTypeName": "彩铃",
+      "copyrightId": "60054701898",
+      "productId": "600902000006889464"
+     },
+     {
+      "resourceType": "3",
+      "resourceTypeName": "随身听",
+      "copyrightId": "60054701898",
+      "productId": "600902000006889467"
+     },
+     {
+      "resourceType": "D",
+      "resourceTypeName": "视频",
+      "copyrightId": "600547Y0467",
+      "productId": "600906000000396083"
+     }
+    ],
+    "rateFormats": [
+     {
+      "resourceType": "3",
+      "formatType": "LQ",
+      "format": "000019",
+      "size": "1875257",
+      "fileType": "mp3",
+      "price": "200"
+     },
+     {
+      "resourceType": "2",
+      "formatType": "PQ",
+      "format": "020007",
+      "size": "3750141",
+      "fileType": "mp3",
+      "price": "200",
+      "showTag": [
+       "vip"
+      ]
+     },
+     {
+      "resourceType": "2",
+      "formatType": "HQ",
+      "format": "020010",
+      "size": "9375036",
+      "fileType": "mp3",
+      "price": "200",
+      "showTag": [
+       "vip"
+      ]
+     },
+     {
+      "resourceType": "E",
+      "formatType": "SQ",
+      "format": "011002",
+      "size": "29318893",
+      "price": "200",
+      "androidFileType": "flac",
+      "iosFileType": "m4a",
+      "iosSize": "29336304",
+      "androidSize": "29318893",
+      "iosFormat": "011003",
+      "androidFormat": "011002",
+      "iosAccuracyLevel": "16bit",
+      "androidAccuracyLevel": "16bit",
+      "showTag": [
+       "vip"
+      ]
+     }
+    ],
+    "newRateFormats": [
+     {
+      "resourceType": "2",
+      "formatType": "PQ",
+      "format": "020007",
+      "size": "3750141",
+      "fileType": "mp3",
+      "price": "200",
+      "showTag": [
+       "vip"
+      ],
+      "showTagNew": [
+       "vip"
+      ]
+     },
+     {
+      "resourceType": "2",
+      "formatType": "HQ",
+      "format": "020010",
+      "size": "9375036",
+      "fileType": "mp3",
+      "price": "200",
+      "showTag": [
+       "vip"
+      ],
+      "showTagNew": [
+       "vip"
+      ]
+     },
+     {
+      "resourceType": "E",
+      "formatType": "SQ",
+      "format": "011002",
+      "size": "29318893",
+      "price": "200",
+      "androidFileType": "flac",
+      "iosFileType": "m4a",
+      "iosSize": "29336304",
+      "androidSize": "29318893",
+      "iosFormat": "011003",
+      "androidFormat": "011002",
+      "iosAccuracyLevel": "16bit",
+      "androidAccuracyLevel": "16bit",
+      "showTag": [
+       "vip"
+      ],
+      "showTagNew": [
+       "vip"
+      ]
+     },
+     {
+      "resourceType": "2",
+      "formatType": "ZQ",
+      "price": "200",
+      "androidFileType": "flac",
+      "iosFileType": "m4a",
+      "iosSize": "53666718",
+      "androidSize": "53466206",
+      "iosFormat": "011006",
+      "androidFormat": "011005",
+      "androidNewFormat": "011005",
+      "iosBit": 24,
+      "androidBit": 24,
+      "showTag": [
+       "vip"
+      ],
+      "showTagNew": [
+       "tl-vip",
+       "vip"
+      ]
+     }
+    ],
+    "z3dCode": {
+     "resourceType": "2",
+     "formatType": "Z3D",
+     "format": "020025",
+     "size": "26980356",
+     "fileType": "m4a",
+     "price": "200",
+     "androidFileType": "wav",
+     "iosFileType": "m4a",
+     "iosSize": "26980356",
+     "androidSize": "41360618",
+     "iosFormat": "020025",
+     "androidFormat": "020024",
+     "androidFileKey": "4F0C2EBDAD26011F60E0B47E48399E7C",
+     "iosFileKey": "00F223BACFCDE4852F8C9C8CBBBDBF72",
+     "h5Size": "10584116",
+     "h5Format": "020026",
+     "showTag": [
+      "vip"
+     ],
+     "showTagNew": [
+      "vip"
+     ]
+    },
+    "lrcUrl": "https://d.musicapp.migu.cn/data/oss/resource/00/4g/nc/762c00a6477b408ca8b85cd97d5e2bd5",
+    "tagList": [
+     {
+      "resourceType": "2034",
+      "tagId": "1000001808",
+      "tagName": "R&B"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001762",
+      "tagName": "国语"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001698",
+      "tagName": "爱情"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001696",
+      "tagName": "怀旧"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001703",
+      "tagName": "思念"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001697",
+      "tagName": "思乡"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003455665",
+      "tagName": "誓言"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000093923",
+      "tagName": "驾车"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001827",
+      "tagName": "KTV金曲"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450106",
+      "tagName": "录音室版"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1002600491",
+      "tagName": "00年代"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003449902",
+      "tagName": "原创单曲"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003456272",
+      "tagName": "竞品近期上榜"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003456274",
+      "tagName": "竞品高收藏"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003455861",
+      "tagName": "测试6"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003449674",
+      "tagName": "抖音"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450666",
+      "tagName": "每日播放1w至99999"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450718",
+      "tagName": "周杰伦"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450670",
+      "tagName": "累积收藏10w以上"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450672",
+      "tagName": "累积评论1000至9999"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450679",
+      "tagName": "累积播放1000w以上"
+     }
+    ],
+    "digitalColumnId": "",
+    "copyright": "1",
+    "validStatus": true,
+    "songDescs": "《丑女大翻身》片头曲",
+    "songAliasName": "",
+    "isInDAlbum": "0",
+    "isInSideDalbum": "0",
+    "isInSalesPeriod": "0",
+    "songType": "01",
+    "mrcUrl": "https://d.musicapp.migu.cn/data/oss/resource/00/4g/nc/99023c0bc447495f8d6e78d1a0238459",
+    "invalidateDate": "2030-12-31",
+    "dalbumId": "",
+    "trackNumber": "1",
+    "trcUrl": "",
+    "disc": "Disc 1",
+    "vipType": "1",
+    "scopeOfcopyright": "01",
+    "auditionsType": "04",
+    "firstIcon": "0",
+    "translateName": "",
+    "chargeAuditions": "1",
+    "oldChargeAuditions": "1",
+    "songIcon": "03",
+    "auditionsLength": 60,
+    "auditionsStartTime": 77,
+    "codeRate": {
+     "PQ": {
+      "codeRateChargeAuditions": "1",
+      "codeRateAuditionsLength": 60,
+      "codeRateChargeAuditionsType": "10",
+      "isCodeRateDownload": "0",
+      "codeRateFileSize": "3750141",
+      "qualityIcon": "03"
+     },
+     "HQ": {
+      "codeRateChargeAuditions": "1",
+      "codeRateChargeAuditionsType": "10",
+      "isCodeRateDownload": "0",
+      "qualityIcon": "03"
+     },
+     "Z3D": {
+      "codeRateChargeAuditions": "1",
+      "codeRateChargeAuditionsType": "10",
+      "isCodeRateDownload": "0",
+      "qualityIcon": "03"
+     },
+     "SQ": {
+      "codeRateChargeAuditions": "1",
+      "codeRateChargeAuditionsType": "10",
+      "isCodeRateDownload": "0",
+      "contentIdSQ": "600902000006889466",
+      "qualityIcon": "03"
+     },
+     "ZQ": {
+      "codeRateChargeAuditions": "1",
+      "codeRateChargeAuditionsType": "10",
+      "isCodeRateDownload": "0",
+      "qualityIcon": "03"
+     }
+    },
+    "vipFlag": "1",
+    "isDownload": "0",
+    "copyrightType": "1",
+    "hasMv": "1",
+    "mvCopyright": "01",
+    "topQuality": "SQ",
+    "firstClick": "1",
+    "preSale": "0",
+    "isShare": "0",
+    "isCollection": "0",
+    "length": "00:03:54",
+    "auditionsFlag": "9",
+    "listenFlag": "11",
+    "singerImg": {
+     "112": {
+      "singerName": "周杰伦",
+      "miguImgItems": [
+       {
+        "imgSizeType": "01",
+        "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/73263a79db124bc5b554541813652daa.webp",
+        "imgOri": "",
+        "webpImg": ""
+       },
+       {
+        "imgSizeType": "02",
+        "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/180c79991fbb4dfb8e664adc2befc0b4.webp",
+        "imgOri": "",
+        "webpImg": ""
+       },
+       {
+        "imgSizeType": "03",
+        "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/e7632d663a6846e1b3d357b35052150f.webp",
+        "imgOri": "",
+        "webpImg": ""
+       }
+      ]
+     }
+    },
+    "songNamePinyin": "aizaixiyuanqian",
+    "albumNamePinyin": "fantexi",
+    "artists": [
+     {
+      "id": "112",
+      "name": "周杰伦",
+      "nameSpelling": "zhoujielun"
+     }
+    ],
+    "landscapImg": "https://d.musicapp.migu.cn/prod/file-service/file-down/bcb5ddaf77828caee4eddc172edaa105/fe8426e1fc2b50be67d4311d3eff1f59/32385e64cd8d5c8622e133b2950e5b49",
+    "vipStartTime": "20221124211404",
+    "vipEndTime": "20301231235959",
+    "vipLogo": "1",
+    "vipDownload": "0",
+    "firstPublish": "1",
+    "firstStartTime": "20221124211404",
+    "firstEndTime": "20301231235959",
+    "showTag": [
+     "vip",
+     "i24",
+     "a24",
+     "i3d",
+     "a3d"
+    ],
+    "materialValidStatus": true,
+    "needEncrypt": "0",
+    "foreverListenFlag": "0",
+    "foreverListen": false,
+    "isRecreate": "1",
+    "hasAssociatedRing": true,
+    "chorusStartTime": "78013",
+    "productAuthorizeUsage": "001|002|003|004|005|006|007|008|009|010|011|012|014|015|013|016|017|018|019|020|021|022|023|027|030|031|028|029|024|025|026",
+    "audioBook": "0",
+    "ugcAuthorList": [],
+    "originals": [
+     {
+      "type": "9",
+      "songId": "1130129230",
+      "songName": "爱在西元前(3D Audio)"
+     },
+     {
+      "type": "3",
+      "songId": "1112419756",
+      "songName": "爱在西元前(2018中国好声音澳门演唱会)"
+     },
+     {
+      "type": "2",
+      "songId": "1111077485",
+      "songName": "爱在西元前(2018中国好声音第三期)"
+     },
+     {
+      "type": "9",
+      "songId": "1104959039",
+      "songName": "爱在西元前 (Live)"
+     },
+     {
+      "type": "9",
+      "songId": "1108661472",
+      "songName": "爱在西元前  (Live)"
+     }
+    ]
+   },
+   {
+    "resourceType": "2",
+    "copyrightId": "60054701899",
+    "contentId": "600902000006889462",
+    "songId": "1542",
+    "songName": "爸，我回来了",
+    "singerId": "112",
+    "singer": "周杰伦",
+    "albumId": "7948",
+    "album": "范特西",
+    "albumImgs": [
+     {
+      "imgSizeType": "01",
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/87f56b4e673846c093084166cb03a5f3.webp",
+      "imgOri": "",
+      "fileId": "6a2a0e60570ee00b5c462abc",
+      "webpImg": ""
+     },
+     {
+      "imgSizeType": "02",
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/fbf00e3d96cd47a6b367218cedcb708b.webp",
+      "imgOri": "",
+      "fileId": "6a2a0e60570ee00b5c462abb",
+      "webpImg": ""
+     },
+     {
+      "imgSizeType": "03",
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/bbb92a1f71344c15be758e1835d7954e.webp",
+      "imgOri": "",
+      "fileId": "6a2a0e60570ee00b5c462ab9",
+      "webpImg": ""
+     }
+    ],
+    "opNumItem": {
+     "playNum": 0,
+     "playNumDesc": "0",
+     "keepNum": 0,
+     "keepNumDesc": "0",
+     "commentNum": 0,
+     "commentNumDesc": "0",
+     "shareNum": 0,
+     "shareNumDesc": "0",
+     "orderNumByWeek": 0,
+     "orderNumByWeekDesc": "0",
+     "orderNumByTotal": 0,
+     "orderNumByTotalDesc": "0",
+     "thumbNum": 0,
+     "thumbNumDesc": "0",
+     "followNum": 0,
+     "followNumDesc": "0",
+     "subscribeNum": 0,
+     "subscribeNumDesc": "0",
+     "livePlayNum": 0,
+     "livePlayNumDesc": "0",
+     "popularNum": 0,
+     "popularNumDesc": "0",
+     "bookingNum": 0,
+     "bookingNumDesc": "0",
+     "settingNum": 0,
+     "settingNumDesc": "0",
+     "callNum": 0,
+     "callNumDesc": "0",
+     "callingPlayNum": 0,
+     "callingPlayNumDesc": "0",
+     "callingPlayDuration": 0,
+     "callingPlayDurationDesc": "0",
+     "calledPlayDuration": 0,
+     "calledPlayDurationDesc": "0",
+     "ringtoneAppPlayNum": 0,
+     "ringtoneAppPlayNumDesc": "0",
+     "ringtoneAppSettingNum": 0,
+     "ringtoneAppSettingNumDesc": "0",
+     "callingPlayDefaultNum": 0,
+     "callingPlayDefaultNumDesc": "0",
+     "playDefaultNum": 0,
+     "playDefaultDesc": "0",
+     "rewardUserNum": 0,
+     "rewardUserNumDesc": "0",
+     "rewardTotalNum": 0,
+     "rewardTotalNumDesc": "0",
+     "aiSongTotalNum": 0,
+     "aiSongTotalNumDesc": "0"
+    },
+    "toneControl": "111111",
+    "relatedSongs": [
+     {
+      "resourceType": "E",
+      "resourceTypeName": "无损",
+      "copyrightId": "60054701899",
+      "productId": "600902000006889462"
+     },
+     {
+      "resourceType": "1",
+      "resourceTypeName": "振铃",
+      "copyrightId": "60054701899",
+      "productId": "600902000006889461"
+     },
+     {
+      "resourceType": "0",
+      "resourceTypeName": "彩铃",
+      "copyrightId": "60054701899",
+      "productId": "600902000006889460"
+     },
+     {
+      "resourceType": "3",
+      "resourceTypeName": "随身听",
+      "copyrightId": "60054701899",
+      "productId": "600902000006889463"
+     },
+     {
+      "resourceType": "D",
+      "resourceTypeName": "视频",
+      "copyrightId": "600547Y0453",
+      "productId": "600906000000396102"
+     }
+    ],
+    "rateFormats": [
+     {
+      "resourceType": "3",
+      "formatType": "LQ",
+      "format": "000019",
+      "size": "1886333",
+      "fileType": "mp3",
+      "price": "200"
+     },
+     {
+      "resourceType": "2",
+      "formatType": "PQ",
+      "format": "020007",
+      "size": "3772293",
+      "fileType": "mp3",
+      "price": "200",
+      "showTag": [
+       "vip"
+      ]
+     },
+     {
+      "resourceType": "2",
+      "formatType": "HQ",
+      "format": "020010",
+      "size": "9430416",
+      "fileType": "mp3",
+      "price": "200",
+      "showTag": [
+       "vip"
+      ]
+     },
+     {
+      "resourceType": "E",
+      "formatType": "SQ",
+      "format": "011002",
+      "size": "27848382",
+      "price": "200",
+      "androidFileType": "flac",
+      "iosFileType": "m4a",
+      "iosSize": "28020317",
+      "androidSize": "27848382",
+      "iosFormat": "011003",
+      "androidFormat": "011002",
+      "iosAccuracyLevel": "16bit",
+      "androidAccuracyLevel": "16bit",
+      "showTag": [
+       "vip"
+      ]
+     }
+    ],
+    "newRateFormats": [
+     {
+      "resourceType": "2",
+      "formatType": "PQ",
+      "format": "020007",
+      "size": "3772293",
+      "fileType": "mp3",
+      "price": "200",
+      "showTag": [
+       "vip"
+      ],
+      "showTagNew": [
+       "vip"
+      ]
+     },
+     {
+      "resourceType": "2",
+      "formatType": "HQ",
+      "format": "020010",
+      "size": "9430416",
+      "fileType": "mp3",
+      "price": "200",
+      "showTag": [
+       "vip"
+      ],
+      "showTagNew": [
+       "vip"
+      ]
+     },
+     {
+      "resourceType": "E",
+      "formatType": "SQ",
+      "format": "011002",
+      "size": "27848382",
+      "price": "200",
+      "androidFileType": "flac",
+      "iosFileType": "m4a",
+      "iosSize": "28020317",
+      "androidSize": "27848382",
+      "iosFormat": "011003",
+      "androidFormat": "011002",
+      "iosAccuracyLevel": "16bit",
+      "androidAccuracyLevel": "16bit",
+      "showTag": [
+       "vip"
+      ],
+      "showTagNew": [
+       "vip"
+      ]
+     },
+     {
+      "resourceType": "2",
+      "formatType": "ZQ",
+      "price": "200",
+      "androidFileType": "flac",
+      "iosFileType": "m4a",
+      "iosSize": "52318981",
+      "androidSize": "51962298",
+      "iosFormat": "011006",
+      "androidFormat": "011005",
+      "androidNewFormat": "011005",
+      "iosBit": 24,
+      "androidBit": 24,
+      "showTag": [
+       "vip"
+      ],
+      "showTagNew": [
+       "tl-vip",
+       "vip"
+      ]
+     }
+    ],
+    "lrcUrl": "https://d.musicapp.migu.cn/data/oss/resource/00/4g/na/474fc36f78e24986b5f949b34c344724",
+    "tagList": [
+     {
+      "resourceType": "2034",
+      "tagId": "1000001809",
+      "tagName": "嘻哈"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001762",
+      "tagName": "国语"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001701",
+      "tagName": "亲情"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001795",
+      "tagName": "伤感"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1002600585",
+      "tagName": "宣泄"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450285",
+      "tagName": "父母"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001633",
+      "tagName": "酒吧"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001827",
+      "tagName": "KTV金曲"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1000001758",
+      "tagName": "原创"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450106",
+      "tagName": "录音室版"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003449902",
+      "tagName": "原创单曲"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003456274",
+      "tagName": "竞品高收藏"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450718",
+      "tagName": "周杰伦"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450669",
+      "tagName": "累积收藏1w至99999"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450677",
+      "tagName": "累积播放100w至4999999"
+     },
+     {
+      "resourceType": "2034",
+      "tagId": "1003450680",
+      "tagName": "每日播放1000至4999"
+     }
+    ],
+    "digitalColumnId": "",
+    "copyright": "1",
+    "validStatus": true,
+    "songDescs": "",
+    "songAliasName": "Dad I'm Back",
+    "isInDAlbum": "0",
+    "isInSideDalbum": "0",
+    "isInSalesPeriod": "0",
+    "songType": "01",
+    "mrcUrl": "https://d.musicapp.migu.cn/data/oss/resource/00/4g/na/acce80a531b24a70b34995d53ebde60a",
+    "invalidateDate": "2030-12-31",
+    "dalbumId": "",
+    "trackNumber": "2",
+    "trcUrl": "",
+    "disc": "Disc 1",
+    "vipType": "1",
+    "scopeOfcopyright": "01",
+    "auditionsType": "04",
+    "firstIcon": "0",
+    "translateName": "",
+    "chargeAuditions": "1",
+    "oldChargeAuditions": "1",
+    "songIcon": "03",
+    "auditionsLength": 60,
+    "auditionsStartTime": 19,
+    "codeRate": {
+     "PQ": {
+      "codeRateChargeAuditions": "1",
+      "codeRateAuditionsLength": 60,
+      "codeRateChargeAuditionsType": "10",
+      "isCodeRateDownload": "0",
+      "codeRateFileSize": "3772293",
+      "qualityIcon": "03"
+     },
+     "HQ": {
+      "codeRateChargeAuditions": "1",
+      "codeRateChargeAuditionsType": "10",
+      "isCodeRateDownload": "0",
+      "qualityIcon": "03"
+     },
+     "SQ": {
+      "codeRateChargeAuditions": "1",
+      "codeRateChargeAuditionsType": "10",
+      "isCodeRateDownload": "0",
+      "contentIdSQ": "600902000006889462",
+      "qualityIcon": "03"
+     },
+     "ZQ": {
+      "codeRateChargeAuditions": "1",
+      "codeRateChargeAuditionsType": "10",
+      "isCodeRateDownload": "0",
+      "qualityIcon": "03"
+     }
+    },
+    "vipFlag": "1",
+    "isDownload": "0",
+    "copyrightType": "1",
+    "hasMv": "1",
+    "mvCopyright": "01",
+    "topQuality": "SQ",
+    "firstClick": "1",
+    "preSale": "0",
+    "isShare": "0",
+    "isCollection": "0",
+    "length": "00:03:56",
+    "auditionsFlag": "9",
+    "listenFlag": "11",
+    "singerImg": {
+     "112": {
+      "singerName": "周杰伦",
+      "miguImgItems": [
+       {
+        "imgSizeType": "01",
+        "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/73263a79db124bc5b554541813652daa.webp",
+        "imgOri": "",
+        "webpImg": ""
+       },
+       {
+        "imgSizeType": "02",
+        "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/180c79991fbb4dfb8e664adc2befc0b4.webp",
+        "imgOri": "",
+        "webpImg": ""
+       },
+       {
+        "imgSizeType": "03",
+        "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/e7632d663a6846e1b3d357b35052150f.webp",
+        "imgOri": "",
+        "webpImg": ""
+       }
+      ]
+     }
+    },
+    "songNamePinyin": "bawohuilaile",
+    "albumNamePinyin": "fantexi",
+    "artists": [
+     {
+      "id": "112",
+      "name": "周杰伦",
+      "nameSpelling": "zhoujielun"
+     }
+    ],
+    "landscapImg": "https://d.musicapp.migu.cn/prod/file-service/file-down/bcb5ddaf77828caee4eddc172edaa105/fe8426e1fc2b50be67d4311d3eff1f59/32385e64cd8d5c8622e133b2950e5b49",
+    "vipStartTime": "20221123152355",
+    "vipEndTime": "20301231235959",
+    "vipLogo": "1",
+    "vipDownload": "0",
+    "firstPublish": "1",
+    "firstStartTime": "20221123152355",
+    "firstEndTime": "20301231235959",
+    "showTag": [
+     "vip",
+     "i24",
+     "a24"
+    ],
+    "materialValidStatus": true,
+    "needEncrypt": "0",
+    "foreverListenFlag": "0",
+    "foreverListen": false,
+    "isRecreate": "1",
+    "hasAssociatedRing": true,
+    "chorusStartTime": "50072",
+    "productAuthorizeUsage": "001|002|003|004|005|006|007|008|009|010|011|012|014|015|013|016|017|018|019|020|021|022|023|027|030|031|028|029|024|025|026",
+    "audioBook": "0",
+    "ugcAuthorList": [],
+    "originals": [
+     {
+      "type": "9",
+      "songId": "1106821218",
+      "songName": "爸，我回来了 (Live)"
+     },
+     {
+      "type": "9",
+      "songId": "1104959424",
+      "songName": "爸 我回来了 (Demo)"
+     },
+     {
+      "type": "9",
+      "songId": "1125329703",
+      "songName": "爸 我回来了 (Live)"
+     }
+    ]
+   }
+  ],
+  "totalCount": 10
+ }
+}

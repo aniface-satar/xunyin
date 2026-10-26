@@ -1,0 +1,73 @@
+{
+ "code": "000000",
+ "resultNum": 4,
+ "dynamicEffect": 0,
+ "mod": 0,
+ "end": false,
+ "singerResultData": {
+  "totalCount": "4",
+  "correct": [],
+  "result": [
+   {
+    "id": "112",
+    "name": "周杰伦",
+    "highlightStr": [
+     "周杰伦"
+    ],
+    "albumCount": 41,
+    "songCount": 413,
+    "mvCount": 453,
+    "vrbtCount": 1990,
+    "singerPicUrl": [
+     {
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/73263a79db124bc5b554541813652daa.webp",
+      "imgSizeType": "01",
+      "fileId": "69c28dfa5a19df7523eea121"
+     },
+     {
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/180c79991fbb4dfb8e664adc2befc0b4.webp",
+      "imgSizeType": "02",
+      "fileId": "69c28dfa5a19df7523eea122"
+     },
+     {
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/e7632d663a6846e1b3d357b35052150f.webp",
+      "imgSizeType": "03",
+      "fileId": "69c28dfa5a19df7523eea120"
+     }
+    ]
+   },
+   {
+    "id": "1002359216",
+    "name": "周杰伦战队",
+    "highlightStr": [
+     "周杰伦"
+    ],
+    "albumCount": 0,
+    "songCount": 2,
+    "mvCount": 0,
+    "vrbtCount": 0,
+    "singerPicUrl": [
+     {
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5h/lm/6e01adfc489548d89b58bf7eb5fae4c9.webp",
+      "imgSizeType": "01",
+      "fileId": "69443316cf0419431ff9482b"
+     },
+     {
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5h/lm/9562b25d3a8345c1a27c654aa756e192.webp",
+      "imgSizeType": "02",
+      "fileId": "69443316cf0419431ff9482a"
+     },
+     {
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5h/lm/bd20ffac395b4a4688bf199798720bd8.webp",
+      "imgSizeType": "03",
+      "fileId": "69443316cf0419431ff94829"
+     }
+    ]
+   }
+  ]
+ },
+ "concertResultData": {
+  "result": [],
+  "totalCount": "0"
+ }
+}
