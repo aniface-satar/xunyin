@@ -83,8 +83,15 @@ object LocalMusicRuntime {
     @Volatile
     private var cancelRequested = false
 
-    private var pickerOwner: Any? = null
-    private var pickerHandler: ((listId: String, listTitle: String) -> Unit)? = null
+    /**
+     * 目录选择器宿主栈（后注册的优先）。
+     *
+     * 首页常驻注册一个，列表详情页在屏时再压一个（它要自己弹进度层）；
+     * 单槽实现会在详情页退场时把首页那一份一起清掉，导致首页长按菜单的
+     * 「添加本地歌曲」永久置灰 —— 所以这里按栈管理，退场只弹自己那一层。
+     */
+    private val pickers = mutableListOf<Pair<Any, (listId: String, listTitle: String) -> Unit>>()
+    private val pickerLock = Any()
 
     // ---------- 对外公开 API（Lane C 的首页长按菜单只许用这几个） ----------
 
@@ -97,26 +104,25 @@ object LocalMusicRuntime {
         owner: Any,
         handler: (listId: String, listTitle: String) -> Unit,
     ) {
-        pickerOwner = owner
-        pickerHandler = handler
-    }
-
-    fun unregisterPicker(owner: Any) {
-        if (pickerOwner === owner) {
-            pickerOwner = null
-            pickerHandler = null
+        synchronized(pickerLock) {
+            pickers.removeAll { it.first === owner }
+            pickers.add(owner to handler)
         }
     }
 
+    fun unregisterPicker(owner: Any) {
+        synchronized(pickerLock) { pickers.removeAll { it.first === owner } }
+    }
+
     /** 当前是否有界面能拉起目录选择（没有时调用方应置灰）。 */
-    fun canStartImport(): Boolean = pickerHandler != null
+    fun canStartImport(): Boolean = synchronized(pickerLock) { pickers.isNotEmpty() }
 
     /** 发起导入：拉起目录选择器。返回 false 表示当前没有任何宿主注册选择器。 */
     fun importTo(
         listId: String,
         listTitle: String,
     ): Boolean {
-        val handler = pickerHandler ?: return false
+        val handler = synchronized(pickerLock) { pickers.lastOrNull()?.second } ?: return false
         handler(listId, listTitle)
         return true
     }

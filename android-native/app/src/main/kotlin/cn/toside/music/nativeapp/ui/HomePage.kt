@@ -2,6 +2,8 @@ package cn.toside.music.nativeapp.ui
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +44,7 @@ import cn.toside.music.nativeapp.HomeNavigator
 import cn.toside.music.nativeapp.HomeTab
 import cn.toside.music.nativeapp.data.LeaderboardRuntime
 import cn.toside.music.nativeapp.data.ListRuntime
+import cn.toside.music.nativeapp.data.LocalMusicRuntime
 import cn.toside.music.nativeapp.data.SearchRuntime
 import cn.toside.music.nativeapp.deeplink.DeeplinkFileHost
 import cn.toside.music.nativeapp.deeplink.DeeplinkRuntime
@@ -49,12 +52,15 @@ import cn.toside.music.nativeapp.ui.leaderboard.LeaderboardDetailPage
 import cn.toside.music.nativeapp.ui.list.ListDetailPage
 import cn.toside.music.nativeapp.ui.list.ListMenuHost
 import cn.toside.music.nativeapp.ui.list.ListMenuRequest
+import cn.toside.music.nativeapp.ui.list.LocalFileImport
+import cn.toside.music.nativeapp.ui.list.LocalFileImportDialog
 import cn.toside.music.nativeapp.ui.list.onListLongPress
 import cn.toside.music.nativeapp.ui.radio.RadioPage
 import cn.toside.music.nativeapp.ui.search.SearchPage
 import cn.toside.music.nativeapp.ui.songlist.RecommendPanel
 import cn.toside.music.nativeapp.ui.songlist.SonglistDetailPage
 import cn.toside.music.nativeapp.ui.songlist.SonglistPanel
+import cn.toside.music.nativeapp.util.SafDocuments
 import com.moriafly.salt.ui.Item
 import com.moriafly.salt.ui.ItemSpacer
 import com.moriafly.salt.ui.SaltTheme
@@ -79,11 +85,45 @@ fun HomePage(
 ) {
     var discoverSection by remember { mutableStateOf(DiscoverSection.RECOMMEND) }
     val currentDetail = navigator.currentDetail()
+    val context = LocalContext.current
 
     // 冷启动（进程被 deeplink 拉起）时命令先进队列，导航器一挂上就补发
     DisposableEffect(navigator) {
         DeeplinkRuntime.attach(navigator)
         onDispose { }
+    }
+
+    // ---------- 本地曲库：目录选择器宿主（Lane C 首页长按菜单的「添加本地歌曲」走这里） ----------
+    // 首页常驻注册，列表详情页在屏时会再压一层（见 LocalMusicRuntime 的宿主栈），
+    // 退场只弹自己那一层，首页入口不会因此失效。
+    var localTargetListId by remember { mutableStateOf("") }
+    var localTargetTitle by remember { mutableStateOf("") }
+    var localImportVisible by remember { mutableStateOf(false) }
+    val localImportProgress by LocalMusicRuntime.progress.collectAsState()
+    val localImportOutcome by LocalMusicRuntime.outcome.collectAsState()
+
+    // 目录授权必须立刻持久化，否则重启后 `content://` 全部失效（RN 用真实路径没这问题）
+    val localTreeLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            val persisted = SafDocuments.takePersistablePermission(context, uri)
+            if (!persisted || !SafDocuments.hasPersistedPermission(context, uri)) {
+                Toast.makeText(context, "目录授权未能持久保存，重启应用后可能无法继续播放", Toast.LENGTH_SHORT).show()
+            }
+            localImportVisible = true
+            LocalMusicRuntime.importTree(context, localTargetListId, localTargetTitle, uri)
+        }
+
+    val localPickerOwner = remember { Any() }
+    DisposableEffect(localPickerOwner) {
+        LocalMusicRuntime.registerPicker(localPickerOwner) { listId, title ->
+            localTargetListId = listId
+            localTargetTitle = title
+            localTreeLauncher.launch(null)
+        }
+        // 装配 Lane C 留的注入点：菜单项的可用性由 importTo 是否为 null 决定
+        LocalFileImport.importTo = LocalMusicRuntime::importTo
+        onDispose { LocalMusicRuntime.unregisterPicker(localPickerOwner) }
     }
 
     BackHandler(enabled = currentDetail != null) {
@@ -129,6 +169,16 @@ fun HomePage(
         )
         // deeplink 落下来的 json/lxmc 文件确认层（首页常驻，进详情页也不销毁）
         DeeplinkFileHost()
+        // 本地曲库导入进度/结果：首页菜单触发的导入在此显示（详情页有自己的那一层）
+        if (localImportVisible) {
+            LocalFileImportDialog(
+                listTitle = localTargetTitle,
+                progress = localImportProgress,
+                outcome = localImportOutcome,
+                onCancel = { LocalMusicRuntime.cancel() },
+                onDismiss = { localImportVisible = false },
+            )
+        }
     }
 }
 
