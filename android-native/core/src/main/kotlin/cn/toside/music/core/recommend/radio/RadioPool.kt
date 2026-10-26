@@ -3,6 +3,7 @@ package cn.toside.music.core.recommend.radio
 import cn.toside.music.core.recommend.ArtistPrior
 import cn.toside.music.core.recommend.NameTokenFeedback
 import cn.toside.music.core.recommend.ThemePreference
+import cn.toside.music.core.recommend.m3.LangBucket
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.max
 import kotlin.math.min
@@ -35,6 +36,16 @@ data class CreatePoolCandidateInput(
     val exploration: Double = 0.0,
     val confirmedSeedPlaylist: Boolean = false,
     val reason: String? = null,
+    /** L2 语种桶批次提示（桶召回/歌单标签）；L1 由 `musicInfo.meta.lang` 自动判定。 */
+    val langHint: LangBucket? = null,
+    /** L3 歌手语言表查询；缺省即跳过 L3，直接落到 L4 字面统计。 */
+    val artistLang: ArtistLangLookup? = null,
+)
+
+/** 池子裁剪的语种约束：`limits` 缺席的桶不受淘汰约束，`resolveBucket` 缺省只认已存的 lang/langHint。 */
+data class PoolCapOptions(
+    val limits: Map<LangBucket, Int> = emptyMap(),
+    val resolveBucket: ((PoolCandidate) -> LangBucket)? = null,
 )
 
 data class FinalQueueBuildOptions(
@@ -52,6 +63,8 @@ data class FinalQueueBuildOptions(
     val tokenWeights: Map<String, ThemePreference>? = null,
     /** 长期歌手先验（完播/切歌统计），全通道乘性修正。 */
     val artistStats: Map<String, ThemePreference>? = null,
+    /** L3 歌手语言表查询；缺省时老池子里没有 `lang` 的候选只能落到 L4。 */
+    val artistLang: ArtistLangLookup? = null,
 )
 
 object RadioPool {
@@ -65,6 +78,9 @@ object RadioPool {
         val channels = (listOf(input.channel) + input.channels).distinct()
         val channelSourceId = channels.associate { it.name to input.sourceId }
         val playlistIds = input.playlistIds.distinct()
+        // 语种在创建时就落位（L1~L4 全跑一遍）：候选池与历史项都要能读到 lang，
+        // 否则 MMR 的语言项与连播/配额规则全是瞎的
+        val lang = CandidateLang.resolve(input.musicInfo, input.langHint, input.artistLang)
         return PoolCandidate(
             trackKey = trackKey,
             musicInfo = input.musicInfo,
@@ -89,6 +105,9 @@ object RadioPool {
             addedAt = input.now,
             confirmedSeedPlaylist = input.confirmedSeedPlaylist,
             reasons = input.reason?.let { listOf(it) } ?: emptyList(),
+            lang = lang.bucket,
+            langLevel = lang.level,
+            langHint = input.langHint,
         )
     }
 
@@ -97,6 +116,7 @@ object RadioPool {
         existing: List<PoolCandidate>,
         incoming: List<PoolCandidate>,
         maxSize: Int = RadioConfig.CandidatePool.MAX_SIZE,
+        capOptions: PoolCapOptions? = null,
     ): List<PoolCandidate> {
         val byKey = LinkedHashMap<String, PoolCandidate>()
         for (candidate in existing) byKey[candidate.trackKey] = candidate
@@ -130,23 +150,65 @@ object RadioPool {
                     observedPlaylistFrequency = max(prev.observedPlaylistFrequency, candidate.observedPlaylistFrequency),
                     confirmedSeedPlaylist = prev.confirmedSeedPlaylist || candidate.confirmedSeedPlaylist,
                     reasons = (prev.reasons + candidate.reasons).distinct(),
+                    // 语种事实以较新的一份为准（同 RN `mergePoolCandidates`）：后到的候选通常是重新拉取的现值；
+                    // 旧的一边有值就保留，两边的 langHint 取先出现的那个（提示来自更可信的批次）。
+                    lang = candidate.lang ?: prev.lang,
+                    langLevel = if (candidate.lang != null) candidate.langLevel else prev.langLevel,
+                    langHint = prev.langHint ?: candidate.langHint,
+                    workKey = prev.workKey ?: candidate.workKey,
                     addedAt = min(prev.addedAt, candidate.addedAt),
                 )
         }
-        return capPoolSize(byKey.values.toList(), maxSize)
+        return capPoolSize(byKey.values.toList(), maxSize, capOptions)
     }
 
-    /** 按分数裁剪到 maxSize；池子没满就不淘汰。 */
+    /**
+     * 按分数裁剪到 maxSize；池子没满就不淘汰。
+     *
+     * [capOptions] 给了语种上限时（RN `capPoolSize` 的同一分支），先按综合分降序，
+     * 再逐首收集：某桶已到上限的候选进 overflow，其余照收；最后用 overflow 按分数补满——
+     * 限额卡不住时宁可让池子多几首超配额语种，也不让池子空着。
+     *
+     * 淘汰顺序是**综合分最低的先出**（同分才比 `addedAt`，新的优先保留），不是 FIFO：
+     * 池子要留的是「下次生成队列最可能用得上」的候选，而不是最后抓回来的那批。
+     */
     fun capPoolSize(
         candidates: List<PoolCandidate>,
         maxSize: Int = RadioConfig.CandidatePool.MAX_SIZE,
+        capOptions: PoolCapOptions? = null,
     ): List<PoolCandidate> {
         if (candidates.size <= maxSize) return candidates.toList()
-        return candidates
-            .sortedWith(
+        val sorted =
+            candidates.sortedWith(
                 compareByDescending<PoolCandidate> { it.affinity + it.coOccurrence + it.exploration - it.exposureCount * 0.1 }
                     .thenByDescending { it.addedAt },
-            ).take(maxSize)
+            )
+        val limits = capOptions?.limits.orEmpty()
+        if (limits.isEmpty()) return sorted.take(maxSize)
+        val bucketOf: (PoolCandidate) -> LangBucket =
+            capOptions?.resolveBucket ?: { candidate ->
+                candidate.lang ?: candidate.langHint ?: LangBucket.UNKNOWN
+            }
+        val kept = mutableListOf<PoolCandidate>()
+        val overflow = mutableListOf<PoolCandidate>()
+        val used = mutableMapOf<LangBucket, Int>()
+        for (candidate in sorted) {
+            val bucket = bucketOf(candidate)
+            val limit = limits[bucket]
+            val count = used[bucket] ?: 0
+            if (limit != null && count >= limit) {
+                overflow.add(candidate)
+                continue
+            }
+            used[bucket] = count + 1
+            kept.add(candidate)
+            if (kept.size >= maxSize) break
+        }
+        for (candidate in overflow) {
+            if (kept.size >= maxSize) break
+            kept.add(candidate)
+        }
+        return kept
     }
 
     fun filterPoolCandidates(
@@ -291,6 +353,8 @@ object RadioPool {
             val channels = if (channelWeights.isEmpty()) candidate.channels else channelWeights.keys.toList()
             val exposureCount = options.exposureCounts[candidate.trackKey] ?: candidate.exposureCount.toLong()
             val maxWeight = channelWeights.values.maxOrNull() ?: 0.0
+            // 读时再解析一次：老池子的候选没有 lang（创建时 M3 供给还没接），不能当成「永远判不出」
+            val lang = CandidateLang.resolve(candidate, options.artistLang)
             FinalQueueItem(
                 key = candidate.trackKey,
                 channels = channels,
@@ -305,6 +369,15 @@ object RadioPool {
                 groupIds = candidate.groupIds,
                 exposureCount = exposureCount.toInt(),
                 weight = if (maxWeight > 0) maxWeight else max(candidate.affinity, 0.1),
+                lang = lang.bucket,
+                langLevel = lang.level,
+                langHint = candidate.langHint,
+                // 同作品不同版本（Live/Remix 等）软降频用；RN 只在建最终队列时算，不落池
+                workKey =
+                    RadioTrackKeys.canonicalWorkKey(
+                        candidate.musicInfo.stringField("name"),
+                        candidate.musicInfo.stringField("singer"),
+                    ),
             )
         }
 

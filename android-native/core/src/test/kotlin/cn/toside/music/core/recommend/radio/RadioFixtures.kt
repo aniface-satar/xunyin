@@ -16,6 +16,7 @@ internal object RadioFixtures {
         singer: String,
         album: String = "",
         source: String = "kw",
+        lang: String? = null,
     ): JsonObject =
         buildJsonObject {
             put("id", id)
@@ -28,6 +29,8 @@ internal object RadioFixtures {
                 buildJsonObject {
                     put("songId", id)
                     put("albumName", album)
+                    // kg 是中文词 / tx 是数字码；null 表示接口没给（不是空串）
+                    if (lang != null) put("lang", lang)
                 },
             )
         }

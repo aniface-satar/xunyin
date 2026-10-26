@@ -1,12 +1,17 @@
 package cn.toside.music.core.recommend.radio
 
+import cn.toside.music.core.recommend.m3.Diversity
+import cn.toside.music.core.recommend.m3.LangBucket
+import cn.toside.music.core.recommend.m3.LanguageQuota
 import cn.toside.music.core.recommend.m3.Onboarding
+import cn.toside.music.core.recommend.m3.TimeSlotProfile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonObject
+import java.time.ZoneId
 import kotlin.math.max
 import kotlin.math.min
 
@@ -68,6 +73,10 @@ class RadioEngine(
     private val rng: () -> Double,
     private val now: () -> Long,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    /** L3 歌手语言表查询（app 注入 `ArtistLangStore`）；缺省时只能靠 L1/L2/L4。 */
+    private val artistLang: ArtistLangLookup? = null,
+    /** 时段画像的时区；单测显式注入，避免 CI 的 UTC 机器上时段漂移。 */
+    private val zone: ZoneId = ZoneId.systemDefault(),
 ) {
     var state: RadioState = RadioState()
         private set
@@ -84,6 +93,9 @@ class RadioEngine(
     private var batchId = 0
     private var lastRefreshAt = 0L
     private var lastRefreshReasons: List<String> = emptyList()
+
+    /** 上一次选曲器产出的原因（`lang_quota_relaxed` / `relax_level_N` / `lang_unmet:*` …）。 */
+    private var lastSelectionReasons: List<String> = emptyList()
     private var radioMode: RadioMode = RadioMode.RADIO
     private var lastSafeModeAt = 0L
     private var lastIdleCrawlAt = 0L
@@ -133,7 +145,8 @@ class RadioEngine(
             sessionTracks = state.session.recentTracks.size,
             sessionHealth = SessionHealthLogic.compute(state.session, disliked),
             lastRefreshAt = lastRefreshAt,
-            reasons = lastRefreshReasons,
+            // 选曲原因必须能被真机看见：配额放开/降级/配额兑现不了都只在选曲器里产出
+            reasons = (lastRefreshReasons + lastSelectionReasons).distinct(),
         )
     }
 
@@ -141,6 +154,7 @@ class RadioEngine(
         queue.invalidate()
         served.clear()
         lastSafeModeAt = 0
+        lastSelectionReasons = emptyList()
         if (radioMode != mode) {
             state = state.copy(session = SessionPreference())
             emitState()
@@ -240,7 +254,30 @@ class RadioEngine(
             rotation += 1
             var observed = state.observedPlaylists
             for (playlist in result.observedPlaylists) observed = observed + (playlist.id to playlist)
-            var cache = RadioPool.mergeCandidates(state.candidateCache, result.candidates, RadioConfig.CandidatePool.MAX_SIZE)
+            // 池子裁剪按语种配额：超配额语种的候选先出（综合分最低的先走），而不是简单 FIFO。
+            // 问卷没滑过语言桶时 targets 不生效、limits 为空，行为与波前完全一致。
+            val langTargets = LanguageQuota.computeLangTargets(state.onboardingWeights)
+            val poolLimits =
+                LanguageQuota.computePoolBucketLimits(
+                    LanguageQuota.PoolBucketLimitOptions(
+                        targets = langTargets,
+                        maxSize = RadioConfig.CandidatePool.MAX_SIZE,
+                        windowSize = RadioConfig.Channels.WINDOW_SIZE,
+                        slack = RadioConfig.CandidatePool.POOL_EVICT_OVER_QUOTA_SLACK,
+                    ),
+                )
+            var cache =
+                RadioPool.mergeCandidates(
+                    state.candidateCache,
+                    result.candidates,
+                    RadioConfig.CandidatePool.MAX_SIZE,
+                    PoolCapOptions(
+                        limits = poolLimits,
+                        resolveBucket = { candidate ->
+                            CandidateLang.resolve(candidate, artistLang).bucket ?: LangBucket.UNKNOWN
+                        },
+                    ),
+                )
             cache = RadioPool.filterPoolCandidates(cache, buildExclusion())
             state =
                 state
@@ -325,9 +362,13 @@ class RadioEngine(
                     sessionPenalties = penalties,
                     tokenWeights = state.tokenWeights,
                     artistStats = state.artistStats,
+                    artistLang = artistLang,
                 ),
             )
-        if (finalItems.isEmpty()) return false
+        if (finalItems.isEmpty()) {
+            lastSelectionReasons = listOf("no_candidate_after_relaxation")
+            return false
+        }
         val availability = Channels.emptyCounts()
         for (item in finalItems) {
             for (channel in item.channels) availability[channel] = availability.getValue(channel) + 1
@@ -356,18 +397,34 @@ class RadioEngine(
             )
         val temperature =
             if (health.safeMode) RadioConfig.Softmax.SAFE_MODE_TEMPERATURE else RadioConfig.Softmax.TEMPERATURE
+        // 最近窗口：既做选曲的间隔历史，也做语种配额的「已用量」。两处必须用同一份，
+        // 否则配额算的是窗口 A、连播规则看的是窗口 B，日志与真实行为会对不上。
+        val recentItems = buildRecentSelectionItems()
+        val langTargets = LanguageQuota.computeLangTargets(state.onboardingWeights)
+        val langCaps =
+            LanguageQuota.computeLangCapsForBatch(
+                langTargets,
+                recentItems.map { it.lang },
+                batchSize = target,
+            )
+        // 时段因子：样本不足时 TimeSlotProfile 自带 1.0 降级，调用侧不再写第二份判断
+        val timeSlotAffinity = TimeSlotProfile.computeAffinity(state.radioHistory, { nowMs }, zone)
         val selection =
-            RadioSelection.select(
+            Diversity.select(
                 finalItems,
-                SelectionOptions(
+                Diversity.Options(
                     target = target,
-                    recent = buildRecentSelectionItems(),
+                    recent = recentItems,
                     channelPlan = plan,
                     rng = rng,
                     temperature = temperature,
                     explorationGap = exploration.explorationGap,
+                    langCaps = langCaps,
+                    mmrLambda = Diversity.DEFAULT_MMR_LAMBDA,
+                    timeSlotFactor = timeSlotAffinity.factorFor,
                 ),
             )
+        lastSelectionReasons = selectionReasons(finalItems, langTargets, selection.reasons)
         if (selection.items.isEmpty()) return false
         val byKey = state.candidateCache.associateBy { it.trackKey }
         batchId += 1
@@ -380,6 +437,28 @@ class RadioEngine(
         val accepted = queue.enqueue(queueItems, token)
         if (accepted) maybeIdleCrawl()
         return accepted
+    }
+
+    /**
+     * 选曲原因汇总（RN `generateQueue` 的 `langUnmet` 诊断）：
+     * 目标 > 0 的桶在池里一首都没有 = **供给不足**，不是被配额挡住——
+     * 这两种问题在真机上长得一模一样，日志必须分开（`lang_unmet:zh` vs `lang_quota_relaxed`）。
+     */
+    private fun selectionReasons(
+        finalItems: List<FinalQueueItem>,
+        targets: LanguageQuota.LangTargets,
+        selectionReasons: List<String>,
+    ): List<String> {
+        val poolLang =
+            LanguageQuota.countPoolLang(
+                finalItems.map { item -> LanguageQuota.PoolLangInput(lang = item.lang, langHint = item.langHint) },
+            )
+        val unmet =
+            targets.targets
+                .filter { (bucket, target) -> target > 0 && (poolLang[bucket] ?: 0) == 0 }
+                .keys
+                .map { "lang_unmet:${it.wire}" }
+        return (selectionReasons + unmet).distinct()
     }
 
     private fun toQueueItem(
@@ -406,7 +485,8 @@ class RadioEngine(
             ?: reasons.firstOrNull { it.startsWith("playlist:") }
             ?: reasons.firstOrNull { it.startsWith("chart") }
 
-    private fun buildRecentSelectionItems(limit: Int = 60): List<FinalQueueItem> {
+    /** 最近窗口（旧→新）。internal 供同模块用例锁「历史项也带语种」这条接线。 */
+    internal fun buildRecentSelectionItems(limit: Int = 60): List<FinalQueueItem> {
         val items = mutableListOf<FinalQueueItem>()
         val recentPlayedKeys = recentPlayed.mapTo(mutableSetOf()) { RadioTrackKeys.buildTrackKey(it.musicInfo) }
 
@@ -420,6 +500,8 @@ class RadioEngine(
         ) {
             val key = RadioTrackKeys.buildTrackKey(musicInfo)
             val artistKeys = RadioTrackKeys.getArtistKeys(musicInfo)
+            // 历史项也必须带语种：MMR 的语言项与连播/配额规则全靠它，缺了就等于「整段历史都不知语种」
+            val lang = CandidateLang.resolve(musicInfo, langHint = null, artistLang = artistLang, artistKeys = artistKeys)
             items.add(
                 FinalQueueItem(
                     key = key,
@@ -435,6 +517,8 @@ class RadioEngine(
                     groupIds = groupId?.let { listOf(it) } ?: emptyList(),
                     exposureCount = state.exposureCounts[key]?.toInt() ?: 0,
                     weight = 1.0,
+                    lang = lang.bucket,
+                    langLevel = lang.level,
                 ),
             )
         }
