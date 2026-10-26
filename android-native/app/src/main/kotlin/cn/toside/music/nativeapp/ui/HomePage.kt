@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,8 +43,13 @@ import cn.toside.music.nativeapp.HomeTab
 import cn.toside.music.nativeapp.data.LeaderboardRuntime
 import cn.toside.music.nativeapp.data.ListRuntime
 import cn.toside.music.nativeapp.data.SearchRuntime
+import cn.toside.music.nativeapp.deeplink.DeeplinkFileHost
+import cn.toside.music.nativeapp.deeplink.DeeplinkRuntime
 import cn.toside.music.nativeapp.ui.leaderboard.LeaderboardDetailPage
 import cn.toside.music.nativeapp.ui.list.ListDetailPage
+import cn.toside.music.nativeapp.ui.list.ListMenuHost
+import cn.toside.music.nativeapp.ui.list.ListMenuRequest
+import cn.toside.music.nativeapp.ui.list.onListLongPress
 import cn.toside.music.nativeapp.ui.radio.RadioPage
 import cn.toside.music.nativeapp.ui.search.SearchPage
 import cn.toside.music.nativeapp.ui.songlist.RecommendPanel
@@ -73,6 +79,12 @@ fun HomePage(
 ) {
     var discoverSection by remember { mutableStateOf(DiscoverSection.RECOMMEND) }
     val currentDetail = navigator.currentDetail()
+
+    // 冷启动（进程被 deeplink 拉起）时命令先进队列，导航器一挂上就补发
+    DisposableEffect(navigator) {
+        DeeplinkRuntime.attach(navigator)
+        onDispose { }
+    }
 
     BackHandler(enabled = currentDetail != null) {
         navigator.back()
@@ -115,6 +127,8 @@ fun HomePage(
                 }
             },
         )
+        // deeplink 落下来的 json/lxmc 文件确认层（首页常驻，进详情页也不销毁）
+        DeeplinkFileHost()
     }
 }
 
@@ -401,6 +415,7 @@ private fun MyPage(
     var createName by remember { mutableStateOf("") }
     var createVisible by remember { mutableStateOf(false) }
     var duplicateName by remember { mutableStateOf<String?>(null) }
+    var menuRequest by remember { mutableStateOf<ListMenuRequest?>(null) }
     LaunchedEffect(Unit) { lists.ensureLoaded() }
 
     Box(Modifier.fillMaxSize()) {
@@ -423,15 +438,18 @@ private fun MyPage(
             Item(
                 onClick = { onOpenList(StorageKeys.ListIds.DEFAULT, "试听列表") },
                 text = "试听列表",
+                modifier = Modifier.onListLongPress { menuRequest = ListMenuRequest(StorageKeys.ListIds.DEFAULT, "试听列表") },
             )
             Item(
                 onClick = { onOpenList(StorageKeys.ListIds.LOVE, "我的收藏") },
                 text = "我的收藏",
+                modifier = Modifier.onListLongPress { menuRequest = ListMenuRequest(StorageKeys.ListIds.LOVE, "我的收藏") },
             )
             listState.userLists.forEach { info ->
                 Item(
                     onClick = { onOpenList(info.id, info.name) },
                     text = info.name,
+                    modifier = Modifier.onListLongPress { menuRequest = ListMenuRequest(info.id, info.name) },
                 )
             }
             ItemSpacer()
@@ -472,6 +490,16 @@ private fun MyPage(
                 confirmText = "确定",
             )
         }
+        // 长按列表行 → RN 同构九项菜单（重命名/排序/去重/本地/更新/导入/导出/删除）
+        ListMenuHost(
+            request = menuRequest,
+            onDismiss = { menuRequest = null },
+            onOpenList = onOpenList,
+            onCreateList = {
+                createName = ""
+                createVisible = true
+            },
+        )
     }
 }
 
