@@ -3,6 +3,7 @@ package cn.toside.music.core.recommend.radio
 import cn.toside.music.core.recommend.m3.Diversity
 import cn.toside.music.core.recommend.m3.LangBucket
 import cn.toside.music.core.recommend.m3.LanguageQuota
+import cn.toside.music.core.recommend.m3.LibraryIndex
 import cn.toside.music.core.recommend.m3.Onboarding
 import cn.toside.music.core.recommend.m3.TimeSlotProfile
 import kotlinx.coroutines.CoroutineScope
@@ -59,6 +60,8 @@ data class RadioSummary(
     val sessionHealth: SessionHealth,
     val lastRefreshAt: Long,
     val reasons: List<String>,
+    /** 池子构成诊断（W6-10）：通道数/确认含种子数/语种构成/unknown 占比。 */
+    val poolStats: RadioPool.PoolStats = RadioPool.PoolStats(0, emptyMap(), 0),
 )
 
 /**
@@ -147,6 +150,7 @@ class RadioEngine(
             lastRefreshAt = lastRefreshAt,
             // 选曲原因必须能被真机看见：配额放开/降级/配额兑现不了都只在选曲器里产出
             reasons = (lastRefreshReasons + lastSelectionReasons).distinct(),
+            poolStats = RadioPool.poolStats(state.candidateCache),
         )
     }
 
@@ -254,6 +258,10 @@ class RadioEngine(
             rotation += 1
             var observed = state.observedPlaylists
             for (playlist in result.observedPlaylists) observed = observed + (playlist.id to playlist)
+            // 观察链路的两条信号必须在合并后进池（RN `candidate.ts` 步骤 6）：
+            // 歌单先按曲目重合度并查集分组，再把共现分与组 id 回写到候选上。
+            val observedList = RadioPool.assignPlaylistGroups(observed.values.toList())
+            observed = observedList.associateBy { it.id }
             // 池子裁剪按语种配额：超配额语种的候选先出（综合分最低的先走），而不是简单 FIFO。
             // 问卷没滑过语言桶时 targets 不生效、limits 为空，行为与波前完全一致。
             val langTargets = LanguageQuota.computeLangTargets(state.onboardingWeights)
@@ -279,6 +287,10 @@ class RadioEngine(
                     ),
                 )
             cache = RadioPool.filterPoolCandidates(cache, buildExclusion())
+            cache = RadioPool.applyObservationSignals(cache, observedList)
+            // 共现是否真的有输入，必须能被真机看见：共现恒 0 说明观察链路没有
+            // `confirmed` 歌单（W5-4 的老问题），不是算术写错。
+            val coOccurrenceHits = cache.count { it.coOccurrence > 0.0 }
             state =
                 state
                     .copy(
@@ -287,7 +299,12 @@ class RadioEngine(
                         candidateCacheFetchedAt = nowMs,
                     ).trim(nowMs)
             lastRefreshAt = nowMs
-            lastRefreshReasons = result.reasons
+            lastRefreshReasons =
+                result.reasons +
+                    listOfNotNull(
+                        "cooccurrence:$coOccurrenceHits".takeIf { coOccurrenceHits > 0 },
+                        "cooccurrence_empty".takeIf { coOccurrenceHits == 0 && cache.isNotEmpty() },
+                    )
             if (result.candidates.isNotEmpty()) lastRefreshRevision = profileRevision
             emitState()
             result.candidates.isNotEmpty() ||
@@ -349,6 +366,12 @@ class RadioEngine(
         val health = SessionHealthLogic.compute(state.session, dislikedTrackKeys)
         val penalties = SessionHealthLogic.buildPenalties(state.session, dislikedTrackKeys)
         val nowMs = now()
+        val sessionCoOccurrence =
+            LibraryIndex.buildSessionCoOccurrence(
+                state.radioHistory,
+                profile.seedKeys,
+                LibraryIndex.SessionCoOccurrenceOptions(now = nowMs),
+            )
         val finalItems =
             RadioPool.buildFinalQueueItems(
                 state.candidateCache,
@@ -363,6 +386,8 @@ class RadioEngine(
                     tokenWeights = state.tokenWeights,
                     artistStats = state.artistStats,
                     artistLang = artistLang,
+                    // SAR 会话共现：播放记录里与种子歌同场被积极听过的候选加权（RN index.ts:605）
+                    sessionCoOccurrence = sessionCoOccurrence,
                 ),
             )
         if (finalItems.isEmpty()) {
@@ -424,7 +449,9 @@ class RadioEngine(
                     timeSlotFactor = timeSlotAffinity.factorFor,
                 ),
             )
-        lastSelectionReasons = selectionReasons(finalItems, langTargets, selection.reasons)
+        lastSelectionReasons =
+            selectionReasons(finalItems, langTargets, selection.reasons) +
+                listOfNotNull("session_cooccurrence:${sessionCoOccurrence.size}".takeIf { sessionCoOccurrence.isNotEmpty() })
         if (selection.items.isEmpty()) return false
         val byKey = state.candidateCache.associateBy { it.trackKey }
         batchId += 1

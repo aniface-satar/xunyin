@@ -4,6 +4,8 @@ import cn.toside.music.core.recommend.ArtistPrior
 import cn.toside.music.core.recommend.NameTokenFeedback
 import cn.toside.music.core.recommend.ThemePreference
 import cn.toside.music.core.recommend.m3.LangBucket
+import cn.toside.music.core.recommend.m3.LanguageQuota
+import cn.toside.music.core.recommend.m3.LibraryIndex
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.max
 import kotlin.math.min
@@ -65,6 +67,11 @@ data class FinalQueueBuildOptions(
     val artistStats: Map<String, ThemePreference>? = null,
     /** L3 歌手语言表查询；缺省时老池子里没有 `lang` 的候选只能落到 L4。 */
     val artistLang: ArtistLangLookup? = null,
+    /**
+     * SAR 会话共现分（曲目 key → 0~1；RN `buildSessionCoOccurrence(radioHistory, seedKeys)`）。
+     * 缺省为空表 = 「本轮没有会话共现信号」，权重项自然为 0，行为与接线前一致。
+     */
+    val sessionCoOccurrence: Map<String, Double> = emptyMap(),
 )
 
 object RadioPool {
@@ -216,6 +223,63 @@ object RadioPool {
         ctx: ExclusionContext,
     ): List<PoolCandidate> = candidates.filter { candidate -> RadioFilter.getExclusionReason(candidate.musicInfo, ctx) == null }
 
+    /**
+     * 给观察歌单打并查集分组（RN `candidate.ts` 步骤 6 的 `groupSimilarPlaylists`）：
+     * 曲目高度重合的歌单是同一批货，MMR 与「每组最多几首」两条去重用它识别。
+     * 原生此前 `observedPlaylists.groupId` 恒空，去重侧这条规则等于没生效。
+     */
+    fun assignPlaylistGroups(observed: List<ObservedPlaylist>): List<ObservedPlaylist> {
+        if (observed.isEmpty()) return observed.toList()
+        val groups = LibraryIndex.groupSimilarPlaylists(observed)
+        return observed.map { playlist -> playlist.copy(groupId = groups[playlist.id] ?: playlist.groupId) }
+    }
+
+    /**
+     * 把观察链路的三条信号回写到候选上（RN `candidate.ts:583-628`）：
+     * 1. **共现分**：[LibraryIndex.computeCandidateCoOccurrence]，进 A/E 通道打分；
+     * 2. **歌单分组**：候选所属歌单的并查集组 id，进 MMR 与连组去重；
+     * 3. **通道归属**：确认含种子歌曲的歌单同时给候选挂 A（RN `if (observed.confirmed) hints.add('A')`）——
+     *    「这张歌单里有我喜欢的歌」就是最强的熟悉度证据，不该只因为它从发现通道被抓回来
+     *    就永远只算探索货。
+     *
+     * 只统计 `confirmed && seedOverlap > 0` 的观察歌单（RN 同）：没确认含种子的歌单
+     * 不构成「与我的口味同场」的证据，这是共现不造信号的前提。
+     */
+    fun applyObservationSignals(
+        candidates: List<PoolCandidate>,
+        observed: List<ObservedPlaylist>,
+    ): List<PoolCandidate> {
+        if (candidates.isEmpty() || observed.isEmpty()) return candidates.toList()
+        val index = LibraryIndex.buildTrackPlaylistIndex(observed)
+        val byId = observed.associateBy { it.id }
+        val input = LibraryIndex.CoOccurrenceInput(observedPlaylists = observed, index = index)
+        return candidates.map { candidate ->
+            val groupIds =
+                candidate.playlistIds.mapNotNull { playlistId -> byId[playlistId]?.groupId }.distinct()
+            val coOccurrence = LibraryIndex.computeCandidateCoOccurrence(candidate.trackKey, input)
+            val confirmed = candidate.playlistIds.any { byId[it]?.confirmed == true }
+            val channels =
+                if (confirmed && !candidate.channels.contains(ChannelId.A)) candidate.channels + ChannelId.A else candidate.channels
+            val mergedGroups = (candidate.groupIds + groupIds).distinct()
+            if (mergedGroups == candidate.groupIds && coOccurrence == candidate.coOccurrence && channels == candidate.channels) {
+                candidate
+            } else {
+                candidate.copy(
+                    channels = channels,
+                    channelSourceId =
+                        if (confirmed) {
+                            candidate.channelSourceId + (ChannelId.A.name to (candidate.channelSourceId[ChannelId.A.name] ?: "seed_playlist"))
+                        } else {
+                            candidate.channelSourceId
+                        },
+                    coOccurrence = coOccurrence,
+                    groupIds = mergedGroups,
+                    observedPlaylistFrequency = index[candidate.trackKey]?.playlistIds?.size ?: candidate.observedPlaylistFrequency,
+                )
+            }
+        }
+    }
+
     /** 抓取预算分区：详情读取先留固定份额，剩下的才给发现型请求。 */
     fun planRefreshBudget(
         budget: Int,
@@ -319,16 +383,19 @@ object RadioPool {
             }
         }
         val weights = mutableMapOf<ChannelId, Double>()
+        // 会话共现：用户自己的播放序列里与种子歌同场被积极听过的歌（RN `sessionCoOcc` 项）
+        val sessionCoOcc = max(0.0, min(1.0, options.sessionCoOccurrence[candidate.trackKey] ?: 0.0))
         for (channel in candidate.channels) {
             var raw =
                 when (channel) {
-                    ChannelId.A -> candidate.affinity * 0.4 + playlistScore * 0.22 + candidate.coOccurrence * 0.14
+                    ChannelId.A -> candidate.affinity * 0.4 + playlistScore * 0.22 + candidate.coOccurrence * 0.14 + sessionCoOcc * 0.14
                     ChannelId.B -> playlistScore * 0.6 + candidate.affinity * 0.25 + 0.15
                     ChannelId.C ->
                         candidate.exploration * 0.4 + lowExposure * 0.25 + playCountNovelty * 0.2 + localNovelty * 0.15
                     ChannelId.D ->
                         candidate.exploration * 0.35 + chartNovelty * 0.3 + lowExposure * 0.2 + candidate.affinity * 0.15
-                    ChannelId.E -> candidate.affinity * 0.55 + candidate.exploration * 0.15 + candidate.coOccurrence * 0.08
+                    ChannelId.E ->
+                        candidate.affinity * 0.55 + candidate.exploration * 0.15 + sessionCoOcc * 0.12 + candidate.coOccurrence * 0.08
                 }
             // radio 模式下探索通道不做纯盲推：亲和度闸门让画像内候选优先于完全陌生的歌
             if ((channel == ChannelId.C || channel == ChannelId.D) && options.mode != RadioMode.EXPLORE) {
@@ -385,6 +452,10 @@ object RadioPool {
         val total: Int,
         val byChannel: Map<ChannelId, Int>,
         val confirmed: Int,
+        /** 池内语种构成（判不出语种落在 UNKNOWN）：`lang_unmet:*` 的第一手对照。 */
+        val byLang: Map<LangBucket, Int> = emptyMap(),
+        /** UNKNOWN 占比；超过阈值说明 L1 语种字段普遍缺失，桶召回该多给格子。 */
+        val unknownShare: Double = 0.0,
     )
 
     fun poolStats(candidates: List<PoolCandidate>): PoolStats {
@@ -392,6 +463,14 @@ object RadioPool {
         for (candidate in candidates) {
             for (channel in candidate.channels) byChannel[channel] = byChannel.getValue(channel) + 1
         }
-        return PoolStats(candidates.size, byChannel, candidates.count { it.confirmedSeedPlaylist })
+        val byLang = LanguageQuota.countPoolLang(candidates.map { LanguageQuota.PoolLangInput(it.lang, it.langHint) })
+        val unknown = byLang[LangBucket.UNKNOWN] ?: 0
+        return PoolStats(
+            total = candidates.size,
+            byChannel = byChannel,
+            confirmed = candidates.count { it.confirmedSeedPlaylist },
+            byLang = byLang,
+            unknownShare = if (candidates.isEmpty()) 0.0 else unknown.toDouble() / candidates.size,
+        )
     }
 }

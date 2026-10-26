@@ -121,4 +121,46 @@ class DiscoveryTest {
         assertEquals(mapOf("ja" to 70.0), sanitized)
         assertEquals(listOf("日语"), Discovery.restockKeywords(sanitized))
     }
+
+    @Test
+    fun stepsFollowBudgetAndSupplementFlag() {
+        assertEquals(3, Discovery.planSteps(budget = 14))
+        assertEquals(2, Discovery.planSteps(budget = 8))
+        assertEquals(1, Discovery.planSteps(budget = 2))
+        assertEquals(1, Discovery.planSteps(budget = 14, supplement = true))
+    }
+
+    /**
+     * 成新率的实证（W7 任务 2）：原生一轮刷新的抓取预算只有 14（steps = 3），
+     * 5 个步骤里只有第 4 步是发现通道，所以「最新」歌单的供给远低于 RN。
+     *
+     * RN 的 0.3 是给「一次刷新读十几张歌单」设计的：一轮 ≈ 10 × 0.3 = 3 张新鲜歌单。
+     * 原生一轮最多 1 张、且只在 60% 的轮次里跑到，按 0.3 折算只剩 0.1 张/轮 ——
+     * C 通道事实上断供。所以调用侧维持 1.0（见 `RadioRuntime.fetchDiscoveryPlaylist`），
+     * 本用例锁住这两个数字。
+     */
+    @Test
+    fun newestSupplyUnderNativeBudgetIsStarvedByRnRatio() {
+        val rounds = 100
+        val steps = Discovery.planSteps(budget = 14)
+        val discoveryStep = 4
+
+        fun newestRounds(ratio: Double): Int {
+            var count = 0
+            for (rotation in 0 until rounds) {
+                val hitDiscovery = (0 until steps).any { offset -> (rotation + offset) % 5 == discoveryStep }
+                if (!hitDiscovery) continue
+                if (Discovery.pickSort(sorts, rotation, hotSortId = "hot", ratio = ratio).useNew) count += 1
+            }
+            return count
+        }
+
+        val atFull = newestRounds(1.0)
+        val atRn = newestRounds(Discovery.NEWEST_RATIO)
+        // 100 轮里发现通道命中 60 轮；成新率 1.0 时 60 轮都出「最新」歌单，
+        // 0.3 时只有轮次同时落在「模 10 < 3」与「发现步」上的 10 轮出得了
+        assertEquals(60, atFull)
+        assertEquals(10, atRn)
+        assertTrue("原生 C 通道的绝对供给本就远低于 RN，按 0.3 折算会断供", atRn * 10 < atFull * 3)
+    }
 }

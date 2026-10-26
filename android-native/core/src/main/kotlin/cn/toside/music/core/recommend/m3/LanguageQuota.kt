@@ -241,6 +241,60 @@ object LanguageQuota {
         return max(0, min(want, max(0, options.detailBudget - 1)))
     }
 
+    data class BucketReserveOptions(
+        /** 本轮详情额度（读一张歌单详情 = 一格）。 */
+        val detailBudget: Int,
+        val poolCounts: Map<LangBucket, Int> = emptyMap(),
+        /** 池子真实长度；unknown 占比必须用真实长度（RN 注释：垫到 targetSize 会让
+         * 冷启动阶段永远够不着 escalate 阈值，而那正是 unknown 最浓的时候）。 */
+        val poolSize: Int = 0,
+        /** 本轮实际召回到几张桶歌单（原生＝语种补货关键词数；0 = 没召回，预留必须是 0）。 */
+        val bucketSummaries: Int = 0,
+        val base: Int = RadioConfig.CandidatePool.BUCKET_DETAIL_RESERVE,
+        val escalateTo: Int = RadioConfig.CandidatePool.BUCKET_DETAIL_RESERVE_WHEN_UNKNOWN_HIGH,
+        val escalateAt: Double = RadioConfig.CandidatePool.UNKNOWN_SHARE_ESCALATE,
+    )
+
+    data class BucketReservePlan(
+        /** 桶召回占几格详情额度（0 = 这一轮不给桶让位）。 */
+        val reserve: Int,
+        val unknownShare: Double,
+        /** true = 桶召回排在常规摘要**之前**（spec §3.3：unknown > 30% 时优先补货）。 */
+        val prioritizeBuckets: Boolean,
+    )
+
+    /**
+     * 语种桶召回的详情额度预留（W6-9 的接线口径，RN `candidate.ts:468-494`）。
+     *
+     * 三条 RN 的硬约束，改这里之前先看原注释：
+     * - 没召回到桶歌单时预留必须是 0：详情读是这个候选池唯一的进货口，白扣一格等于给
+     *   **全体用户**（含没开配额的）砍掉固定份额；
+     * - 桶只召回到 1 张时，没用完的格子还给常规摘要（[min] 在这里）；
+     * - 常规摘要永远至少留一格（`detailBudget - 1`），否则语种补齐会把画像通道饿死。
+     */
+    fun planBucketReserve(options: BucketReserveOptions): BucketReservePlan {
+        val unknownShare =
+            if (options.poolSize > 0) (options.poolCounts[LangBucket.UNKNOWN] ?: 0).toDouble() / options.poolSize else 0.0
+        val reserve =
+            if (options.bucketSummaries > 0) {
+                min(
+                    options.bucketSummaries,
+                    computeBucketDetailReserve(
+                        DetailReserveOptions(
+                            detailBudget = options.detailBudget,
+                            unknownShare = unknownShare,
+                            escalateAt = options.escalateAt,
+                            base = options.base,
+                            escalateTo = options.escalateTo,
+                        ),
+                    ),
+                )
+            } else {
+                0
+            }
+        return BucketReservePlan(reserve, unknownShare, prioritizeBuckets = unknownShare > options.escalateAt)
+    }
+
     data class PoolBucketLimitOptions(
         val targets: LangTargets,
         val maxSize: Int,

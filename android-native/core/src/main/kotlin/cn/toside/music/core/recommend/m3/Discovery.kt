@@ -1,6 +1,7 @@
 package cn.toside.music.core.recommend.m3
 
 import cn.toside.music.core.songlist.SonglistSort
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -26,6 +27,18 @@ object Discovery {
         /** true = 本轮走「最新」排序，产出的歌单归 C；false = 沿用热门排序（归 D/B）。 */
         val useNew: Boolean,
     )
+
+    /**
+     * 一次刷新跑几个抓取步骤（app `fetchPool` 的 `steps` 口径）：补货轮只跑 1 步，
+     * 常规轮按预算每 4 个请求一步、上下夹在 [1,3]。
+     *
+     * 放进 core 是为了让「原生一轮刷新到底能跑几次请求」这件事能被单测锁住——
+     * 成新率（[pickSort] 的 ratio）该取多少完全取决于这个数，靠人肉估会算错。
+     */
+    fun planSteps(
+        budget: Int,
+        supplement: Boolean = false,
+    ): Int = if (supplement) 1 else (max(0, budget) / 4).coerceIn(1, 3)
 
     fun isNewestSort(sort: SonglistSort): Boolean = NEWEST_PATTERN.containsMatchIn("${sort.name} ${sort.tid}")
 
