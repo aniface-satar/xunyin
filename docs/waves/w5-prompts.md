@@ -105,7 +105,31 @@ sha256 `b6fc7376…`）。Wave 5 任务书按该快照起草，投用前协调�
 
 ---
 
+## 执行状态（2026-10-26 协调会话，已完成；车道可直接开工）
+
+- **波前快照 = `2097867`**（`main`，含四份任务书与本文的复核修订）。三条车道均从此分叉。
+- **worktree 已建好**（均已拷 `android-native/local.properties`，`git status` 干净）：
+  - Lane A：`C:\Users\30913\Documents\ChatGPT\music-w5\laneA` → 分支 `w5/laneA`
+  - Lane B：`C:\Users\30913\Documents\ChatGPT\music-w5\laneB` → 分支 `w5/laneB`
+  - Lane C：`C:\Users\30913\Documents\ChatGPT\music-w5\laneC` → 分支 `w5/laneC`
+- **冒烟通过**：laneA `:app:compileDebugKotlin` BUILD SUCCESSFUL。
+- **基线实测**：core 742 + app 76 = 818，0 fail / 0 err / 0 skip；APK 28,860,935 B，
+  sha256 `b6fc7376…3837`。
+- **真机清账决议（用户 2026-10-26 拍板）**：**不做波前清账，直接开车道**；Wave1~4 累计 87 条
+  与 Wave5 新增合并后**统一放到 Wave6（B7 收官）之前清**。新增风险已知并接受：
+  Lane B 改的是全局取链的公共入口，若 B3 取链在真机上本就不可用，Lane B 的 local 分支
+  会与既有缺陷混在一起——Lane B 报告里需单列「取链本地分支」的真机验证步骤，
+  不要把它算进既有缺陷的排查范围。
+- **开工顺序**：B 先开（本地曲库最重、且对外提供 API）→ C 次（要调 B 的
+  `LocalMusicRuntime.importTo`，可先按约定签名写死、B 未落地时置灰）→ A 最后
+  （推荐收口最重）。三车道**不要同时**进入全量构建阶段。
+
+---
+
 ## 协调会话 —— 任务书复核修订 + 波前快照 + 建 worktree
+
+> 状态：**已于 2026-10-26 执行完毕**（快照 `2097867`、三 worktree 就绪、冒烟通过）。
+> 本块留档，下一波（Wave6）改路径与波号后复用。
 
 ```text
 你是 Kotlin 迁移 Wave5 的协调会话。只在当前主仓库目录工作。不写业务代码，不 push。
@@ -148,8 +172,8 @@ sha256 `b6fc7376…`）。Wave 5 任务书按该快照起草，投用前协调�
 你是 Wave5 Lane A 执行会话，任务：推荐收口——M3 简化版（标签相似/MMR/语种配额/时段）
 + 相似歌手通道 E（MusicBrainz/ListenBrainz）+ onboarding 问卷 + 画像结算闭环（S16）。
 
-你的工作区是独立 git worktree：<协调会话汇报的 music-w5/laneA 绝对路径>，
-分支 w5/laneA。其他会话在别的目录、别的分支工作，互相看不到改动——
+你的工作区是独立 git worktree：C:\Users\30913\Documents\ChatGPT\music-w5\laneA，
+分支 w5/laneA（从 `2097867` 分叉）。其他会话在别的目录、别的分支工作，互相看不到改动——
 不要试图同步，不要离开本目录，不要切分支，禁止 push/merge/rebase/stash/reset。
 
 【开工必读（按顺序、全文）】
@@ -176,7 +200,12 @@ sha256 `b6fc7376…`）。Wave 5 任务书按该快照起草，投用前协调�
   断网/限流/超时都要有单测路径；缓存另起键，不与 RN 共用。
 - RNG 与时钟全部注入（rng: () -> Double、now: () -> Long），单测锁种子；
   项目教训：不可注入的随机源会让用例抖动。
-- `rankState` 的 blocked/hidden 是「已预留未接」，接上后要补用例证明真的过滤。
+- `rankState` 的 blocked/hidden：**core 侧其实已经在消费**（`PlaylistRank.kt:117-131`
+  先按踩雷规则剔歌单、再按 `source::id` 剔隐藏 key）；没接的只是 app 装配
+  （`SonglistRuntime.kt:257` 仍传默认 null）。所以你的活是「补写入方 + 在装配点传参」，
+  **不要重写 `PlaylistRank`**，补用例证明 app 侧真的把规则传下去了。
+- 波前复核已确认（别再按旧稿理解）：`core/recommend/` 是 10 个 M1 + **20** 个 radio 源文件
+  （进度文档写的「21」含测试类）；音频特征四件套零代码，全工程只有 3 处注释命中。
 
 【硬约束（RULES 摘要）】
 - 只改任务书「范围」内的文件；缺口在禁触区 → 写进 lane 报告，不动手。
@@ -199,8 +228,8 @@ sha256 `b6fc7376…`）。Wave 5 任务书按该快照起草，投用前协调�
 你是 Wave5 Lane B 执行会话，任务：本地曲库（SAF 目录树扫描 + MediaMetadataRetriever 元数据
 + source=="local" 直连播放 + 列表「本地文件」导入）（S17）。
 
-你的工作区是独立 git worktree：<协调会话汇报的 music-w5/laneB 绝对路径>，
-分支 w5/laneB。其他会话在别的目录、别的分支工作，互相看不到改动——
+你的工作区是独立 git worktree：C:\Users\30913\Documents\ChatGPT\music-w5\laneB，
+分支 w5/laneB（从 `2097867` 分叉）。其他会话在别的目录、别的分支工作，互相看不到改动——
 不要试图同步，不要离开本目录，不要切分支，禁止 push/merge/rebase/stash/reset。
 
 【开工必读（按顺序、全文）】
@@ -216,9 +245,15 @@ sha256 `b6fc7376…`）。Wave 5 任务书按该快照起草，投用前协调�
 - android-native/local.properties 存在，缺失停下报告
 
 【本车道特别提醒】
-- 你是本波 `app/player/PlayerRuntime.kt` 的唯一持有者；local 分支只加在取链上
-  （`MusicUrlProvider.getUrl` 返回 content:// / file:// 字符串即可，Media3 原生支持），
-  **不要改 PlayerCore 的签名**；音量均衡开启时 isEnableAudioOffload 必须 false 的约束不许碰丢。
+- 你是本波 `app/player/PlayerRuntime.kt` 的唯一持有者。取链是**两段式**：
+  `:68-69` 是 `var urlResolver` 的默认 lambda（无条件 `userApi.getMusicUrl`），
+  `PlayerCore` 在 `:91` 才通过 `urlResolver.getUrl(info)` 绑定。**local 分支必须写进默认
+  provider 内部**（或用 `urlResolver` 包一层再装回默认值）——只改 `:91` 的绑定会被
+  `RadioRuntime` 等替换 `urlResolver` 的路径绕过。返回 content:// / file:// 字符串即可，
+  Media3 原生支持；**不要改 `PlayerCore` 的签名**；音量均衡开启时 isEnableAudioOffload
+  必须 false 的约束不许碰丢。
+- `ui/list/ListDetailPage.kt`（876 行）操作行实测 **7 项**（重命名/清空/删除列表/排序/去重/
+  导入/导出），你只加第 8 项「本地文件」+ 弹层接线，别重构操作行。
 - `MusicInfoTools.sanitizeMusicInfo` 已经能兜 local 字段（filePath 缺失回填 id、ext 反推），
   先读它再决定要不要动，别重复造模型。
 - SAF 不需要 READ_MEDIA_AUDIO：**Manifest 禁触**。持久授权要 takePersistableUriPermission，
@@ -228,6 +263,9 @@ sha256 `b6fc7376…`）。Wave 5 任务书按该快照起草，投用前协调�
 - **公开 API 必须先落地再实现**：`LocalMusicRuntime.importTo(listId, listTitle)` 等签名
   要尽早提交并在报告里写死——Lane C 的首页长按菜单直接调它，签名改了会打断别人。
 - 大目录（1000+）要有进度与可取消；单条失败降级，不许中断整批。
+- **真机风险已知（不安排波前清账，用户已拍板）**：B3 取链在真机上从未验收，若它本就不可用，
+  你的 local 分支会与既有缺陷混在一起。所以报告的真机清单里把「本地曲目直连播放」**单列一节**，
+  并写明哪些现象属于既有缺陷、哪些属于本次改动，别把两笔账混成一笔。
 
 【硬约束（RULES 摘要）】
 - 只改任务书「范围」内的文件；`ui/list/ListDetailPage.kt` 只加「本地文件」一项与弹层接线。
@@ -251,8 +289,8 @@ sha256 `b6fc7376…`）。Wave 5 任务书按该快照起草，投用前协调�
 你是 Wave5 Lane C 执行会话，任务：入口与分享收尾——首页列表行长按菜单（RN 九项同构）
 + lxmusic:// deeplink（含 json/lxmc 文件打开）+ 系统分享 chooser（S18）。
 
-你的工作区是独立 git worktree：<协调会话汇报的 music-w5/laneC 绝对路径>，
-分支 w5/laneC。其他会话在别的目录、别的分支工作，互相看不到改动——
+你的工作区是独立 git worktree：C:\Users\30913\Documents\ChatGPT\music-w5\laneC，
+分支 w5/laneC（从 `2097867` 分叉）。其他会话在别的目录、别的分支工作，互相看不到改动——
 不要试图同步，不要离开本目录，不要切分支，禁止 push/merge/rebase/stash/reset。
 
 【开工必读（按顺序、全文）】
@@ -276,9 +314,14 @@ sha256 `b6fc7376…`）。Wave 5 任务书按该快照起草，投用前协调�
 - deeplink 解析必须是可测纯函数（`lxmusic://<type>/<action>/<paths>` 样本表进 JVM 单测），
   不要埋在 onCreate 里；`launchMode` 若调整要单独记报告；竖屏属性绝对不许碰。
 - `app/player/` 归 Lane B：deeplink 的 player 动作只调用既有公开方法，缺方法就降级该分支。
-- 系统分享要先让 `ShareCardSaver.save` 返回 uri（扩结果类型，不改既有语义），
-  再走 ACTION_SEND；`common.shareType` / `shareCard.savePath` 既有键直接用，
+- 系统分享要先让 `ShareCardSaver.save` 返回 uri（扩结果类型，不改既有语义），再走
+  ACTION_SEND。**波前复核**：`ShareCardSaver` 内部**已经持有** MediaStore Uri
+  （私有 `writeBitmap(resolver, uri, bitmap)`，`:65-80`），只是没往上抛 —— 属「把已有 Uri
+  带出来」，不要重做保存链路。`common.shareType` / `shareCard.savePath` 既有键直接用，
   DefaultSetting 只许表尾追加，不许改既有默认值。
+- 波前复核已确认：`ui/HomePage.kt` 491 行、`MyPage` 在 `:393`、列表行 `Item(onClick=...)`
+  在 `:438`，全工程**零** `combinedClickable`/`onLongClick`；Manifest 无 scheme、
+  `MainActivity` 16 行无 `onNewIntent`。
 - 「搜索歌手/专辑类型」本波不做，只交立项输入（五源 × 两类的 core 文件与接口清单）。
 
 【硬约束（RULES 摘要）】
