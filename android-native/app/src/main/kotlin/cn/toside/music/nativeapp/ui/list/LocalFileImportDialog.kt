@@ -3,6 +3,7 @@ package cn.toside.music.nativeapp.ui.list
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,6 +28,10 @@ import com.moriafly.salt.ui.dialog.DialogTitle
  * RN 的进度只靠 toast（「已快速添加到当前列表，现在将进入文件标签读取流程」）+
  * 结束时一条结果 toast；这里做成一个可观察的弹层：导入中显示进度与「取消」，
  * 结束后显示结果汇总（成功/失败条数照抄 RN 文案）。
+ *
+ * Wave6 追加「重新定位失效曲目（N）」入口：N = 当前列表里 document URI 已失效的
+ * 曲目数（[staleCount]），0 时按钮不渲染。默认参数保证既有调用方（HomePage 的
+ * 常驻弹层）不传也编译通过，只有列表详情页会接上真实的失效计数。
  */
 @OptIn(UnstableSaltUiApi::class)
 @Composable
@@ -36,6 +41,10 @@ fun LocalFileImportDialog(
     outcome: LocalMusicRuntime.Outcome?,
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
+    staleCount: Int = 0,
+    relinking: Boolean = false,
+    relinkOutcome: LocalMusicRuntime.RelinkOutcome? = null,
+    onRelink: () -> Unit = {},
 ) {
     BasicDialog(onDismissRequest = { if (outcome != null) onDismiss() }) {
         DialogTitle(text = "添加本地歌曲")
@@ -60,6 +69,22 @@ fun LocalFileImportDialog(
                     text = "完成",
                     modifier = Modifier.weight(1f),
                 )
+            }
+        }
+
+        if (staleCount > 0) {
+            Spacer(Modifier.height(10.dp))
+            when {
+                relinking -> Text(text = "正在重新定位失效曲目…", color = SaltTheme.colors.text)
+                relinkOutcome != null -> Text(text = relinkResultText(relinkOutcome), color = SaltTheme.colors.text)
+                else ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = onRelink,
+                            text = relinkButtonText(staleCount),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
             }
         }
     }
@@ -117,3 +142,21 @@ internal fun localImportResultText(outcome: LocalMusicRuntime.Outcome): String =
             "共发现 ${outcome.total} 首歌曲，成功添加 ${outcome.added} 首，" +
                 "失败 ${outcome.failed} 首（失败的已从列表移除）"
     }
+
+/** 重定位入口按钮文案（N = 失效曲目数）。 */
+internal fun relinkButtonText(stale: Int): String = "重新定位失效曲目（$stale）"
+
+/**
+ * 重定位结果文案。歧义/未命中的曲目**保留在列表里**（不删），文案要明说，
+ * 否则「失效曲目还在列表」会被当成 bug 报上来。
+ */
+internal fun relinkResultText(outcome: LocalMusicRuntime.RelinkOutcome): String {
+    if (outcome.noPermission) return "没有可用的文件夹授权，无法重扫目录。请重新导入一次本地歌曲以恢复授权后再试。"
+    if (outcome.stale == 0) return "列表里没有失效曲目"
+    return buildString {
+        append("共 ${outcome.stale} 首失效，恢复 ${outcome.matched} 首")
+        if (outcome.unmatched > 0) append("，未找到 ${outcome.unmatched} 首")
+        if (outcome.ambiguous > 0) append("，歧义 ${outcome.ambiguous} 首")
+        append("（未恢复的曲目仍保留在列表中，未被删除）")
+    }
+}

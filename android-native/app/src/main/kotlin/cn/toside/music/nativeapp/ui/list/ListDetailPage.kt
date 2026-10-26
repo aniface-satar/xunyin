@@ -143,6 +143,10 @@ fun ListDetailPage(
     val localImportProgress by LocalMusicRuntime.progress.collectAsState()
     val localImportOutcome by LocalMusicRuntime.outcome.collectAsState()
     val localImportingListId by LocalMusicRuntime.importingListId.collectAsState()
+    // 本地曲目重定位（Wave6 Lane C）：弹层打开时数一次失效数，按钮 N>0 才渲染
+    var relinkStaleCount by remember { mutableStateOf(0) }
+    val relinkingListId by LocalMusicRuntime.relinkingListId.collectAsState()
+    val relinkOutcome by LocalMusicRuntime.relinkOutcome.collectAsState()
     var importConflict by remember { mutableStateOf<ImportPartConflict?>(null) }
     var fullImportConfirm by remember { mutableStateOf<PendingImport?>(null) }
     val backup = remember { BackupManager(runtime.lists.store) }
@@ -299,6 +303,17 @@ fun ListDetailPage(
     // 导入过程中列表在变，跟着进度刷新，别等弹层关掉才更新
     LaunchedEffect(localImportProgress) {
         if (localImportProgress != null) items = runtime.lists.musics(listId)
+    }
+
+    // 重定位：弹层打开时统计失效数；重定位结束后刷新列表与失效数（恢复的曲目换过 id）
+    LaunchedEffect(localImportVisible) {
+        if (localImportVisible) relinkStaleCount = LocalMusicRuntime.countStale(context, listId)
+    }
+    LaunchedEffect(relinkOutcome) {
+        if (relinkOutcome != null && relinkOutcome?.stale != 0) {
+            items = runtime.lists.musics(listId)
+            relinkStaleCount = LocalMusicRuntime.countStale(context, listId)
+        }
     }
 
     fun addLocation(): String =
@@ -794,6 +809,10 @@ fun ListDetailPage(
                         localImportVisible = false
                         scope.launch { items = runtime.lists.musics(listId) }
                     },
+                    staleCount = relinkStaleCount,
+                    relinking = relinkingListId == listId,
+                    relinkOutcome = relinkOutcome,
+                    onRelink = { LocalMusicRuntime.relink(context, listId) },
                 )
             }
             fullImportConfirm?.let { pending ->

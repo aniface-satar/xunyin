@@ -64,4 +64,53 @@ class LocalFileImportDialogTextTest {
         val text = localImportProgressText(LocalImportProgress(total = 20, added = 20, processed = 10))
         assertTrue(!text.contains("失败"))
     }
+
+    // ---------- 重定位（Wave6 Lane C） ----------
+
+    private fun relinkOutcome(
+        stale: Int,
+        matched: Int,
+        unmatched: Int = 0,
+        ambiguous: Int = 0,
+        noPermission: Boolean = false,
+    ) = LocalMusicRuntime.RelinkOutcome(
+        stale = stale,
+        matched = matched,
+        unmatched = unmatched,
+        ambiguous = ambiguous,
+        noPermission = noPermission,
+    )
+
+    @Test
+    fun `relink button shows stale count`() {
+        assertEquals("重新定位失效曲目（7）", relinkButtonText(7))
+    }
+
+    @Test
+    fun `relink result reports restored and kept counts`() {
+        val text = relinkResultText(relinkOutcome(stale = 5, matched = 3, unmatched = 1, ambiguous = 1))
+        assertTrue(text.contains("共 5 首失效"))
+        assertTrue(text.contains("恢复 3 首"))
+        assertTrue(text.contains("未找到 1 首"))
+        assertTrue(text.contains("歧义 1 首"))
+        assertTrue(text.contains("未被删除"))
+    }
+
+    @Test
+    fun `relink result without misses only reports restored`() {
+        val text = relinkResultText(relinkOutcome(stale = 2, matched = 2))
+        assertTrue(!text.contains("未找到"))
+        assertTrue(!text.contains("歧义"))
+    }
+
+    @Test
+    fun `relink without permission tells user to reimport`() {
+        val text = relinkResultText(relinkOutcome(stale = 3, matched = 0, noPermission = true))
+        assertTrue(text.contains("没有可用的文件夹授权"))
+    }
+
+    @Test
+    fun `relink with no stale tracks is a no-op message`() {
+        assertEquals("列表里没有失效曲目", relinkResultText(relinkOutcome(stale = 0, matched = 0)))
+    }
 }
