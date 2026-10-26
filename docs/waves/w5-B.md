@@ -107,6 +107,8 @@ RN 对照（worktree 内只读，先全部通读实证再动手）：
   `e3a25a3`（列表入口与弹层）。**测试 core 775 + app 83 = 858 全绿**
   （基线 742 + 76；新增 core 33 + app 7），failures / errors / skipped 全 0；
   APK 28,855,991 B。
+- **收尾核对**：末笔闸门 `ktlintCheck test assembleDebug` BUILD SUCCESSFUL，之后工作区只剩本报告
+  改动；分支 `w5/laneB` 从 `2097867` 起共 5 笔提交，未 rebase、未 push、未跨车道改文件。
 - **触碰文件清单**（供集成会话定位冲突）：
   - 新增 `android-native/core/src/main/kotlin/cn/toside/music/core/local/`：
     `LocalAudio.kt`、`LocalTrack.kt`、`LocalImportPlan.kt`、`LocalLyric.kt`、`LocalSibling.kt`
