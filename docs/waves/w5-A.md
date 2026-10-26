@@ -99,4 +99,31 @@ Wave4 Lane A 落地 M2 时留下降级清单（见 `w4-A.md` 报告遗留 2/3）
 
 ---
 
-## Lane 报告（待填）
+## Lane 报告
+
+### 1. 语义实证与映射表（任务 1，先文档后代码）
+
+复核基线：`w5/laneA` 起点 `2097867`（= Wave4 并入后 `f214bd8` + 一份文档提交）。
+RN 侧逐文件通读 `src/core/recommend/` 的 11 个文件，调用图（`grep` 实测，不是记忆）：
+
+- `index.ts` 消费 `language.ts` / `languageQuota.ts` / `onboarding.ts` / `timeSlot.ts` /
+  `similarity.ts`（`buildTrackPlaylistIndex` / `buildSessionCoOccurrence`）/ `diversity.ts`
+  （`selectFinalQueue`）/ `similarArtist.ts`（`inferArtistLangFromTags` / `runSimilarArtistRefresh`）；
+- `candidatePool.ts` 消费 `language.ts` 的 `resolveLang` / `bucketFromLangField`；
+- `candidate.ts` 消费 `similarity.ts` 的 `computeCandidateCoOccurrence` /
+  `computeProfileAffinity` / `groupSimilarPlaylists` / `buildTrackPlaylistIndex`，
+  以及 `languageQuota.ts` 的 `countPoolLang` / `computeBucketDetailReserve`。
+
+| RN 文件 | 结论 | 原生落点 | 理由 |
+| --- | --- | --- | --- |
+| `language.ts`（278） | **保留**（1 处降级） | `core/.../recommend/m3/Language.kt` | 八桶 + 四级判定是纯字符串/数值规则，零 IO。`ArtistLangTable` 用 `MutableMap` 就地合并即可，RN 的「脏条目补数字」防御在 Kotlin 里由类型系统兜一半，但 `table` 来自 JSON 反序列化，仍保留 bucket 合法性校验（L3 分支）。**降级**：`bucketFromLyric` 的调用方（歌词拉取）本波不接——原生侧没有「取到候选后异步拉歌词」的通道，L3 只由 `field` 与 `relation` 两个来源喂；`lyric` 强度常量保留以备 Wave6。 |
+| `languageQuota.ts`（223） | **保留** | `core/.../recommend/m3/LanguageQuota.kt` | 纯算术，`windowSlice` 的 `slice(-0)` 坑在 Kotlin `takeLast(0)` 上是空列表（不会退化成全量），但仍显式夹紧，理由写进函数注释。`computePoolBucketLimits` / `computeBucketDetailReserve` 属供给侧（`candidate.ts`），本波候选池只有单条 `PoolCandidate` 路径，**只移植这两个函数但暂不接线**，留给 Wave6 桶召回。 |
+| `onboarding.ts`（155） | **保留** | `core/.../recommend/m3/Onboarding.kt` | 选项表 + 三条纯函数（`sanitizeWeights` / `computeSeedWeights` / `computePreferenceKeywords`）。`applySeedWeights` / `revokeSeedWeights` 直接改传进来的 `MutableMap<String, ThemePreference>`，与 RN 的「共享引用」语义一致。`normalizeText` 复用既有 `TrackKeys.normalizeText`，不复制第二份归一化。 |
+| `timeSlot.ts`（72） | **保留**（时钟与区时注入） | `core/.../recommend/m3/TimeSlot.kt` | RN 用 `new Date(now).getHours()`（本地时区）。原生用 `java.time` 显式注入 `ZoneId`，默认参数取系统时区，单测传 `ZoneId.of("Asia/Shanghai")` 锁死。时钟一律 `now: () -> Long`，文件内不出现 `System.currentTimeMillis()`。**降级**：无。 |
+| `similarity.ts`（262） | **降级** | `core/.../recommend/m3/Similarity.kt` | 原文件 12 个导出里，`buildSessionCoOccurrence` / `computeCandidateCoOccurrence` / `groupSimilarPlaylists` / `buildTrackPlaylistIndex` 全部依赖「已观察歌单」这套数据（`ObservedPlaylist` + 倒排索引 + 覆盖率），原生 M2 的候选池没有多歌单观察链路，照搬会得到一个恒 0 的函数。**保留**：`computeCoOccurrence` / `computePlaylistAffinity` / `decayWeight` / `computeFeedbackQuality` / `computeExposureScore` / `computePopularityDamping` / `computePlaylistSimilarity`（Jaccard），全部纯算术。**新增**（任务书要求「歌手/标签/语种/年代的 余弦 或 Jaccard」）：`artistCosine` / `tagCosine` / `langSimilarity` / `eraSimilarity` 四个面向「普通 Map」的相似度，输入是 `Map<String, Double>` 而非 RN 的固定画像结构。**砍掉**：SAR 会话共现（`buildSessionCoOccurrence`）——它要 `radioHistory` 带 `coverage` + `startedAt` 的会话切分，原生 `RadioPlayRecord` 字段齐备但候选打分入口在 `RadioScoring`（M2 文件，本波只许增量），接线收益低于改动风险，列入遗留。 |
+| `diversity.ts`（389） | **降级** | `core/.../recommend/m3/Diversity.kt` | 保留骨架：五档放宽阶梯、`checkItemConstraints` 的语种/歌手/歌单/专辑/种子/榜单/相似组七类约束、`softmaxSample`（温度夹紧 + 质量门槛）、探索间隔让位、`no_candidate_after_relaxation` / `fallback_channel` / `lang_consecutive_relaxed` / `lang_quota_relaxed` 四条降级原因。**降级三处**：① MMR 用「λ 加权的相关性-多样性折中」简化版（RN 侧 MMR 在 `mmr` 模块，本波按任务书要求放进 `Diversity.kt` 自成一体）；② 同作品软降频用 `workKey` 精确相等（RN 同）；③ 分类轮换退化为「同 groupIds 在窗口内出现次数超比例即降权」，不做 RN 的滑动轮换位。**砍掉**：`countFinalChannels`（原生 `Channels.countChannels` 已有等价物）。 |
+| `similarArtist.ts`（579） | **保留** | `core/.../recommend/m3/SimilarArtist.kt` | 解析（MB search / MB lookup / LB similar）、四阶段状态机、缓存整理（TTL + 容量 + pending 不受 TTL）、预算调度、种子轮换、`inferArtistLangFromTags` 全部是纯函数，网络靠注入的 `suspend` 函数——与 RN 的 `SimilarArtistIo` 一一对应。**降级**：`runSimilarArtistRefresh` 的 `Promise` 串行改 `suspend` 顺序执行（原生本来就跑在协程里，不需要手动队列）。 |
+| `similarArtistStore.ts`（179） | **降级** | `app/.../data/SimilarArtistRuntime.kt` | 存储形状、TTL、容量、防抖落盘、`persistAllowed` 降级策略全部照搬；HTTP 层重写为 `HttpURLConnection` + **全局限 1 req/s 的串行队列** + MB 强制 `User-Agent`。**缓存键另起** `xunyin_recommend_similar_artist_v1`（RN 是 `xunyin_recommend_artistsim_v1`）——形状不同不互解析，任务书硬要求。 |
+| `artistLanguageStore.ts`（122） | **保留** | `app/.../data/ArtistLangStore.kt` | 三个观察入口（`lyric` / `field` / `relation`）+ 防抖落盘 + 读盘失败不落盘。键沿用 RN 的 `xunyin_recommend_artist_lang_v1`（形状一致，可互读）。 |
+| `feedback.ts`（494） | **增量接线，不新增文件** | 既有 `core/.../recommend/ThemeFeedback.kt` / `NameTokenFeedback.kt` + `app/.../data/RadioRuntime.kt` | RN 的 `settlePlayRecord` / `settleExplicitFeedback` 在 M2 已有等价物（`RadioBehavior` / `RadioSettlement`）。本波只补「显式反馈结算进主题与词面」这一段：`like` / `dislike` / `early_skip` 三类目前只落 `TrackPreference` 与 `PlaylistPreference`，没有进 `ThemePreference`（分类）与 `TokenPreference`（词面）。 |
+| `candidate.ts`（698） | **只读消费侧**（不移植） | —— | 候选抓取（`sdkCatalog` 分页 / 桶召回 / 详情预算 / `knownExternalPlaylists`）是 RN 侧的数据供给层，原生对应的是 `RadioRuntime` 的 `VoiceFetcher` / `RelatedFetcher`（M2 已有）。本波只按任务 8 给通道 C 补**一个**真实候选来源（相似歌手），不重写候选抓取。`computeBucketDetailReserve` / `computePoolBucketLimits` 因此只移植、不接线。 |
