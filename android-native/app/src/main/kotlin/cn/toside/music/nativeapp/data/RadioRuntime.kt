@@ -1,12 +1,14 @@
 package cn.toside.music.nativeapp.data
 
 import android.content.Context
+import android.util.Log
 import cn.toside.music.core.player.DislikeInfo
 import cn.toside.music.core.player.PlayMusicInfo
 import cn.toside.music.core.recommend.DislikeRules
 import cn.toside.music.core.recommend.PlaylistRank
 import cn.toside.music.core.recommend.m3.Discovery
 import cn.toside.music.core.recommend.m3.Onboarding
+import cn.toside.music.core.recommend.radio.ArtistLangLookup
 import cn.toside.music.core.recommend.radio.CandidateBuildParams
 import cn.toside.music.core.recommend.radio.ChannelId
 import cn.toside.music.core.recommend.radio.ExclusionContext
@@ -43,6 +45,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -63,6 +66,8 @@ data class RadioStatus(
     val negativeStreak: Int = 0,
     val sampleSize: Int = 0,
     val error: String? = null,
+    /** 最近一轮刷新 + 选曲的原因（`lang_quota_relaxed` / `relax_level_N` / `lang_unmet:*` …）。 */
+    val reasons: List<String> = emptyList(),
 )
 
 /**
@@ -76,9 +81,10 @@ data class RadioStatus(
  * - 不喜欢 = 写 `@dislike_list` + 引擎负反馈 + 从队列撤下并跳下一首。
  *
  * 与 RN 的差异（降级，已记 lane 报告）：
- * - 相似歌手（E）只做「后台刷新 + 缓冲取货」，首批队列拿不到 E 的曲子（宁可晚到，不加首屏延迟）；
- * - 语种桶（L1~L4）已移植纯规则，但候选流的 `lang` 字段只有 kg/tx 逐曲字段才填得上，
- *   配额在实际选曲里仍是「缺席即不限」；音频相似未移植；
+ * - 相似歌手（E）平时是「后台刷新 + 缓冲取货」；开播前额外用**上一会话缓存**做一次
+ *   kg 搜歌补给（W5-3 方案 b，硬上限 2.5 s，缓存为空则零请求），首屏因此可能带 E；
+ * - 语种四级链已接到候选与历史项；`kw`/`wy`/`mg` 没有逐曲语种字段，主要靠 L2 桶提示与
+ *   L3 歌手表，L4 只判 zh/ja/ko/other（不判 en，RN 同）；
  * - 导入归因（[RadioPlatform.importedOrigins]）返回空，M1 未保存导入来源映射。
  */
 class RadioRuntime(
@@ -94,12 +100,22 @@ class RadioRuntime(
     /** 可注入随机源：种子固定后可复现（项目教训：不可注入的随机源会让用例抖动）。 */
     private val random = Random(System.currentTimeMillis())
 
+    /**
+     * L3 歌手语言表查询（core 不依赖 app，注入 lambda）：
+     * 表未载入 / 查不到 / 条目是 unknown 一律 null，由 [CandidateLang] 降级到 L4。
+     * `lookup()` 是非挂起读内存表，取曲路径上不碰磁盘；键按归一化口径查（见 `ArtistLangStore.lookup`）。
+     */
+    private val artistLang: ArtistLangLookup = { artist ->
+        runCatching { RecommendStores.artistLang.lookup(artist) }.getOrNull()
+    }
+
     private val engine =
         RadioEngine(
             platform = Platform(),
             rng = { random.nextDouble() },
             now = { System.currentTimeMillis() },
             scope = scope,
+            artistLang = artistLang,
         )
 
     private val pending = ArrayDeque<RecommendQueueItem>()
@@ -113,6 +129,9 @@ class RadioRuntime(
     private var refilling = false
     private var reordering = false
     private var persistJob: Job? = null
+
+    /** 上一次打日志的原因串：避免每秒刷新日志刷屏。 */
+    private var lastLoggedReasons: List<String> = emptyList()
 
     /** 读盘完成信号：播种与开播都要等它，避免被 `restoreState` 覆盖。 */
     private val stateRestored = CompletableDeferred<Unit>()
@@ -134,6 +153,8 @@ class RadioRuntime(
     init {
         engine.onStateChanged = { state -> schedulePersist(state) }
         scope.launch {
+            // 歌手语言表要尽早载入：L3 的查询是非挂起的 `lookup()`，表没载完就整段降级到 L4
+            runCatching { RecommendStores.artistLang.load() }
             runCatching { stateStore.read()?.let { engine.restoreState(it) } }
             stateRestored.complete(Unit)
             // 问卷播种必须在读盘之后：先恢复 themeWeights 再补播，否则读盘会把新播种覆盖回去
@@ -190,6 +211,9 @@ class RadioRuntime(
             mode = targetMode
             lastError = null
             engine.startSession(targetMode)
+            // 首屏 E 补给（W5-3 方案 b）：只读上一会话缓存 + kg 搜歌，硬上限 2.5s；
+            // 缓存为空立刻返回、不发请求，冷启动不会为首屏 E 付出任何延迟
+            prefillSimilarArtistBuffer()
             try {
                 engine.warmUp(RadioConfig.Queue.TARGET_SIZE)
                 pending.addAll(engine.getRecommendations(RadioConfig.Queue.TARGET_SIZE))
@@ -233,6 +257,22 @@ class RadioRuntime(
         engine.endSession()
         lastError = null
         publish()
+    }
+
+    /**
+     * 首屏 E 补给：用上一会话缓存里的相似歌手名单做 kg 搜歌，产物进缓冲，
+     * 第一次 `fetchPool` 的 step 3 直接取货。
+     *
+     * **不占取曲延迟预算的证明**：缓存为空时 `planCachePrefill` 返回空表、
+     * `prefillFromCache` 直接返回 0（一个请求都不发）；有缓存时整段包在
+     * [SIMILAR_PREFILL_TIMEOUT_MS] 硬超时里，超时照常出歌（E 这轮让位）。
+     * `fetchSimilarArtist` 仍返回 0 requests，取曲路径本身不发任何 E 请求。
+     */
+    private suspend fun prefillSimilarArtistBuffer() {
+        val runtime = runCatching { RecommendStores.similarArtist }.getOrNull() ?: return
+        withTimeoutOrNull(SIMILAR_PREFILL_TIMEOUT_MS) {
+            runCatching { runtime.prefillFromCache(System.currentTimeMillis()) }
+        }
     }
 
     suspend fun toggle(targetMode: RadioMode = mode): String? {
@@ -452,6 +492,12 @@ class RadioRuntime(
 
     private fun publish() {
         val summary = runCatching { engine.getSummary() }.getOrNull()
+        val reasons = summary?.reasons.orEmpty()
+        // 选曲原因只在变化时打一条：配额放开/降级/供给不足是排查真机语种分布的第一手线索
+        if (reasons != lastLoggedReasons) {
+            lastLoggedReasons = reasons
+            if (reasons.isNotEmpty()) Log.d(TAG, "电台原因：$reasons")
+        }
         _status.value =
             RadioStatus(
                 active = active,
@@ -467,6 +513,7 @@ class RadioRuntime(
                 negativeStreak = summary?.sessionHealth?.negativeStreak ?: 0,
                 sampleSize = summary?.sessionHealth?.sampleSize ?: 0,
                 error = lastError,
+                reasons = reasons,
             )
     }
 
@@ -594,7 +641,7 @@ class RadioRuntime(
         now: Long,
     ): RadioFetchResult {
         val profile = buildRadioProfile()
-        val params = CandidateBuildParams(profile, now, buildRadioExclusion(), engine.state.themeWeights)
+        val params = CandidateBuildParams(profile, now, buildRadioExclusion(), engine.state.themeWeights, artistLang)
         val candidates = mutableListOf<PoolCandidate>()
         val observed = mutableListOf<ObservedPlaylist>()
         val reasons = mutableListOf<String>()
@@ -781,17 +828,19 @@ class RadioRuntime(
         reasons: MutableList<String>,
     ): Int {
         val weights = runCatching { RecommendStores.onboarding.weights() }.getOrNull().orEmpty()
-        val keyword = Discovery.pickRestockKeyword(weights, rotation)
-        if (keyword == null) {
+        val pick = Discovery.pickRestock(weights, rotation)
+        if (pick == null) {
             reasons.add("discovery_restock:no_language_preference")
             return 0
         }
-        val page = runCatching { SearchRuntime.search(keyword, 1, SEARCH_SOURCE) }.getOrNull() ?: return 1
+        val page = runCatching { SearchRuntime.search(pick.keyword, 1, SEARCH_SOURCE) }.getOrNull() ?: return 1
         val tracks = page.list.take(TRACKS_PER_SOURCE)
         if (tracks.isEmpty()) return 1
-        val created = RadioCandidates.createDiscoveryCandidates(tracks, keyword, params)
+        // 这一批搜索就是为该语种桶发的：把问卷选项对应的桶作为 L2 提示传下去，
+        // 否则「欧美」「小语种」这类关键词在 kg 词表里查不到、整批只能落 unknown
+        val created = RadioCandidates.createDiscoveryCandidates(tracks, pick.keyword, params, langHint = pick.langHint)
         candidates.addAll(created)
-        reasons.add("discovery_restock:$keyword:${created.size}")
+        reasons.add("discovery_restock:${pick.keyword}:${created.size}")
         return 1
     }
 
@@ -860,6 +909,7 @@ class RadioRuntime(
     }
 
     companion object {
+        private const val TAG = "RadioRuntime"
         private const val RADIO_COMMIT_AHEAD = 2
         private const val PENDING_LOW_WATER = 4
         private const val PENDING_REFILL = 10
@@ -868,6 +918,9 @@ class RadioRuntime(
         private const val MAX_PROFILE_SEEDS = 40
         private const val MAX_ARTIST_HITS = 3
         private const val MAX_SIMILAR_SEEDS = 4
+
+        /** 首屏 E 补给硬上限：与任务书方案 a 的 2.5 s 同预算；缓存为空时不会走到这里。 */
+        private const val SIMILAR_PREFILL_TIMEOUT_MS = 2_500L
         private const val TRACKS_PER_SOURCE = 20
         private const val FETCH_STEPS = 5
         private const val SEARCH_SOURCE = "kw"

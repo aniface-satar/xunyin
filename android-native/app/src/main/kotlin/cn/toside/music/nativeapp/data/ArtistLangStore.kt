@@ -1,6 +1,7 @@
 package cn.toside.music.nativeapp.data
 
 import android.content.Context
+import cn.toside.music.core.recommend.TrackKeys
 import cn.toside.music.core.recommend.m3.LangBucket
 import cn.toside.music.core.recommend.m3.Language
 import cn.toside.music.core.storage.ShardedKvStore
@@ -44,6 +45,21 @@ class ArtistLangStore(
     /** 打分路径用：未 load 完成时返回空表而不是抛错，别让存储时序卡住取曲。 */
     fun peek(): Map<String, Language.ArtistLangEntry> = table.orEmpty()
 
+    /**
+     * L3 查询：`core` 传进来的键来自 `TrackKeys.getArtistKeys`（已归一化，拉丁名小写）。
+     *
+     * 先按原键查，再按 [TrackKeys.normalizeText] 归一化查——第二跳是为了读回 Wave5 的磁盘表：
+     * 那时唯一的写入方是 MB 艺人事实（`facts.name` 原样落键），拉丁歌手名带大写，
+     * 只按归一化键查会一条都命中不了。新写入已统一归一化（见 [observeNow]），两跳对新数据等价。
+     */
+    fun lookup(artist: String): LangBucket? {
+        val current = table ?: return null
+        current[artist]?.let { return it.bucket }
+        val normalized = TrackKeys.normalizeText(artist)
+        if (normalized == artist) return null
+        return current[normalized]?.bucket
+    }
+
     suspend fun load(force: Boolean = false): MutableMap<String, Language.ArtistLangEntry> {
         table?.takeIf { !force }?.let { return it }
         return mutex.withLock {
@@ -79,7 +95,7 @@ class ArtistLangStore(
     ) {
         if (bucket == null || artists.isEmpty()) return
         val current = load()
-        Language.updateArtistLangTable(current, artists, bucket, source, ARTIST_TABLE_LIMIT, now)
+        Language.updateArtistLangTable(current, keysOf(artists), bucket, source, ARTIST_TABLE_LIMIT, now)
         dirty = true
     }
 
@@ -96,7 +112,7 @@ class ArtistLangStore(
     ) {
         if (bucket == null || artists.isEmpty()) return
         val current = table ?: return
-        Language.updateArtistLangTable(current, artists, bucket, source, ARTIST_TABLE_LIMIT, now)
+        Language.updateArtistLangTable(current, keysOf(artists), bucket, source, ARTIST_TABLE_LIMIT, now)
         dirty = true
     }
 
@@ -118,5 +134,9 @@ class ArtistLangStore(
     companion object {
         const val KEY = "xunyin_recommend_artist_lang_v1"
         const val ARTIST_TABLE_LIMIT = 500
+
+        /** 写入键与读侧同口径（`TrackKeys.getArtistKeys` 的归一化），否则拉丁歌手名永远查不到。 */
+        private fun keysOf(artists: List<String>): List<String> =
+            artists.map { TrackKeys.normalizeText(it) }.filter { it.isNotEmpty() }.distinct()
     }
 }

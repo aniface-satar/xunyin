@@ -76,6 +76,51 @@ class SimilarArtistRuntime(
             snapshot
         }
 
+    /**
+     * 首屏补给（W5-3 方案 b）：用**上一会话缓存里的相似歌手名单**做 kg 搜歌，产物进缓冲，
+     * 供开播后的第一次 `fetchPool` 直接取货。
+     *
+     * 三条边界：
+     * 1. 缓存为空 / 缓存里没有相似歌手 → 直接返回 0，**不发任何请求**（首屏无 E，与波前一致）；
+     * 2. 只走 kg 快队列，不碰 MB/LB（不占 1 req/s 的合规队列），调用方另有整体超时；
+     * 3. 不推进缓存的 `nextIndex`/`songsFetchedAt`：补给是只读的，
+     *    轮换与冷却仍由后台 [refresh] 独占维护，避免两条路径互相踩。
+     *
+     * @return 补给到的歌手曲目条数（0 = 本轮没有 E 货）
+     */
+    suspend fun prefillFromCache(
+        now: Long,
+        maxArtists: Int = POLICY.PREFILL_ARTISTS,
+    ): Int {
+        val picks = SimilarArtist.planCachePrefill(loadCache(now), maxArtists)
+        if (picks.isEmpty()) return 0
+        val songs = mutableListOf<SimilarArtist.SongFetch<JsonObject>>()
+        for (pick in picks) {
+            val tracks = kgSongs(pick.artistName)
+            if (tracks.isNotEmpty()) songs.add(SimilarArtist.SongFetch(pick.seedArtist, pick.artistName, tracks))
+        }
+        buffer(songs)
+        return songs.size
+    }
+
+    /**
+     * kg 搜歌（国内快队列）。取消必须原样抛出：补给有超时上限，
+     * `runCatching` 会把 `CancellationException` 一起吞掉，超时就形同虚设。
+     */
+    private suspend fun kgSongs(artist: String): List<JsonObject> {
+        if (artist.isBlank()) return emptyList()
+        val found =
+            try {
+                SearchRuntime.search(artist, 1, KG_SOURCE)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                null
+            }
+        val tracks = found?.list ?: return emptyList()
+        return tracks.take(POLICY.SONGS_PER_ARTIST)
+    }
+
     private fun buffer(songs: List<SimilarArtist.SongFetch<JsonObject>>) {
         if (songs.isEmpty()) return
         synchronized(bufferLock) {
@@ -193,11 +238,7 @@ class SimilarArtistRuntime(
                 return SimilarArtist.parseMusicBrainzArtistLookup(body)
             }
 
-            override suspend fun kgSongs(name: String): List<JsonObject> {
-                if (name.isBlank()) return emptyList()
-                val page = runCatching { SearchRuntime.search(name, 1, KG_SOURCE) }.getOrNull() ?: return emptyList()
-                return page.list.take(POLICY.SONGS_PER_ARTIST)
-            }
+            override suspend fun kgSongs(name: String): List<JsonObject> = kgSongs(name = name)
         }
 
     /**
@@ -262,6 +303,9 @@ class SimilarArtistRuntime(
 
             /** 缓冲最多留 24 位歌手的曲目：再多也只是把过期的候选堆在内存里。 */
             const val BUFFER_LIMIT = 24
+
+            /** 首屏补给一次最多搜几位相似歌手：每搜一位会多一次 kg 请求，2 位够铺满 E 的首批配额。 */
+            const val PREFILL_ARTISTS = 2
         }
 
         private fun escapeQuery(name: String): String = name.replace('"', ' ').replace('\\', ' ').trim()
