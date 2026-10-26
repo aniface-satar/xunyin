@@ -268,4 +268,31 @@ class RecommendProfileTest {
         val newest = input.playHistory.last()
         assertEquals("实时1", newest.track.name)
     }
+
+    @Test
+    fun assemblerFiltersOutLocalTracksFromAllThreeInputs() {
+        // W5-13：本地曲（source == "local"）不进画像 —— 三路输入一并剔除
+        val local =
+            buildJsonObject {
+                put("name", "本地歌")
+                put("singer", "本地歌手")
+                put("source", "local")
+            }
+        val stored =
+            listOf(
+                ProfileHistoryEntry(track("在线历史", "歌手"), now - 1000),
+                ProfileHistoryEntry(ProfileTrack("本地历史", "歌手", "local"), now - 2000),
+            )
+        val input =
+            ProfileInputAssembler.assemble(
+                loveTracks = listOf(music("在线收藏", "歌手"), local),
+                userListTracks = listOf(local, music("在线自建", "歌手")),
+                storedHistory = stored,
+                livePlayed = listOf(music("在线实时", "歌手"), local),
+                livePlayedAt = now,
+            )
+        assertEquals(listOf("在线收藏"), input.loveTracks.map { it.name })
+        assertEquals(listOf("在线自建"), input.userListTracks.map { it.name })
+        assertEquals(listOf("在线历史", "在线实时"), input.playHistory.map { it.track.name })
+    }
 }

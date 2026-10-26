@@ -1,8 +1,20 @@
 package cn.toside.music.core.recommend
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
+
+/** 本地曲库曲目的 `source` 值（S17 本地曲库写入，W5-13 画像过滤口径）。 */
+const val LOCAL_SOURCE = "local"
+
+/** 曲目 `source` 字段：缺失/非字符串返回 null，与 RadioTrackKeys 的读法同语义。 */
+fun JsonObject.sourceField(): String? =
+    (this["source"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
+
+/** 是否本地曲（`source == "local"`）：推荐画像与词面学习不吃本地曲（W5-13）。 */
+fun JsonObject.isLocalTrack(): Boolean = sourceField() == LOCAL_SOURCE
 
 /**
  * 踩雷规则解析 —— RN `utils/dislikeManage.ts` 的 `updateDislikeInfo` 纯规则部分。
@@ -104,6 +116,7 @@ object ProfileSignals {
         ProfileTrack(
             name = musicInfo.str("name"),
             singer = musicInfo.str("singer"),
+            source = musicInfo.sourceField(),
         )
 
     fun tracksOf(musicList: List<JsonObject>): List<ProfileTrack> = musicList.map { trackOf(it) }
@@ -134,18 +147,25 @@ object ProfileInputAssembler {
         livePlayedAt: Long,
         historyLimit: Int = HISTORY_LIMIT,
     ): ProfileInput {
-        val history = storedHistory.take(historyLimit).toMutableList()
+        // W5-13：本地曲不进画像（产品口径默认「过滤」）——大批 SAF 导入会把
+        // 歌手先验与词面整体拉向用户硬盘目录，收藏/自建歌单/历史三路一并剔除。
+        val history =
+            storedHistory
+                .filterNot { it.track.source == LOCAL_SOURCE }
+                .take(historyLimit)
+                .toMutableList()
         val seen = history.map { trackKey(it.track) }.toMutableSet()
         for (musicInfo in livePlayed) {
             if (history.size >= historyLimit) break
+            if (musicInfo.isLocalTrack()) continue
             val track = ProfileSignals.trackOf(musicInfo)
             if (track.name.isNullOrEmpty() && track.singer.isNullOrEmpty()) continue
             if (!seen.add(trackKey(track))) continue
             history += ProfileHistoryEntry(track, livePlayedAt)
         }
         return ProfileInput(
-            loveTracks = ProfileSignals.tracksOf(loveTracks),
-            userListTracks = ProfileSignals.tracksOf(userListTracks),
+            loveTracks = ProfileSignals.tracksOf(loveTracks.filterNot { it.isLocalTrack() }),
+            userListTracks = ProfileSignals.tracksOf(userListTracks.filterNot { it.isLocalTrack() }),
             playHistory = history,
         )
     }

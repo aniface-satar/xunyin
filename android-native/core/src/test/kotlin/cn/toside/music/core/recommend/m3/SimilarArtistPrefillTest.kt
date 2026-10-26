@@ -82,4 +82,27 @@ class SimilarArtistPrefillTest {
         val cache = SimilarArtist.Cache(byArtist = mapOf("甲" to record(listOf("A"), fetchedAt = 1)))
         assertTrue(SimilarArtist.planCachePrefill(cache, maxArtists = 0).isEmpty())
     }
+
+    @Test
+    fun `补给冷却期内不开闸`() {
+        val gate = SimilarArtist.PrefillGate()
+        // 从未补给过：开闸
+        assertTrue(SimilarArtist.prefillAllowed(now = 1_000, lastPrefillAt = 0))
+        // 刚补给过：60 s 内一律不放行（防抖动式停播→开播每轮都搜歌）
+        assertTrue(!SimilarArtist.prefillAllowed(now = 60_000, lastPrefillAt = 1_000))
+        assertTrue(SimilarArtist.prefillAllowed(now = 61_000, lastPrefillAt = 1_000))
+    }
+
+    @Test
+    fun `滑窗内补给次数到上限就停`() {
+        val gate = SimilarArtist.PrefillGate(cooldownMs = 0)
+        val now = 600_000L
+        val recent = listOf(now - 60_000, now - 120_000)
+        assertTrue(SimilarArtist.prefillAllowed(now, lastPrefillAt = now - 60_000, recentPrefills = recent, gate = gate))
+        val full = recent + (now - 180_000)
+        assertTrue(!SimilarArtist.prefillAllowed(now, lastPrefillAt = now - 60_000, recentPrefills = full, gate = gate))
+        // 滑窗外的记录不计入
+        val older = listOf(now - 11 * 60_000, now - 12 * 60_000, now - 13 * 60_000)
+        assertTrue(SimilarArtist.prefillAllowed(now, lastPrefillAt = now - 60_000, recentPrefills = older, gate = gate))
+    }
 }

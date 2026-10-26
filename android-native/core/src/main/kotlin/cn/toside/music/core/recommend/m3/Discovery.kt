@@ -17,8 +17,13 @@ import kotlin.math.roundToInt
  * 这是唯一一条不依赖音频信号的「不撞熟歌」来源。
  */
 object Discovery {
-    /** RN `candidatePool.newestListRatio`：每 10 轮里有 3 轮用「最新」排序。 */
-    const val NEWEST_RATIO = 0.3
+    /**
+     * RN `candidatePool.newestListRatio`：每 10 轮里有 7 轮用「最新」排序
+     * （RN config.ts:212「最新:最热 = 7:3 轮转」）。
+     * W7 语义修正：Wave5 移植成 0.3 且注释写成「3 轮最新」，是把「7:3」读反了；
+     * 实证 RN 源码后改回 0.7（见 lane 报告）。
+     */
+    const val NEWEST_RATIO = 0.7
 
     private val NEWEST_PATTERN = Regex("最新|新歌|新品|new", RegexOption.IGNORE_CASE)
 

@@ -11,8 +11,8 @@ import org.junit.Test
  * 探索通道 C 的纯选择规则（任务 8）。
  *
  * 两条关键语义：
- * - 「最新」排序不是每轮都刷（RN 0.3 成新率），原生侧因一次刷新只跑 1~3 步而在
- *   调用处把成新率抬到 1.0 —— 纯函数本身仍按比例算，改比例不改行为；
+ * - 「最新」排序按 RN `newestListRatio = 0.7`（最新:最热 7:3）轮换；W7 语义修正：
+ *   Wave5 曾移植成 0.3 且在调用处抬到 1.0，实证 RN 源码后改回 0.7（见 lane 报告）；
  * - 语种补货只认**明确想要**（> 中性点 50%）的语言项：0% 是「不想听」，
  *   拿它去补货等于逆着用户表态推歌。
  */
@@ -40,13 +40,13 @@ class DiscoveryTest {
 
     @Test
     fun rotationBelowThresholdUsesNewestSort() {
-        // ratio 0.3 → 轮次模 10 落在 0/1/2 时走最新
-        for (rotation in 0..2) {
+        // ratio 0.7 → 轮次模 10 落在 0..6 时走最新（RN 最新:最热 7:3）
+        for (rotation in 0..6) {
             val pick = Discovery.pickSort(sorts, rotation, hotSortId = "hot")
             assertEquals("new", pick.sortId)
             assertTrue(pick.useNew)
         }
-        for (rotation in 3..9) {
+        for (rotation in 7..9) {
             val pick = Discovery.pickSort(sorts, rotation, hotSortId = "hot")
             assertEquals("hot", pick.sortId)
             assertFalse(pick.useNew)
@@ -132,15 +132,16 @@ class DiscoveryTest {
 
     /**
      * 成新率的实证（W7 任务 2）：原生一轮刷新的抓取预算只有 14（steps = 3），
-     * 5 个步骤里只有第 4 步是发现通道，所以「最新」歌单的供给远低于 RN。
+     * 5 个步骤里只有第 4 步是发现通道。
      *
-     * RN 的 0.3 是给「一次刷新读十几张歌单」设计的：一轮 ≈ 10 × 0.3 = 3 张新鲜歌单。
-     * 原生一轮最多 1 张、且只在 60% 的轮次里跑到，按 0.3 折算只剩 0.1 张/轮 ——
-     * C 通道事实上断供。所以调用侧维持 1.0（见 `RadioRuntime.fetchDiscoveryPlaylist`），
-     * 本用例锁住这两个数字。
+     * W7 语义修正：前会话据此维持 ratio = 1.0，理由是「RN 的 0.3 在原生预算下断供」；
+     * 读 RN 源码实证后推翻 —— RN `candidatePool.newestListRatio = 0.7`（config.ts:212，
+     * 「最新:最热 = 7:3 轮转」），0.3 是 Wave5 移植时读反。按 0.7 实测：100 轮里发现通道
+     * 命中 60 轮，其中 42 轮出「最新」、18 轮出热门，C 通道无断供且保住 RN 的混合比，
+     * 调用侧已回归 core 默认（见 `RadioRuntime.fetchDiscoveryPlaylist`）。
      */
     @Test
-    fun newestSupplyUnderNativeBudgetIsStarvedByRnRatio() {
+    fun newestSupplyUnderNativeBudget() {
         val rounds = 100
         val steps = Discovery.planSteps(budget = 14)
         val discoveryStep = 4
@@ -155,12 +156,12 @@ class DiscoveryTest {
             return count
         }
 
+        val atRatio = newestRounds(Discovery.NEWEST_RATIO)
         val atFull = newestRounds(1.0)
-        val atRn = newestRounds(Discovery.NEWEST_RATIO)
-        // 100 轮里发现通道命中 60 轮；成新率 1.0 时 60 轮都出「最新」歌单，
-        // 0.3 时只有轮次同时落在「模 10 < 3」与「发现步」上的 10 轮出得了
+        // 100 轮里发现通道命中 60 轮；0.7 时 42 轮出「最新」、18 轮出热门 —— 与 RN 7:3 同构
         assertEquals(60, atFull)
-        assertEquals(10, atRn)
-        assertTrue("原生 C 通道的绝对供给本就远低于 RN，按 0.3 折算会断供", atRn * 10 < atFull * 3)
+        assertEquals(42, atRatio)
+        // 原生预算下 0.7 不会断供（此前 0.3 只剩 10 轮，是移植错误的推论而非 RN 语义）
+        assertTrue("0.7 成新率下 C 通道最新歌单供给充足", atRatio * 3 > atFull)
     }
 }
