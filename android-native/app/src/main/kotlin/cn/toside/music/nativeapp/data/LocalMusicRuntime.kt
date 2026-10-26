@@ -47,7 +47,11 @@ import kotlinx.serialization.json.put
 object LocalMusicRuntime {
     private const val TAG = "LocalMusic"
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /**
+     * 导入全程在 IO 线程：读目录、读标签、写列表都是阻塞 IO，
+     * 放主线程会在 1000 首目录时卡住界面（进度只靠 StateFlow 回传）。
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** 导入结果（UI 弹提示用）。 */
     data class Outcome(
