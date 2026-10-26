@@ -124,3 +124,195 @@
   属**有意行为**，真机上看到队列变短先查这个原因。
 - M3 的 `explorationGap` 与 M2 的探索间隔语义不完全一致（M2 用 streak，M3 看窗口内是否有探索曲），
   接的时候要确认不是「两个间隔叠加」，否则 C/D 通道会被双重限制。
+
+## Lane 报告（2026-10-26）
+
+**结论：任务 1~5 全部接线完成**（语种供给链 / `Diversity.select` 接管选曲 / 池子配额裁剪 / 通道 E 首屏供货 / 用例）。
+闸门 `ktlintCheck test assembleDebug` 全绿：**core 936 + app 111 = 1047**（基线 994，新增 53 条 core 用例，
+0 失败 0 错误 0 跳过），APK `28,701,860 B`（基线 `28,685,476 B`，+16 KB；中途出现过一次 29.1 MB 的
+打包对齐填充，`clean` 后复现为 16 KB 增量，属打包噪声而非代码体积）。
+
+### 0. 提交
+
+| 提交 | 内容 |
+| --- | --- |
+| `6c1cb48` | core 侧语种 L1~L4 供给链 + Diversity 接管选曲 + 池子配额裁剪 + E 计划层 |
+| `fb9ad8e` | app 侧注入 L3 歌手语言表 + 首屏 E 补给（方案 b） |
+| 本报告 | `docs/waves/w6-A.md` |
+
+### 1. 语种供给映射表
+
+四级链的实现只有一份（`Language.resolveLang`），本波新增的 `CandidateLang` 只做「从 `musicInfo` 取料 +
+把注入的歌手表 lambda 适配成 map」，不重写判定。
+
+| 级别 | 输入（原生侧实际能拿到的） | 命中面（预估，**无真机统计**） | 判不出时 |
+| --- | --- | --- | --- |
+| L1 逐曲字段 | `musicInfo.source` ∈ {`kg`,`tx`} 且 `meta.lang` 有值（kg=中文词表、tx=数字码表） | 只有 kg/tx 两源有字段；`kw`/`wy`/`mg` 详情接口不返回语种，恒为 null | 落到 L2 |
+| L2 桶提示 | ① 歌单分类标签**精确**命中语种词（`Language.mapKgLanguageWord`，不做子串）② 探索补货：问卷选项 id → 桶（`LanguageQuota.OPTION_TO_BUCKET`） | kw 歌单分类里「华语/粤语/日语/欧美」很常见，是 `kw` 池子的主要来源；「华语说唱」「欧美流行」这类复合词**故意不判** | 落到 L3 |
+| L3 歌手表 | `ArtistLangStore`（MB 关系链写入，强度 3），键按 `TrackKeys.normalizeText` 归一化 | 只有 E 通道刷新过 MB 的种子歌手才有记录，首批队列覆盖个位数百分比；跑几轮后逐步变厚 | 落到 L4 |
+| L4 字面统计 | `musicInfo.name + singer` 的字符统计（han/kana/hangul/latin/otherLetter） | 中日韩歌名/歌手名命中高；**拉丁一律不判 en**（RN 同：欧美原创与日韩英文歌名无法区分） | `bucket=null`、`level=NONE`，走自由名额（既不凑配额也不被卡） |
+
+落位点（四处，缺一处就等于没接）：
+
+1. `RadioPool.createCandidate`：创建即跑四级链，写 `lang` / `langLevel` / `langHint`；
+2. `RadioPool.mergeCandidates`：同曲合并时语种取较新一份、`langHint` 取先出现的（RN 同）；
+3. `RadioPool.buildFinalQueueItems`：**读时再解析一次**——老池子的候选没有 `lang` 字段，不能当成「永远判不出」；
+4. `RadioEngine.buildRecentSelectionItems`：历史项同样带语种（MMR 语言项、连播规则、配额「已用量」全靠它）。
+
+五条候选构建路径（歌单 / 榜单轮转 / 歌手命中 / 相似歌手 E / 探索补货）全部透传 `artistLang`；
+歌单路径额外把分类词作为 L2 提示，探索补货把问卷桶作为 L2 提示（关键词「欧美」「小语种」不在 kg 词表里，
+只靠关键词反查必然漏）。
+
+### 2. `RadioSelection` → `Diversity` 差异对照
+
+`RadioEngine.generateQueue` 的选曲点已换成 `Diversity.select`，注入 `langCaps`（问卷 targets →
+`computeLangCapsForBatch`，窗口重叠按 `batchSize` 折算）、`DEFAULT_MMR_LAMBDA`、`timeSlotAffinity.factorFor`、
+`exploration.explorationGap`。`RadioSelection` 标 `@Deprecated` 保留作语义参照，不再新增调用方。
+
+| 维度 | M2 `RadioSelection` | M3 `Diversity.select` | 影响 |
+| --- | --- | --- | --- |
+| 通道选择 | 按剩余额度**加权随机** | 按剩余额度**排序**（多者先，同额按 `targetPerWindow` 降序） | 队列的通道构成更可预测 |
+| 语种 | 无 | 逐首扣 `langCaps` + `consecutiveLangAllowed`（同语种最多连播 2）+ `instrumentalAllowed`（每 20 首 2 首纯音乐） | 本波的核心 |
+| 打分 | `base × 曝光惩罚` 的 softmax | `λ·relNorm − (1−λ)·maxSim(已选)` 再 softmax（λ=0.85） | 同歌手/同专辑/同语种相邻明显减少 |
+| 同作品版本 | 无 | `workKey` 重复时软降频 0.4（只降权不排除） | Live/Remix 不再挨着出 |
+| 时段 | 无 | `timeSlotFactor` 乘进权重（`TimeSlotProfile.computeAffinity`） | 早晚分布不同 |
+| 放宽阶梯 | 4 档，靠 `remaining[c]=0` + 重置返额度 | 5 档，末档 `langQuotaEnforced=false`，仍守连播与纯音乐 | 语种在枯竭时才放开 |
+| plan 通道没候选 | `channel_exhausted` 直接收口 | 走 **fallback 通道**（用候选自己的通道补位，记 `fallback_channel`） | 队列不被 plan 的通道构成饿死（RN 同） |
+| 额度用尽 | `quota_exhausted` | `quota_exhausted`（同上） | 无变化 |
+| 原因串 | `relax:N` / `channel_exhausted:X` / `quota_exhausted` | `relax_level_N` / `fallback_channel` / `lang_quota_relaxed` / `lang_consecutive_relaxed` / `no_candidate_after_relaxation` / `quota_exhausted` / `lang_unmet:<wire>` | 真机可诊断 |
+
+`RadioSelectionTest` 12 条断言**一条没删**（文件原样保留，加了 `@Suppress("DEPRECATION")` 与一句说明），
+等价断言迁到 `DiversitySelectionParityTest`（8 用例 / 15 断言）：
+
+| M2 用例 | M3 迁移后 |
+| --- | --- |
+| `respectsChannelQuota` | 同（通道配额仍按 plan 扣） |
+| `channelWithoutCandidatesHandsQuotaBack` | **换语义**：改用 fallback 补位并记 `fallback_channel`（M2 直接空队列；M3/RN 不走收口） |
+| `sameArtistIsSpacedOut` | 同（首档间隔 8） |
+| `explorationGapDefersExplorationChannels` | **换语义**：M3 看窗口内是否刚出现过探索曲，不看连续熟悉曲长度 |
+| `explorationGapOpensAfterEnoughFamiliarTracks` | 同（历史里没有探索曲即放行） |
+| `sameSeedPicksSameTracks` | 同（RNG 注入） |
+| `neverPicksSameKeyTwice` | **换语义**：M3 按候选对象去重（RN 的 Set 语义），键唯一由池子（`trackKey` 建索引）保证 |
+| `playlistRepeatCapSkipsRepeatedSource` | **换成**「放宽档把同歌单上限抬到 4 首」（M2 末档仍守 2） |
+
+### 3. 池子裁剪：淘汰规则与理由
+
+`RadioEngine.refreshPool` 每轮先按问卷算 `computeLangTargets`，再
+`computePoolBucketLimits(target × maxSize / windowSize × 1.5)` 得到各桶在池里的名额，最后
+`mergeCandidates(..., PoolCapOptions(limits, resolveBucket = { CandidateLang.resolve(...).bucket })`。
+
+规则（与 RN `capPoolSize` 逐行对齐）：
+
+1. 池子没超 `maxSize` → **不淘汰**（先补货再谈配额，避免冷启动把池子削空）；
+2. 超了 → 综合分降序（`affinity + coOccurrence + exploration − 0.1×exposureCount`，同分比 `addedAt` 新的优先）；
+3. 逐首收集，某桶已到名额的候选进 `overflow`，其余照收；
+4. 收满 `maxSize` 为止；没满就用 `overflow` **按分数补满**。
+
+为什么这么淘汰：
+
+- **淘汰按分数不按时间**：池子要留的是「下次生成队列最可能用得上」的候选，不是最后抓回来的那批；
+- **1.5 倍宽松系数**：淘汰是慢变量（要等下次抓取才能补货），名额卡太死会让某语种突然断供；
+- **限额卡不住时允许超配**：宁可池里多几首华语，也不让池子空着——空池子的代价（队列变短/走兜底）更大。
+
+`countPoolLang` 的落点是 `RadioEngine.selectionReasons`：目标 > 0 的桶在池里一首都没有 → `lang_unmet:<wire>`。
+这条和 `lang_quota_relaxed` 必须分开看：前者是**供给不足**，后者是**规则主动放开**，真机上两者长得一样。
+
+`computeBucketDetailReserve` **保持不接线**：原生侧没有「桶召回 + 详情预算分配」这一层
+（`RadioPool.planRefreshBudget` 在原生侧无调用方，详情抓取由 app 的 `fetchPool` 五步逐步驱动），
+硬造一个预算分配层会改掉抓取节奏，超出本 lane 的「接线」范围。
+
+### 4. 通道 E 首屏供货：选方案 b
+
+**做法**（`SimilarArtistRuntime.prefillFromCache` + `RadioEngine` 调用侧 `prefillSimilarArtistBuffer`）：
+开播后、`warmUp` 前，从**上一会话的相似歌手缓存**里按 `fetchedAt` 降序取最多 2 位歌手
+（每位从自己的 `nextIndex` 起轮换），只走 kg 搜歌队列，产物进缓冲，第一次 `fetchPool` 的 step 3 直接取货。
+
+为什么不是方案 a（首屏同步等 MB/LB 刷新）：
+
+- MB/LB 有全局 1 req/s 的合规节流，首屏等一次链式请求（搜索 → lookUp → similar → 2 次 kg 搜歌）
+  是 4~5 个串行请求，最低 4 s 起步，会直接吃掉取曲延迟预算；
+- 方案 b 不碰 MB/LB（**不占合规队列**），冷启动零成本。
+
+**首曲延迟论证**：
+
+- 缓存为空 / 记录里没有相似歌手 → `planCachePrefill` 返回空表，`prefillFromCache` **一个请求都不发**
+  （用例 `SimilarArtistPrefillTest.空缓存不发请求` 锁住）；这条路径上首屏延迟与 Wave5 完全一致；
+- 有缓存 → 整段包在 `withTimeoutOrNull(2_500L)` 里，超时照常出歌（E 这轮让位），
+  `CancellationException` 在 `kgSongs` 里原样抛出（`runCatching` 会吞掉取消、让超时形同虚设）；
+- `fetchSimilarArtist` 仍返回 **0 requests**（取曲路径本身不发任何 E 请求），W5 的约定不变；
+- 补给是只读的：不推进 `nextIndex` / `songsFetchedAt` / 冷却，缓存轮换仍由后台 `refresh` 独占维护。
+
+**真机数字留给用户**：JVM 侧只能证明「缓存为空时零请求」「有缓存时不阻塞超过 2.5 s」，
+首屏 E 的实际命中率与真实耗时要在真机上用 `logcat -s RadioRuntime` 看 `channelShare.E` 与 `reasons`。
+
+### 5. 语义修正（两处）与用例口径修正
+
+1. **`Diversity` fallback 通道记账错位（实证真 bug，Wave5 遗留）**
+   —— fallback 分支原来用「池中第一首的通道」给整池算权重，又把选中项记成这个通道。
+   实测（W5 端到端用例失败时打印）：`plan={A:8,B:6,C:3,D:0,E:3}` 但 `sel={A:17,B:2,C:0,D:0,E:1}`，
+   C/E 的曲目被记成 A，通道配额与 `getSummary().channelShare` 一起错位。
+   修法：`applyQualityGate` / `mmrScores` / `pickFrom` 改成接受 `channelOf: (FinalQueueItem) -> ChannelId`，
+   fallback 用 `{ it.channels.firstOrNull() ?: D }`，选中项记**自己**的通道；`mmrScores(pool, channel, …)`
+   保留为 public 包装。回归用例：`m3/DiversityFallbackChannelTest`。
+   *算式本身（打分、抽样、放宽阶梯）未改。*
+
+2. **歌手语言表键口径（实现补正，RN 侧的不一致）**
+   —— RN 的 `observeArtistRelation` 用 `facts.name`/`aliases` **原样**落键，读取侧
+   (`resolveLang`) 用的却是 `getArtistKeys` 归一化后的键：拉丁歌手名（大小写不同）永远查不到，
+   L3 对欧美歌手等于没有。原生只有 relation 一个写入方，所以按「写归一化、读两跳」收敛：
+   `ArtistLangStore.observe/observeNow` 统一 `TrackKeys.normalizeText` 落键，
+   `lookup()` 先查原键、再查归一化键（第二跳是为了读回 Wave5 已经写下的原样键表）。
+
+3. **用例口径修正（不是实现改动，单列以免被当成为过测试而改断言）**
+   - `CandidateLangTest` / `RadioCandidatesLangTest` 的 L3 用例原来给注入表传 `"Artist"` 原样键，
+     而 `artistKeys` 是归一化的 `"artist"` → 断言本来就不可能过；改成按同一口径构造表键。
+   - `RadioPoolLangCapTest` 原来拿 `trackKey` 比 `id`（`trackKey` 是 `ns:曲目__歌手` 形状）→ 改用 `musicInfo.id`。
+   - `LanguageQuotaWiringTest` 原来断言「华语 100% → 10 首全华语」，但同语种最多连播 2 首是硬规则
+     （配额放开档也守），第 3 首起必然走放宽档 → 用例拆成：2 首口径上断言 caps 生效；
+     另加一条锁「配额与连播规则打架时先放开配额（记 `lang_quota_relaxed`）」。
+   - `DiversitySelectionParityTest` 原来假设「plan 通道没候选 → `quota_exhausted`」，实际走 fallback → 按真实语义重写。
+
+### 6. 真机清单（Lane A 需要用户验的）
+
+| # | 场景 | 观察点 |
+| --- | --- | --- |
+| 1 | 问卷只滑「华语 100%」，连播 20 首 | `getSummary().reasons` 里不应有 `lang_unmet:zh`；华语占比应明显偏高。**若出现 `lang_quota_relaxed`，说明池里没有第二种语言、连播规则逼着放开配额——这是按规则工作，不是 bug** |
+| 2 | 问卷只滑「华语 0%」+ 其他语种，连播 20 首 | 队列里不应出现被 L1/L2/L3 判成 `zh` 的曲子；`reasons` 里的 `lang_unmet:xx` 指向的是**供给不足** |
+| 3 | 任一场景看 `channelShare` | C / E 应非 0（E 依赖上一会话缓存；首轮全新安装 E 为 0 属预期） |
+| 4 | 连播 30 首 | 对比 Wave5：「同歌手连推」「同专辑相邻」应更少（MMR 生效）；`maxRelaxLevel` 长期停在 3/4 说明池子质量差 |
+| 5 | 早（8 点）/ 晚（22 点）各一轮同一批种子 | 同一歌手的命中应不同（时段因子），否则查 `TimeSlotProfile` 样本量是否够 |
+| 6 | 音质/播放链路 | 选曲器换了但播放链路没动：起播、切歌、音质、「下一首」不应有任何变化 |
+| 7 | 全新安装首播 | 首屏 E 为 0（缓存为空、零请求）是设计；`logcat -s RadioRuntime` 不应出现阻塞或 ANR |
+| 8 | 二次开播（已有相似歌手缓存） | `channelShare.E` 应开始出现；首曲出现时间与 Wave5 相比差异应 ≤ 2.5 s 上限 |
+
+### 7. 触碰文件
+
+**core 主线**
+`recommend/radio/CandidateLang.kt`（新）、`RadioPool.kt`、`RadioCandidates.kt`、`RadioEngine.kt`、
+`RadioConfig.kt`（`POOL_EVICT_OVER_QUOTA_SLACK`）、`RadioSelection.kt`（仅注释 + `@Deprecated`）、
+`recommend/m3/Diversity.kt`（fallback 通道记账）、`Discovery.kt`（`restockPicks` / `pickRestock`）、
+`SimilarArtist.kt`（`planCachePrefill`）。
+
+**core 用例**
+新增 `CandidateLangTest`、`RadioCandidatesLangTest`、`RadioPoolLangCapTest`、`DiversitySelectionParityTest`、
+`RadioW6LangEndToEndTest`、`LanguageQuotaWiringTest`、`SimilarArtistPrefillTest`、`DiscoveryRestockTest`、
+`DiversityFallbackChannelTest`；改动 `RadioFixtures`（`musicInfo` 加 `lang`）、`RadioSelectionTest`（加注 + `@Suppress`）。
+
+**app**
+`data/ArtistLangStore.kt`（`lookup()` + 写入键归一化）、`data/RadioRuntime.kt`（注入、首屏 E、reasons、补货提示）、
+`data/SimilarArtistRuntime.kt`（`prefillFromCache` / `kgSongs` / `PREFILL_ARTISTS`）。
+
+**未触碰**：`ui/**`、`core/music/search/**`、`player/**`、`AndroidManifest.xml`、`LocalMusicRuntime.kt`、
+`gradle/**`、`.github/**`、`Diversity` / `Language` / `LanguageQuota` 的算式。
+
+### 8. 风险与未做
+
+- **`kw` 为主的池子仍然难兑现华语配额**（任务是已知风险，实测无真机数据）：L1 只有 kg/tx 有字段，
+  `kw` 靠 L2（歌单分类）+ L4（字面）。真机上 `lang_unmet:*` 会先出现，这属供给不足。
+- **端到端用例的池子是构造的**（40 首 kg「国语」+ 4 首「英语」、20 首目标只断言 ≥ 八成华语——连播硬规则会周期性插一首别的语种），真实池子受抓取预算与来源覆盖影响，
+  实际占比可能更低；用例锁的是「接线正确」不是「真机达标」。
+- **`computeBucketDetailReserve` 未接线**（见 §3）；
+- **`poolStats` 类诊断未上 UI**：原因只进 `RadioStatus.reasons` 与 logcat，`ui/radio` 是禁触范围。
+- `RadioRuntime.prefillSimilarArtistBuffer()` 每次都跑一遍：若缓存长期为空，这只是一次内存读，无网络成本；
+  但若用户频繁「停播→开播」，每轮都会做最多 2 次 kg 搜歌（每次 ~数百 ms，硬上限 2.5 s）。当前没加冷却，
+  真机上若观察到开播抖动，第一处要看这里。
