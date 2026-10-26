@@ -3,7 +3,9 @@ package cn.toside.music.nativeapp.data
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
+import cn.toside.music.core.local.EmbeddedLyric
 import cn.toside.music.core.local.LocalAudio
 import cn.toside.music.core.local.LocalImportPlan
 import cn.toside.music.core.local.LocalImportProgress
@@ -153,22 +155,46 @@ object LocalMusicRuntime {
         scope.launch { runImport(context.applicationContext, listId, listTitle, treeUri) }
     }
 
-    /** 本地曲目的同名 `.lrc` 歌词（供 `PlayerRuntime.observeLyrics` 用）；无则 null。 */
+    /**
+     * 本地曲目歌词（供 `PlayerRuntime.observeLyrics` 用），三级顺序与 RN 一致：
+     * **同名 `.lrc` → 内嵌歌词（ID3 USLT / MP4 ©lyr）** → 在线兜底由 PlayerRuntime 接。
+     * 产出 `{lyric, tlyric?, rlyric?}` JSON 形状不变。
+     */
     suspend fun readLyricJson(
         context: Context,
         info: JsonObject,
     ): JsonObject? {
         val filePath = info.localMetaText("filePath") ?: info.localText("id") ?: return null
         val uri = runCatching { Uri.parse(filePath) }.getOrNull() ?: return null
-        val lyricUri = SafDocuments.siblingLyricUri(context, uri) ?: return null
-        val text = SafDocuments.readText(context, lyricUri).getOrNull() ?: return null
-        val parsed = LocalLyric.parse(text)
-        if (!parsed.hasLyric) return null
-        return buildJsonObject {
-            put("lyric", parsed.lyric)
-            parsed.tlyric?.let { put("tlyric", it) }
-            parsed.rlyric?.let { put("rlyric", it) }
+        // 1) 同名 .lrc（RN getMusicFileLyric 的文件歌词优先）
+        val lyricUri = SafDocuments.siblingLyricUri(context, uri)
+        if (lyricUri != null) {
+            val text = SafDocuments.readText(context, lyricUri).getOrNull()
+            if (text != null) {
+                val parsed = LocalLyric.parse(text)
+                if (parsed.hasLyric) {
+                    return buildJsonObject {
+                        put("lyric", parsed.lyric)
+                        parsed.tlyric?.let { put("tlyric", it) }
+                        parsed.rlyric?.let { put("rlyric", it) }
+                    }
+                }
+            }
         }
+        // 2) 内嵌歌词：只读文件头 1 MB（RN 走原生 readLyric 直出 USLT 文本）
+        return embeddedLyricJson(context, uri)
+    }
+
+    /** 从音频文件头解析内嵌歌词（`EmbeddedLyric` 只做纯字节解析，SAF 读头在这里）。 */
+    suspend fun embeddedLyricJson(
+        context: Context,
+        uri: Uri,
+    ): JsonObject? {
+        val bytes =
+            SafDocuments.readHeader(context, uri, EmbeddedLyric.MAX_INPUT_BYTES).getOrNull()
+                ?: return null
+        val text = EmbeddedLyric.parse(bytes) ?: return null
+        return buildJsonObject { put("lyric", text) }
     }
 
     // ---------- 重定位（W5-7：失效曲目重扫持久授权树根找回新 URI） ----------
@@ -524,6 +550,16 @@ private fun JsonObject.documentExistsSafe(context: Context): Boolean {
     return SafDocuments.documentExists(context, uri)
 }
 
-/** 从 document URI 字符串里抠出原文件名 stem（`…/歌名 - 歌手.mp3` → `歌名 - 歌手`）。 */
-private fun stemFromUriString(uriString: String): String =
-    LocalTrack.splitNameAndExtension(uriString.substringAfterLast('/').substringAfterLast(':')).first
+/**
+ * 从 document URI 字符串里抠出原文件名 stem（`…/歌名 - 歌手.mp3` → `歌名 - 歌手`）。
+ * document URI 里的 document id 是百分号编码的，先经 [DocumentsContract] 解出真名；
+ * 解不出退回字符串截取（导入生成的 id 一定能解出）。
+ */
+private fun stemFromUriString(uriString: String): String {
+    val uri = runCatching { Uri.parse(uriString) }.getOrNull()
+    val documentId =
+        uri?.let { runCatching { DocumentsContract.getDocumentId(it) }.getOrNull() }
+            ?: uriString.substringAfterLast('/')
+    val fileName = documentId.substringAfterLast('/').substringAfterLast(':')
+    return LocalTrack.splitNameAndExtension(fileName).first
+}
