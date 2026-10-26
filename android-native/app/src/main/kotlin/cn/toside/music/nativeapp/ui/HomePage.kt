@@ -44,6 +44,7 @@ import cn.toside.music.nativeapp.data.ListRuntime
 import cn.toside.music.nativeapp.data.SearchRuntime
 import cn.toside.music.nativeapp.ui.leaderboard.LeaderboardDetailPage
 import cn.toside.music.nativeapp.ui.list.ListDetailPage
+import cn.toside.music.nativeapp.ui.radio.RadioPage
 import cn.toside.music.nativeapp.ui.search.SearchPage
 import cn.toside.music.nativeapp.ui.songlist.RecommendPanel
 import cn.toside.music.nativeapp.ui.songlist.SonglistDetailPage
@@ -142,6 +143,7 @@ private fun HomeTabContent(
                     onOpenSonglist = { source, id, title ->
                         navigator.push(HomeNavigator.Route.SonglistDetail(source, id, title))
                     },
+                    onOpenRadio = { navigator.push(HomeNavigator.Route.Radio) },
                     onOpenPlayer = onOpenPlayer,
                 )
             HomeTab.MY ->
@@ -174,6 +176,11 @@ private fun HomeTabContent(
                     source = detail.source,
                     id = detail.id,
                     title = detail.title,
+                    onBack = { navigator.back() },
+                    onOpenPlayer = onOpenPlayer,
+                )
+            HomeNavigator.Route.Radio ->
+                RadioPage(
                     onBack = { navigator.back() },
                     onOpenPlayer = onOpenPlayer,
                 )
@@ -262,6 +269,7 @@ private fun DiscoverPage(
     onSectionChange: (DiscoverSection) -> Unit,
     onOpenLeaderboard: (String, String) -> Unit,
     onOpenSonglist: (String, String, String) -> Unit,
+    onOpenRadio: () -> Unit,
     onOpenPlayer: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -302,7 +310,11 @@ private fun DiscoverPage(
         }
         when (section) {
             DiscoverSection.RECOMMEND ->
-                RecommendPanel(onOpenSonglist = onOpenSonglist, onOpenPlayer = onOpenPlayer)
+                RecommendPanel(
+                    onOpenSonglist = onOpenSonglist,
+                    onOpenRadio = onOpenRadio,
+                    onOpenPlayer = onOpenPlayer,
+                )
             DiscoverSection.RANKING ->
                 LeaderboardBoardsPage(onOpenLeaderboard = onOpenLeaderboard)
             DiscoverSection.SONGLIST ->
