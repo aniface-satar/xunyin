@@ -1,0 +1,58 @@
+{
+ "result": {
+  "artistCount": 83,
+  "artists": [
+   {
+    "id": 6452,
+    "name": "周杰伦",
+    "picUrl": "http://p2.music.126.net/NWv6PtSBkyWZzqbJVzBr7g==/109951169164936450.jpg",
+    "alias": [
+     "Jay Chou",
+     "周董"
+    ],
+    "albumSize": 42,
+    "musicSize": 582,
+    "picId": 109951169164936450,
+    "fansGroup": null,
+    "recommendText": null,
+    "appendRecText": null,
+    "fansSize": null,
+    "img1v1Url": "http://p2.music.126.net/_ECPuM0s0qtWhkpQOSTZUg==/109951169164936940.jpg",
+    "img1v1": 109951169164936940,
+    "mvSize": 9,
+    "followed": false,
+    "alia": [
+     "Jay Chou",
+     "周董"
+    ],
+    "trans": null
+   },
+   {
+    "id": 51128649,
+    "name": "周杰伦.",
+    "picUrl": "http://p2.music.126.net/IovRQwvXgZ234gCtiVHFyQ==/109951168883440426.jpg",
+    "alias": [
+     "周杰伦头号粉"
+    ],
+    "albumSize": 2,
+    "musicSize": 20,
+    "picId": 109951168883440426,
+    "fansGroup": null,
+    "recommendText": null,
+    "appendRecText": null,
+    "fansSize": null,
+    "img1v1Url": "http://p2.music.126.net/EgDbxjvdoYQ9-s4-ydOWlw==/109951171510013394.jpg",
+    "accountId": 6347778659,
+    "img1v1": 109951171510013394,
+    "mvSize": 0,
+    "followed": false,
+    "alia": [
+     "周杰伦头号粉"
+    ],
+    "trans": null
+   }
+  ],
+  "searchQcReminder": null
+ },
+ "code": 200
+}

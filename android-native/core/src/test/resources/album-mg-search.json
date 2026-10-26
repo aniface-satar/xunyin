@@ -1,0 +1,77 @@
+{
+ "code": "000000",
+ "resultNum": 3,
+ "dynamicEffect": 0,
+ "mod": 0,
+ "end": false,
+ "albumResultData": {
+  "totalCount": "3",
+  "correct": [],
+  "result": [
+   {
+    "id": "7948",
+    "resourceType": "2003",
+    "name": "范特西",
+    "type": "1",
+    "singer": "周杰伦",
+    "highlightStr": [
+     "范特西"
+    ],
+    "publishDate": "2001-09-20",
+    "desc": "2001-09-20",
+    "imgItems": [
+     {
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/87f56b4e673846c093084166cb03a5f3.webp",
+      "imgSizeType": "01",
+      "fileId": "6a2a0e60570ee00b5c462abc"
+     },
+     {
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/fbf00e3d96cd47a6b367218cedcb708b.webp",
+      "imgSizeType": "02",
+      "fileId": "6a2a0e60570ee00b5c462abb"
+     },
+     {
+      "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/bbb92a1f71344c15be758e1835d7954e.webp",
+      "imgSizeType": "03",
+      "fileId": "6a2a0e60570ee00b5c462ab9"
+     }
+    ],
+    "isPay": 0
+   },
+   {
+    "id": "1138078981",
+    "resourceType": "2003",
+    "name": "范特西2",
+    "type": "1",
+    "singer": "河北YE",
+    "highlightStr": [
+     "范特西"
+    ],
+    "publishDate": "2021-03-12",
+    "desc": "2021-03-12",
+    "imgItems": [
+     {
+      "img": "https://d.musicapp.migu.cn/data/resource-service/file-down/00/02/qm/f9",
+      "imgSizeType": "01",
+      "fileId": "616a033444b1811343082d88"
+     },
+     {
+      "img": "https://d.musicapp.migu.cn/data/resource-service/file-down/00/02/qm/f5",
+      "imgSizeType": "02",
+      "fileId": "616a033444b1811343082d84"
+     },
+     {
+      "img": "https://d.musicapp.migu.cn/data/resource-service/file-down/00/02/qm/f4",
+      "imgSizeType": "03",
+      "fileId": "616a033444b1811343082d82"
+     }
+    ],
+    "isPay": 0
+   }
+  ]
+ },
+ "concertResultData": {
+  "result": [],
+  "totalCount": "0"
+ }
+}

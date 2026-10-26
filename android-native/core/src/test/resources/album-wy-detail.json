@@ -1,0 +1,412 @@
+{
+ "resourceState": true,
+ "songs": [
+  {
+   "rtUrls": [],
+   "ar": [
+    {
+     "id": 7219,
+     "name": "蔡依林",
+     "alia": [
+      "Jolin Cai"
+     ]
+    }
+   ],
+   "al": {
+    "id": 21349,
+    "name": "看我72变",
+    "picUrl": "https://p1.music.126.net/8D2Pd7EuvGboMyE2xWc47A==/109951172453712025.jpg",
+    "pic_str": "109951172453712025",
+    "pic": 109951172453712025
+   },
+   "st": 1,
+   "noCopyrightRcmd": null,
+   "artistClassics": null,
+   "songJumpInfo": null,
+   "djId": 0,
+   "no": 1,
+   "fee": 1,
+   "mv": 186021,
+   "cd": "1",
+   "t": 0,
+   "v": 132,
+   "dt": 226533,
+   "pst": 0,
+   "alia": [
+    "电影《空中拜金女》中文主题曲"
+   ],
+   "pop": 100.0,
+   "rt": "600902000005313035",
+   "mst": 9,
+   "cp": 7001,
+   "cf": "",
+   "h": {
+    "br": 320000,
+    "fid": 0,
+    "size": 9063489,
+    "vd": -76158.0,
+    "sr": 44100
+   },
+   "sq": {
+    "br": 1081640,
+    "fid": 0,
+    "size": 30628501,
+    "vd": -76310.0,
+    "sr": 44100
+   },
+   "hr": null,
+   "l": {
+    "br": 128000,
+    "fid": 0,
+    "size": 3625422,
+    "vd": -71900.0,
+    "sr": 44100
+   },
+   "rtype": 0,
+   "rurl": null,
+   "crbt": null,
+   "rtUrl": null,
+   "ftype": 0,
+   "mark": 17179877376,
+   "a": null,
+   "m": {
+    "br": 192000,
+    "fid": 0,
+    "size": 5438111,
+    "vd": -73624.0,
+    "sr": 44100
+   },
+   "name": "说爱你",
+   "id": 210042,
+   "privilege": {
+    "id": 210042,
+    "fee": 1,
+    "payed": 0,
+    "st": 0,
+    "pl": 0,
+    "dl": 0,
+    "sp": 0,
+    "cp": 0,
+    "subp": 1,
+    "cs": false,
+    "maxbr": 999000,
+    "fl": 0,
+    "toast": false,
+    "flag": 4,
+    "preSell": false,
+    "playMaxbr": 999000,
+    "downloadMaxbr": 999000,
+    "maxBrLevel": "lossless",
+    "playMaxBrLevel": "lossless",
+    "downloadMaxBrLevel": "lossless",
+    "plLevel": "none",
+    "dlLevel": "none",
+    "flLevel": "none",
+    "rscl": null,
+    "freeTrialPrivilege": {
+     "resConsumable": true,
+     "userConsumable": false,
+     "listenType": null,
+     "cannotListenReason": null,
+     "playReason": null,
+     "freeLimitTagType": null
+    },
+    "rightSource": 0,
+    "chargeInfoList": [
+     {
+      "rate": 128000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     },
+     {
+      "rate": 192000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     },
+     {
+      "rate": 320000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     },
+     {
+      "rate": 999000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     }
+    ],
+    "code": 0,
+    "message": null,
+    "plLevels": null,
+    "dlLevels": null,
+    "ignoreCache": null,
+    "bd": null
+   },
+   "eq": "pop"
+  },
+  {
+   "rtUrls": [],
+   "ar": [
+    {
+     "id": 7219,
+     "name": "蔡依林",
+     "alia": [
+      "Jolin Cai"
+     ]
+    }
+   ],
+   "al": {
+    "id": 21349,
+    "name": "看我72变",
+    "picUrl": "https://p1.music.126.net/8D2Pd7EuvGboMyE2xWc47A==/109951172453712025.jpg",
+    "pic_str": "109951172453712025",
+    "pic": 109951172453712025
+   },
+   "st": 1,
+   "noCopyrightRcmd": null,
+   "artistClassics": null,
+   "songJumpInfo": null,
+   "djId": 0,
+   "no": 2,
+   "fee": 1,
+   "mv": 186022,
+   "cd": "1",
+   "t": 0,
+   "v": 54,
+   "dt": 226000,
+   "pst": 0,
+   "alia": [],
+   "pop": 100.0,
+   "rt": "",
+   "mst": 9,
+   "cp": 7001,
+   "cf": "",
+   "h": {
+    "br": 320002,
+    "fid": 0,
+    "size": 9042591,
+    "vd": -72140.0,
+    "sr": 44100
+   },
+   "sq": {
+    "br": 1006327,
+    "fid": 0,
+    "size": 28428744,
+    "vd": -71869.0,
+    "sr": 44100
+   },
+   "hr": null,
+   "l": {
+    "br": 128002,
+    "fid": 0,
+    "size": 3617062,
+    "vd": -68049.0,
+    "sr": 44100
+   },
+   "rtype": 0,
+   "rurl": null,
+   "crbt": null,
+   "rtUrl": null,
+   "ftype": 0,
+   "mark": 17179877376,
+   "a": null,
+   "m": {
+    "br": 192002,
+    "fid": 0,
+    "size": 5425572,
+    "vd": -69599.0,
+    "sr": 44100
+   },
+   "name": "看我72变",
+   "id": 210045,
+   "privilege": {
+    "id": 210045,
+    "fee": 1,
+    "payed": 0,
+    "st": 0,
+    "pl": 0,
+    "dl": 0,
+    "sp": 0,
+    "cp": 0,
+    "subp": 1,
+    "cs": false,
+    "maxbr": 999000,
+    "fl": 0,
+    "toast": false,
+    "flag": 4,
+    "preSell": false,
+    "playMaxbr": 999000,
+    "downloadMaxbr": 999000,
+    "maxBrLevel": "lossless",
+    "playMaxBrLevel": "lossless",
+    "downloadMaxBrLevel": "lossless",
+    "plLevel": "none",
+    "dlLevel": "none",
+    "flLevel": "none",
+    "rscl": null,
+    "freeTrialPrivilege": {
+     "resConsumable": true,
+     "userConsumable": false,
+     "listenType": null,
+     "cannotListenReason": null,
+     "playReason": null,
+     "freeLimitTagType": null
+    },
+    "rightSource": 0,
+    "chargeInfoList": [
+     {
+      "rate": 128000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     },
+     {
+      "rate": 192000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     },
+     {
+      "rate": 320000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     },
+     {
+      "rate": 999000,
+      "chargeUrl": null,
+      "chargeMessage": null,
+      "chargeType": 1
+     }
+    ],
+    "code": 0,
+    "message": null,
+    "plLevels": null,
+    "dlLevels": null,
+    "ignoreCache": null,
+    "bd": null
+   },
+   "eq": "pop"
+  }
+ ],
+ "code": 200,
+ "album": {
+  "songs": [],
+  "paid": false,
+  "onSale": false,
+  "mark": 8192,
+  "awardTags": null,
+  "displayTags": null,
+  "copyrightId": 7001,
+  "picId": 109951172453712025,
+  "artist": {
+   "img1v1Id": 109951171072766317,
+   "topicPerson": 0,
+   "picId": 109951171072769603,
+   "briefDesc": "",
+   "musicSize": 808,
+   "albumSize": 55,
+   "picUrl": "https://p2.music.126.net/DHFeOZ7tjcDSY-oapbCcxg==/109951171072769603.jpg",
+   "img1v1Url": "https://p2.music.126.net/09GUy0j4V7EwyhXVIdqhDg==/109951171072766317.jpg",
+   "followed": false,
+   "trans": "",
+   "alias": [
+    "Jolin Cai"
+   ],
+   "name": "蔡依林",
+   "id": 7219,
+   "picId_str": "109951171072769603",
+   "img1v1Id_str": "109951171072766317"
+  },
+  "artists": [
+   {
+    "img1v1Id": 18686200114669622,
+    "topicPerson": 0,
+    "picId": 0,
+    "briefDesc": "",
+    "musicSize": 0,
+    "albumSize": 0,
+    "picUrl": "https://p2.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
+    "img1v1Url": "https://p2.music.126.net/VnZiScyynLG7atLIZ2YPkw==/18686200114669622.jpg",
+    "followed": false,
+    "trans": "",
+    "alias": [],
+    "name": "蔡依林",
+    "id": 7219,
+    "img1v1Id_str": "18686200114669622"
+   }
+  ],
+  "publishTime": 1046966400000,
+  "company": "索尼音乐",
+  "briefDesc": "",
+  "picUrl": "https://p2.music.126.net/8D2Pd7EuvGboMyE2xWc47A==/109951172453712025.jpg",
+  "commentThreadId": "R_AL_3_21349",
+  "companyId": 0,
+  "pic": 109951172453712025,
+  "blurPicUrl": "https://p2.music.126.net/8D2Pd7EuvGboMyE2xWc47A==/109951172453712025.jpg",
+  "subType": "录音室版",
+  "status": 1,
+  "description": "《看我72变》是台湾歌手蔡依林的第五张国语专辑，也是她在加盟索尼音乐后发行的第一张专辑，于2003年3月7日发行。\n\n这张专辑在多首歌曲的推波助澜之下，台湾销售量达35万张，也是蔡依林在经历2001年的合约纠纷后之回归代表作，更让蔡依林首次入围金曲奖最佳女歌手等其他大奖。说爱你（第三主打）为2003年KTV年度排行榜第3名歌曲，看我72变（第一主打）为2003年KTV年度排行榜第1名歌曲。\n\n经过",
+  "tags": "",
+  "alias": [],
+  "name": "看我72变",
+  "id": 21349,
+  "type": "专辑",
+  "size": 11,
+  "picId_str": "109951172453712025",
+  "info": {
+   "commentThread": {
+    "id": "R_AL_3_21349",
+    "resourceInfo": {
+     "id": 21349,
+     "userId": -1,
+     "name": "看我72变",
+     "imgUrl": "http://p3.music.126.net/8D2Pd7EuvGboMyE2xWc47A==/109951172453712025.jpg",
+     "creator": null,
+     "encodedId": null,
+     "subTitle": null,
+     "webUrl": null
+    },
+    "resourceType": 3,
+    "commentCount": 1688,
+    "likedCount": 1,
+    "shareCount": 775,
+    "hotCount": 67,
+    "latestLikedUsers": [
+     {
+      "s": 557870422,
+      "t": 1521974704995
+     }
+    ],
+    "resourceId": 21349,
+    "resourceOwnerId": -1,
+    "resourceTitle": "看我72变"
+   },
+   "latestLikedUsers": [
+    {
+     "locationInfo": null,
+     "avatarUrl": "http://p1.music.126.net/7u_T16JQ0y7wZsfox6rIdg==/109951163970516854.jpg",
+     "userId": 557870422,
+     "nickname": "香川有纪",
+     "authStatus": 0,
+     "expertTags": null,
+     "userType": 0,
+     "remarkName": null,
+     "vipType": 11,
+     "experts": null
+    }
+   ],
+   "liked": false,
+   "comments": null,
+   "resourceType": 3,
+   "resourceId": 21349,
+   "commentCount": 1688,
+   "likedCount": 1,
+   "shareCount": 775,
+   "threadId": "R_AL_3_21349"
+  }
+ }
+}

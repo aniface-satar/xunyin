@@ -1,0 +1,162 @@
+{
+ "code": "000000",
+ "info": "操作成功",
+ "data": {
+  "resourceType": "2003",
+  "albumId": "7948",
+  "imgItems": [
+   {
+    "imgSizeType": "01",
+    "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/87f56b4e673846c093084166cb03a5f3.webp",
+    "imgOri": "",
+    "fileId": "6a2a0e60570ee00b5c462abc",
+    "webpImg": ""
+   },
+   {
+    "imgSizeType": "02",
+    "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/fbf00e3d96cd47a6b367218cedcb708b.webp",
+    "imgOri": "",
+    "fileId": "6a2a0e60570ee00b5c462abb",
+    "webpImg": ""
+   },
+   {
+    "imgSizeType": "03",
+    "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5w/p6/bbb92a1f71344c15be758e1835d7954e.webp",
+    "imgOri": "",
+    "fileId": "6a2a0e60570ee00b5c462ab9",
+    "webpImg": ""
+   }
+  ],
+  "title": "范特西",
+  "singer": "周杰伦",
+  "singerId": "112",
+  "singerImgs": [
+   {
+    "imgSizeType": "01",
+    "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/73263a79db124bc5b554541813652daa.webp",
+    "imgOri": "",
+    "fileId": "69c28dfa5a19df7523eea121",
+    "webpImg": ""
+   },
+   {
+    "imgSizeType": "02",
+    "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/180c79991fbb4dfb8e664adc2befc0b4.webp",
+    "imgOri": "",
+    "fileId": "69c28dfa5a19df7523eea122",
+    "webpImg": ""
+   },
+   {
+    "imgSizeType": "03",
+    "img": "https://d.musicapp.migu.cn/data/oss/resource/00/5l/4k/e7632d663a6846e1b3d357b35052150f.webp",
+    "imgOri": "",
+    "fileId": "69c28dfa5a19df7523eea120",
+    "webpImg": ""
+   }
+  ],
+  "summary": "　　在这段不算短的日子中，喜爱杰伦的歌迷们，仅能透过市面上流传属于杰伦气息的旋律，来稍稍抚慰失落的心情。经过将近一年时间的精墩细熬，大家万众期待的周杰伦第二张专辑---《范特西》，终于在歌迷们的千呼万唤声中，决定于2001年9月份与大众见面！\n　　此次周杰伦的音乐层面，不仅突破以往的制作水平、创作更臻成熟，他所发挥的奇特幻想力及个人特质，更淋漓尽致地融入于他的歌曲里。听杰伦的音乐，就犹如畅游梦幻的",
+  "totalCount": "10",
+  "publishTime": "2001-09-20",
+  "publishCorp": "杰威尔音乐",
+  "opNumItem": {
+   "playNum": 34664945,
+   "playNumDesc": "3466.5万",
+   "keepNum": 129928,
+   "keepNumDesc": "13.0万",
+   "commentNum": 915,
+   "commentNumDesc": "915",
+   "shareNum": 6341,
+   "shareNumDesc": "6341",
+   "orderNumByWeek": 0,
+   "orderNumByWeekDesc": "0",
+   "orderNumByTotal": 0,
+   "orderNumByTotalDesc": "0",
+   "thumbNum": 0,
+   "thumbNumDesc": "0",
+   "followNum": 0,
+   "followNumDesc": "0",
+   "subscribeNum": 0,
+   "subscribeNumDesc": "0",
+   "livePlayNum": 34664945,
+   "livePlayNumDesc": "3466.5万",
+   "popularNum": 0,
+   "popularNumDesc": "0",
+   "bookingNum": 0,
+   "bookingNumDesc": "0",
+   "settingNum": 0,
+   "settingNumDesc": "0",
+   "callNum": 0,
+   "callNumDesc": "0",
+   "callingPlayNum": 0,
+   "callingPlayNumDesc": "0",
+   "callingPlayDuration": 0,
+   "callingPlayDurationDesc": "0",
+   "calledPlayDuration": 0,
+   "calledPlayDurationDesc": "0",
+   "ringtoneAppPlayNum": 0,
+   "ringtoneAppPlayNumDesc": "0",
+   "ringtoneAppSettingNum": 0,
+   "ringtoneAppSettingNumDesc": "0",
+   "callingPlayDefaultNum": 0,
+   "callingPlayDefaultNumDesc": "0",
+   "playDefaultNum": 0,
+   "playDefaultDesc": "0",
+   "rewardUserNum": 0,
+   "rewardUserNumDesc": "0",
+   "rewardTotalNum": 0,
+   "rewardTotalNumDesc": "0",
+   "aiSongTotalNum": 0,
+   "aiSongTotalNumDesc": "0"
+  },
+  "tags": [
+   {
+    "resourceType": "2034",
+    "tagId": "1000001758",
+    "tagName": "原创",
+    "tagDesc": "",
+    "level": "2",
+    "tagPath": "1002598952|1001075728|1000001758",
+    "tagPathName": "ROOT|主题|原创"
+   },
+   {
+    "resourceType": "2034",
+    "tagId": "1000001762",
+    "tagName": "国语",
+    "level": "2",
+    "tagPath": "1002598952|1001075733|1000001762",
+    "tagPathName": "ROOT|语言|国语"
+   },
+   {
+    "resourceType": "2034",
+    "tagId": "1000001808",
+    "tagName": "R&B",
+    "level": "3",
+    "tagPath": "1002598952|1001075725|1001075745|1000001808",
+    "tagPathName": "ROOT|风格|通俗音乐|R&B"
+   },
+   {
+    "resourceType": "2034",
+    "tagId": "1002598742",
+    "tagName": "中国台湾",
+    "level": "2",
+    "tagPath": "1002598952|1002598731|1002598742",
+    "tagPathName": "ROOT|地域|中国台湾"
+   },
+   {
+    "resourceType": "2034",
+    "tagId": "1002600491",
+    "tagName": "00年代",
+    "level": "3",
+    "tagPath": "1002598952|1002600489|1003449594|1002600491",
+    "tagPathName": "ROOT|年代|现代时期|00年代"
+   }
+  ],
+  "albumAliasName": "Fantasy",
+  "albumClass": "录音室专辑",
+  "language": "国语",
+  "publishCompany": "杰威尔音乐",
+  "publishDate": "2001-09-20",
+  "translateName": "",
+  "audioBookColumn": "0",
+  "status": "1"
+ }
+}

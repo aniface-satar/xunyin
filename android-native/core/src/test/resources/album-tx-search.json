@@ -1,0 +1,130 @@
+{
+ "code": 0,
+ "ts": 1793000643469,
+ "start_ts": 1793000643377,
+ "traceid": "75ea4c7fec2fb2b6",
+ "req": {
+  "code": 0,
+  "data": {
+   "body": {
+    "album": {
+     "list": [
+      {
+       "albumID": 8217,
+       "albumMID": "000I5jJB3blWeN",
+       "albumName": "范特西",
+       "albumName_hilight": "<em>范特西</em>",
+       "albumPic": "http://y.gtimg.cn/music/photo_new/T002R180x180M000000I5jJB3blWeN_3.jpg",
+       "catch_song": "",
+       "docid": "9955806126048031202",
+       "publicTime": "2001-09-14",
+       "singerID": 4558,
+       "singerMID": "0025NhlN2yWrP4",
+       "singerName": "周杰伦",
+       "singerName_hilight": "周杰伦",
+       "singerTransName": "",
+       "singerTransName_hilight": "",
+       "singer_list": [
+        {
+         "id": 4558,
+         "mid": "0025NhlN2yWrP4",
+         "name": "周杰伦",
+         "pmid": "",
+         "title": "周杰伦",
+         "type": 0,
+         "uin": 0
+        }
+       ],
+       "song_count": 10,
+       "type": 0
+      },
+      {
+       "albumID": 13004,
+       "albumMID": "002jLGWe16Tf1H",
+       "albumName": "依然范特西",
+       "albumName_hilight": "依然<em>范特西</em>",
+       "albumPic": "http://y.gtimg.cn/music/photo_new/T002R180x180M000002jLGWe16Tf1H_1.jpg",
+       "catch_song": "",
+       "docid": "6996947755902608032",
+       "publicTime": "2006-09-05",
+       "singerID": 4558,
+       "singerMID": "0025NhlN2yWrP4",
+       "singerName": "周杰伦",
+       "singerName_hilight": "周杰伦",
+       "singerTransName": "",
+       "singerTransName_hilight": "",
+       "singer_list": [
+        {
+         "id": 4558,
+         "mid": "0025NhlN2yWrP4",
+         "name": "周杰伦",
+         "pmid": "",
+         "title": "周杰伦",
+         "type": 0,
+         "uin": 0
+        }
+       ],
+       "song_count": 10,
+       "type": 0
+      }
+     ]
+    },
+    "gedantip": {
+     "list": []
+    },
+    "mv": {
+     "list": []
+    },
+    "qc": [],
+    "singer": {
+     "list": []
+    },
+    "song": {
+     "list": []
+    },
+    "songlist": {
+     "list": []
+    },
+    "user": {
+     "list": []
+    },
+    "zhida": {
+     "list": []
+    }
+   },
+   "code": 0,
+   "feedbackURL": "",
+   "meta": {
+    "cid": "",
+    "curpage": 1,
+    "dir": "L",
+    "display_order": [],
+    "ein": 2,
+    "estimate_sum": 277,
+    "expid": "",
+    "feedbackPlaceId": "",
+    "is_filter": 0,
+    "next_page_start": {},
+    "nextpage": 2,
+    "perpage": 3,
+    "query": "范特西",
+    "report_info": {
+     "items": {}
+    },
+    "result_trustworthy": 1,
+    "ret": 0,
+    "safetyType": 0,
+    "safetyUrl": "",
+    "searchid": "",
+    "sid": "",
+    "sin": 0,
+    "step_rela_syntax_tree": {},
+    "sum": 277,
+    "tab_list": [],
+    "uid": "",
+    "v": 0
+   },
+   "ver": 0
+  }
+ }
+}

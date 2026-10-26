@@ -39,9 +39,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.toside.music.core.music.search.SonglistSearchItem
+import cn.toside.music.core.music.search.album.AlbumItem
+import cn.toside.music.core.music.search.artist.ArtistItem
 import cn.toside.music.core.storage.StorageKeys
+import cn.toside.music.nativeapp.data.AlbumSearchRuntime
+import cn.toside.music.nativeapp.data.ArtistSearchRuntime
 import cn.toside.music.nativeapp.data.ListRuntime
 import cn.toside.music.nativeapp.data.SearchRuntime
+import cn.toside.music.nativeapp.data.SearchTypes
 import cn.toside.music.nativeapp.data.SonglistSearchRuntime
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import cn.toside.music.nativeapp.ui.songlist.AddToListDialog
@@ -56,17 +61,14 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-/** 搜索类型（对照 RN 提交版 `SearchTypeSelector`：只有歌曲/歌单两档）。 */
-private const val SEARCH_TYPE_MUSIC = "music"
-private const val SEARCH_TYPE_SONGLIST = "songlist"
-
 /**
- * 搜索页（B5 第八切片 + S12 歌单类型）—— 五源单曲/歌单搜索 + 「全部」聚合 + 翻页。
+ * 搜索页（B5 第八切片 + S12 歌单类型 + W6 专辑/歌手类型）——
+ * 五源单曲/歌单/专辑/歌手搜索 + 「全部」聚合 + 翻页 + 详情页内覆盖。
  *
  * 对照 RN `screens/Home/Views/Search`：HeaderBar 的源下拉（含「全部」）+
- * SearchTypeSelector 的歌曲/歌单切换 + OnlineList 的 onEndReached 加载更多。
- * 点击歌曲 = 写入试听列表 → `playListById` → 进播放页；点击歌单 = 在页内
- * 打开在线歌单详情（HomeNavigator 本波禁触，路由缺口记在车道报告）。
+ * SearchTypeSelector 的四类型切换 + OnlineList 的 onEndReached 加载更多。
+ * 点击歌曲 = 写入试听列表 → `playListById` → 进播放页；点击歌单/专辑/歌手 =
+ * 页内打开详情（SEARCH tab 既有覆盖模式，HomeNavigator 壳结构禁触，见 lane 报告）。
  */
 @OptIn(UnstableSaltUiApi::class)
 @Composable
@@ -79,10 +81,14 @@ fun SearchPage(
     val scope = rememberCoroutineScope()
     var keyword by remember { mutableStateOf("") }
     var source by remember { mutableStateOf("kw") }
-    var searchType by remember { mutableStateOf(SEARCH_TYPE_MUSIC) }
+    var searchType by remember { mutableStateOf(SearchTypes.MUSIC) }
     var items by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     var songlists by remember { mutableStateOf<List<SonglistSearchItem>>(emptyList()) }
+    var albums by remember { mutableStateOf<List<AlbumItem>>(emptyList()) }
+    var artists by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
     var detailTarget by remember { mutableStateOf<SonglistSearchItem?>(null) }
+    var albumTarget by remember { mutableStateOf<AlbumItem?>(null) }
+    var artistTarget by remember { mutableStateOf<ArtistItem?>(null) }
     var loading by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -109,38 +115,69 @@ fun SearchPage(
                 loading = true
                 items = emptyList()
                 songlists = emptyList()
+                albums = emptyList()
+                artists = emptyList()
             } else {
                 loadingMore = true
             }
             error = null
-            if (type == SEARCH_TYPE_MUSIC) {
-                runCatching { SearchRuntime.search(text, targetPage, source) }
-                    .onSuccess { result ->
-                        if (result == null || type != searchType) return@launch // 旧关键词的迟到响应
-                        items = result.list
-                        page = targetPage
-                        searched = true
-                        activeKeyword = text
-                        reachedEnd = SearchRuntime.reachedEnd(source, targetPage)
-                    }.onFailure {
-                        if (type != searchType) return@launch
-                        if (targetPage == 1) items = emptyList()
-                        error = it.message ?: "搜索失败"
-                    }
-            } else {
-                runCatching { SonglistSearchRuntime.search(text, targetPage, source) }
-                    .onSuccess { result ->
-                        if (result == null || type != searchType) return@launch
-                        songlists = result.list
-                        page = targetPage
-                        searched = true
-                        activeKeyword = text
-                        reachedEnd = SonglistSearchRuntime.reachedEnd(source, targetPage)
-                    }.onFailure {
-                        if (type != searchType) return@launch
-                        if (targetPage == 1) songlists = emptyList()
-                        error = it.message ?: "搜索失败"
-                    }
+            when (type) {
+                SearchTypes.MUSIC ->
+                    runCatching { SearchRuntime.search(text, targetPage, source) }
+                        .onSuccess { result ->
+                            if (result == null || type != searchType) return@launch // 旧关键词的迟到响应
+                            items = result.list
+                            page = targetPage
+                            searched = true
+                            activeKeyword = text
+                            reachedEnd = SearchRuntime.reachedEnd(source, targetPage)
+                        }.onFailure {
+                            if (type != searchType) return@launch
+                            if (targetPage == 1) items = emptyList()
+                            error = it.message ?: "搜索失败"
+                        }
+                SearchTypes.SONGLIST ->
+                    runCatching { SonglistSearchRuntime.search(text, targetPage, source) }
+                        .onSuccess { result ->
+                            if (result == null || type != searchType) return@launch
+                            songlists = result.list
+                            page = targetPage
+                            searched = true
+                            activeKeyword = text
+                            reachedEnd = SonglistSearchRuntime.reachedEnd(source, targetPage)
+                        }.onFailure {
+                            if (type != searchType) return@launch
+                            if (targetPage == 1) songlists = emptyList()
+                            error = it.message ?: "搜索失败"
+                        }
+                SearchTypes.ALBUM ->
+                    runCatching { AlbumSearchRuntime.search(text, targetPage, source) }
+                        .onSuccess { result ->
+                            if (result == null || type != searchType) return@launch
+                            albums = result.list
+                            page = targetPage
+                            searched = true
+                            activeKeyword = text
+                            reachedEnd = AlbumSearchRuntime.reachedEnd(source, targetPage)
+                        }.onFailure {
+                            if (type != searchType) return@launch
+                            if (targetPage == 1) albums = emptyList()
+                            error = it.message ?: "搜索失败"
+                        }
+                else ->
+                    runCatching { ArtistSearchRuntime.search(text, targetPage, source) }
+                        .onSuccess { result ->
+                            if (result == null || type != searchType) return@launch
+                            artists = result.list
+                            page = targetPage
+                            searched = true
+                            activeKeyword = text
+                            reachedEnd = ArtistSearchRuntime.reachedEnd(source, targetPage)
+                        }.onFailure {
+                            if (type != searchType) return@launch
+                            if (targetPage == 1) artists = emptyList()
+                            error = it.message ?: "搜索失败"
+                        }
             }
             if (targetPage == 1) loading = false else loadingMore = false
         }
@@ -163,16 +200,22 @@ fun SearchPage(
         searchType = next
         items = emptyList()
         songlists = emptyList()
+        albums = emptyList()
+        artists = emptyList()
         searched = false
         error = null
         reachedEnd = false
         page = 1
+        // 置灰规则：新类型禁用当前源（歌手类型禁 tx）时回落到 kw（SearchTypes.effectiveSource）
+        source = SearchTypes.effectiveSource(next, source)
         // RN searchTypeChanged：用上一次提交的关键词立即重查（缓存命中则不发请求）
         if (activeKeyword.isNotEmpty()) runSearch(activeKeyword, 1)
     }
 
     fun switchSource(picked: String) {
         if (picked == source) return
+        // 置灰规则兜底：禁用源不可选中（歌手类型禁 tx）
+        if (!SearchTypes.isSourceEnabled(searchType, picked)) return
         source = picked
         val text = keyword.trim()
         searched = false
@@ -187,7 +230,7 @@ fun SearchPage(
         }
     }
 
-    // 在线歌单详情：页内覆盖（HomeNavigator 禁触，详见车道报告路由缺口）
+    // 详情：页内覆盖（SEARCH tab 既有模式；HomeNavigator 壳结构禁触，见 lane 报告）
     val target = detailTarget
     if (target != null) {
         SonglistDetailPage(
@@ -195,6 +238,27 @@ fun SearchPage(
             id = target.id,
             title = target.name,
             onBack = { detailTarget = null },
+            onOpenPlayer = onOpenPlayer,
+        )
+        return
+    }
+    val openAlbum = albumTarget
+    if (openAlbum != null) {
+        AlbumDetailPage(
+            source = openAlbum.source,
+            id = openAlbum.id,
+            fallback = openAlbum,
+            onBack = { albumTarget = null },
+            onOpenPlayer = onOpenPlayer,
+        )
+        return
+    }
+    val openArtist = artistTarget
+    if (openArtist != null) {
+        ArtistDetailPage(
+            source = openArtist.source,
+            artist = openArtist,
+            onBack = { artistTarget = null },
             onOpenPlayer = onOpenPlayer,
         )
         return
@@ -228,7 +292,11 @@ fun SearchPage(
                     modifier = Modifier.heightIn(min = 48.dp),
                 )
             }
-            SourceTabs(source = source, onSelect = { switchSource(it) })
+            SourceTabs(
+                source = source,
+                enabled = SearchTypes.enabledSources(searchType),
+                onSelect = { switchSource(it) },
+            )
             SearchTypeTabs(type = searchType, onSelect = { switchType(it) })
             when {
                 error != null ->
@@ -243,7 +311,7 @@ fun SearchPage(
                         modifier = Modifier.fillMaxWidth().padding(24.dp),
                         color = SaltTheme.colors.subText,
                     )
-                searchType == SEARCH_TYPE_SONGLIST -> {
+                searchType == SearchTypes.SONGLIST -> {
                     if (searched && songlists.isEmpty()) {
                         Text(
                             text = "没有找到歌单",
@@ -258,6 +326,42 @@ fun SearchPage(
                             showSource = source == "all",
                             onEndReached = { loadMore() },
                             onOpen = { detailTarget = it },
+                        )
+                    }
+                }
+                searchType == SearchTypes.ALBUM -> {
+                    if (searched && albums.isEmpty()) {
+                        Text(
+                            text = "没有找到专辑",
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            color = SaltTheme.colors.subText,
+                        )
+                    } else {
+                        AlbumResults(
+                            albums = albums,
+                            loadingMore = loadingMore,
+                            reachedEnd = reachedEnd,
+                            showSource = source == "all",
+                            onEndReached = { loadMore() },
+                            onOpen = { albumTarget = it },
+                        )
+                    }
+                }
+                searchType == SearchTypes.ARTIST -> {
+                    if (searched && artists.isEmpty()) {
+                        Text(
+                            text = "没有找到歌手",
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            color = SaltTheme.colors.subText,
+                        )
+                    } else {
+                        ArtistResults(
+                            artists = artists,
+                            loadingMore = loadingMore,
+                            reachedEnd = reachedEnd,
+                            showSource = source == "all",
+                            onEndReached = { loadMore() },
+                            onOpen = { artistTarget = it },
                         )
                     }
                 }
@@ -469,7 +573,7 @@ private fun SonglistResults(
                 }
                 if (showSource) {
                     BasicText(
-                        text = sourceLabel(item.source),
+                        text = searchSourceLabel(item.source),
                         modifier = Modifier.padding(start = 8.dp),
                         style = TextStyle(color = SaltTheme.colors.subText, fontSize = 11.sp),
                     )
@@ -496,10 +600,199 @@ private fun SonglistResults(
     }
 }
 
-/** 源选择横滑条：五个单源 + 「全部」聚合（对照 RN HeaderBar 的 SourceSelector）。 */
+/** 专辑结果列表（对照任务书：封面 + 名称 + 歌手 + 发行时间；原生不逐行拉封面图）。 */
+@Composable
+private fun AlbumResults(
+    albums: List<AlbumItem>,
+    loadingMore: Boolean,
+    reachedEnd: Boolean,
+    showSource: Boolean,
+    onEndReached: () -> Unit,
+    onOpen: (AlbumItem) -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val last = listState.layoutInfo.totalItemsCount
+            val lastVisible =
+                listState.layoutInfo.visibleItemsInfo
+                    .lastOrNull()
+                    ?.index ?: -1
+            last > 0 && lastVisible >= last - 6
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) onEndReached()
+    }
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+        itemsIndexed(
+            albums,
+            key = { index, item -> "${item.source}__${item.id}__$index" },
+        ) { _, item ->
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpen(item) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    BasicText(
+                        text = item.name,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        style =
+                            TextStyle(
+                                color = SaltTheme.colors.text,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                    )
+                    val meta =
+                        listOfNotNull(
+                            item.singer.takeIf { it.isNotBlank() },
+                            item.publishTime?.takeIf { it.isNotBlank() },
+                            item.songCount.takeIf { it > 0 }?.let { "${it}首" },
+                        ).joinToString(" · ")
+                    if (meta.isNotEmpty()) {
+                        BasicText(
+                            text = meta,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = TextStyle(color = SaltTheme.colors.subText, fontSize = 12.sp),
+                        )
+                    }
+                }
+                if (showSource) {
+                    BasicText(
+                        text = searchSourceLabel(item.source),
+                        modifier = Modifier.padding(start = 8.dp),
+                        style = TextStyle(color = SaltTheme.colors.subText, fontSize = 11.sp),
+                    )
+                }
+            }
+        }
+        if (loadingMore) {
+            item(key = "loading-more") {
+                Text(
+                    text = "加载中…",
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    color = SaltTheme.colors.subText,
+                )
+            }
+        } else if (reachedEnd && albums.isNotEmpty()) {
+            item(key = "end") {
+                Text(
+                    text = "到底啦~",
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    color = SaltTheme.colors.subText,
+                )
+            }
+        }
+    }
+}
+
+/** 歌手结果列表（对照任务书：名称 + 别名/作品数；咪咕行不可点入详情）。 */
+@Composable
+private fun ArtistResults(
+    artists: List<ArtistItem>,
+    loadingMore: Boolean,
+    reachedEnd: Boolean,
+    showSource: Boolean,
+    onEndReached: () -> Unit,
+    onOpen: (ArtistItem) -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val last = listState.layoutInfo.totalItemsCount
+            val lastVisible =
+                listState.layoutInfo.visibleItemsInfo
+                    .lastOrNull()
+                    ?.index ?: -1
+            last > 0 && lastVisible >= last - 6
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) onEndReached()
+    }
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+        itemsIndexed(
+            artists,
+            key = { index, item -> "${item.source}__${item.id}__$index" },
+        ) { _, item ->
+            val canOpen = ArtistSearchRuntime.canOpenDetail(item.source)
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = canOpen) { onOpen(item) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    BasicText(
+                        text = item.name,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style =
+                            TextStyle(
+                                color = SaltTheme.colors.text,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                    )
+                    val meta =
+                        listOfNotNull(
+                            item.alias.takeIf { it.isNotBlank() },
+                            item.albumCount.takeIf { it > 0 }?.let { "专辑 $it" },
+                            item.musicCount.takeIf { it > 0 }?.let { "歌曲 $it" },
+                        ).joinToString(" · ")
+                    BasicText(
+                        text = if (meta.isEmpty()) "点击查看热门歌曲与专辑" else meta,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = TextStyle(color = SaltTheme.colors.subText, fontSize = 12.sp),
+                    )
+                }
+                if (showSource) {
+                    BasicText(
+                        text = searchSourceLabel(item.source),
+                        modifier = Modifier.padding(start = 8.dp),
+                        style = TextStyle(color = SaltTheme.colors.subText, fontSize = 11.sp),
+                    )
+                }
+            }
+        }
+        if (loadingMore) {
+            item(key = "loading-more") {
+                Text(
+                    text = "加载中…",
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    color = SaltTheme.colors.subText,
+                )
+            }
+        } else if (reachedEnd && artists.isNotEmpty()) {
+            item(key = "end") {
+                Text(
+                    text = "到底啦~",
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    color = SaltTheme.colors.subText,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 源选择横滑条：五个单源 + 「全部」聚合（对照 RN HeaderBar 的 SourceSelector）。
+ * 当前类型禁用的源置灰且不可点（对照 RN sources 只收有能力的源）。
+ */
 @Composable
 private fun SourceTabs(
     source: String,
+    enabled: Set<String>,
     onSelect: (String) -> Unit,
 ) {
     Row(
@@ -507,13 +800,14 @@ private fun SourceTabs(
     ) {
         SearchRuntime.SOURCES.forEach { (id, label) ->
             val selected = id == source
+            val enabledSource = id in enabled
             Column(
                 modifier =
                     Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (selected) SaltTheme.colors.highlight.copy(alpha = 0.12f) else Color.Transparent)
-                        .clickable { onSelect(id) }
+                        .clickable(enabled = enabledSource) { onSelect(id) }
                         .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -523,7 +817,12 @@ private fun SourceTabs(
                     overflow = TextOverflow.Ellipsis,
                     style =
                         TextStyle(
-                            color = if (selected) SaltTheme.colors.highlight else SaltTheme.colors.subText,
+                            color =
+                                when {
+                                    selected -> SaltTheme.colors.highlight
+                                    !enabledSource -> SaltTheme.colors.subText.copy(alpha = 0.35f)
+                                    else -> SaltTheme.colors.subText
+                                },
                             fontSize = 13.sp,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                         ),
@@ -533,7 +832,7 @@ private fun SourceTabs(
     }
 }
 
-/** 歌曲/歌单类型切换（对照 RN SearchTypeSelector：两档 + 选中下划线）。 */
+/** 类型切换：歌曲/歌单/专辑/歌手四档（对照 RN SearchTypeSelector）。 */
 @Composable
 private fun SearchTypeTabs(
     type: String,
@@ -543,10 +842,10 @@ private fun SearchTypeTabs(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        listOf(SEARCH_TYPE_MUSIC to "歌曲", SEARCH_TYPE_SONGLIST to "歌单").forEach { (id, label) ->
+        SearchTypes.ALL.forEach { id ->
             val selected = id == type
             BasicText(
-                text = label,
+                text = SearchTypes.label(id),
                 modifier =
                     Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -563,7 +862,7 @@ private fun SearchTypeTabs(
     }
 }
 
-private fun sourceLabel(source: String): String =
+internal fun searchSourceLabel(source: String): String =
     SearchRuntime.SOURCES
         .firstOrNull { it.first == source }
         ?.second
@@ -571,7 +870,7 @@ private fun sourceLabel(source: String): String =
         ?.removeSuffix("搜索")
         .orEmpty()
 
-private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
+internal fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
 
 private fun JsonObject.metaText(key: String): String? =
     ((this["meta"] as? JsonObject)?.get(key) as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
