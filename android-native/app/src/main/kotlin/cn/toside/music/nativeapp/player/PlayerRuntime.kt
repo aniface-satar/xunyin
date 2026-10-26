@@ -16,6 +16,7 @@ import cn.toside.music.core.player.PlaybackCoordinator
 import cn.toside.music.core.player.PlayerCore
 import cn.toside.music.core.player.TogglePlayMethod
 import cn.toside.music.nativeapp.data.ListRuntime
+import cn.toside.music.nativeapp.data.PlayHistoryStore
 import cn.toside.music.nativeapp.data.SettingsRuntime
 import cn.toside.music.nativeapp.lyric.DesktopLyricController
 import cn.toside.music.nativeapp.lyric.DesktopLyricKeys
@@ -109,6 +110,9 @@ class PlayerRuntime private constructor(
     /** 播放事件编排（定时退出的 Ended/Paused 分支需要它的回调）。 */
     private val coordinator = PlaybackCoordinator(core, platform, scope)
 
+    /** `@play_history` 写入方（RN addPlayHistory 的原生等价物）。 */
+    private val playHistory = PlayHistoryStore(context.applicationContext)
+
     /** 当前前台 Activity（定时退出要用正规 finishAndRemoveTask，而不是 exitProcess）。 */
     private var currentActivity: WeakReference<Activity>? = null
 
@@ -127,6 +131,7 @@ class PlayerRuntime private constructor(
     init {
         platform.commandHandler = CorePlaybackCommands(core, scope)
         core.togglePlayMethodProvider = { core.state.value.playMethod }
+        core.onAddPlayHistory = { playHistory.add(it) }
         coordinator.onPlayedStopExit = { shutdown() }
         coordinator.start()
         observeActivity()
