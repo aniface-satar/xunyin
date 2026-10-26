@@ -121,6 +121,10 @@ fun ShareCardOverlay(
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var preparing by remember { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
+
+    /** 本次预览内已落盘的图（分享复用；预览重画即失效，避免把上一张分享出去）。 */
+    var saved by remember { mutableStateOf<ShareSaveResult.Saved?>(null) }
+
     val scope = rememberCoroutineScope()
 
     val hasMusic = music != null
@@ -129,6 +133,7 @@ fun ShareCardOverlay(
 
     LaunchedEffect(canDraw, mode, ratio, isDark, screenWidth, screenHeight, track, lyricLines, fontSizeTenths) {
         bitmap = null
+        saved = null
         if (!canDraw) {
             preparing = false
             return@LaunchedEffect
@@ -147,18 +152,32 @@ fun ShareCardOverlay(
         preparing = false
     }
 
-    fun save() {
+    fun save(shareAfter: Boolean = false) {
         val image = bitmap ?: return
         if (saving) return
         saving = true
         scope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                saved ?: withContext(Dispatchers.IO) {
                     ShareCardSaver.save(context, image, cardFileName(track.name, track.singer))
                 }
             saving = false
             when (result) {
-                is ShareSaveResult.Saved -> toast(context, "已保存：${result.fileName}")
+                is ShareSaveResult.Saved -> {
+                    saved = result
+                    if (shareAfter) {
+                        // RN `ShareCardModal#handleShare` 三个入参：chooser 标题 / SUBJECT / TEXT
+                        ShareImageSender.sendWithToast(
+                            context = context,
+                            uri = result.uri,
+                            chooserTitle = "将「${track.name}」分享到...",
+                            subject = "歌曲分享",
+                            text = "${track.name} - ${track.singer}",
+                        )
+                    } else {
+                        toast(context, "已保存：${result.fileName}")
+                    }
+                }
                 is ShareSaveResult.Failed -> toast(context, result.message)
             }
         }
@@ -261,34 +280,68 @@ fun ShareCardOverlay(
                 }
             }
             Spacer(Modifier.height(14.dp))
-            val saveEnabled = bitmap != null && !saving
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (saveEnabled) Color(0xFFEDEAF2) else Color(0xFF2A282F))
-                        .clickable(enabled = saveEnabled, onClick = { save() }),
-                contentAlignment = Alignment.Center,
-            ) {
-                BasicText(
-                    text = if (saving) "正在保存…" else "保存图片",
-                    style =
-                        TextStyle(
-                            color =
-                                when {
-                                    saving -> Color.White.copy(alpha = 0.6f)
-                                    saveEnabled -> Color(0xFF1B1920)
-                                    else -> Color.White.copy(alpha = 0.4f)
-                                },
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center,
-                        ),
+            val actionEnabled = bitmap != null && !saving
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ShareActionButton(
+                    text = if (saving) "正在处理…" else "保存图片",
+                    primary = true,
+                    enabled = actionEnabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = { save() },
+                )
+                ShareActionButton(
+                    text = "分享卡片",
+                    primary = false,
+                    enabled = actionEnabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = { save(shareAfter = true) },
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ShareActionButton(
+    text: String,
+    primary: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val background =
+        when {
+            primary && enabled -> Color(0xFFEDEAF2)
+            primary -> Color(0xFF2A282F)
+            enabled -> Color(0xFF242229)
+            else -> Color(0xFF1F1D24)
+        }
+    val textColor =
+        when {
+            !enabled -> Color.White.copy(alpha = 0.35f)
+            primary -> Color(0xFF1B1920)
+            else -> Color.White.copy(alpha = 0.85f)
+        }
+    Box(
+        modifier =
+            modifier
+                .height(48.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(background)
+                .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        BasicText(
+            text = text,
+            maxLines = 1,
+            style =
+                TextStyle(
+                    color = textColor,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                ),
+        )
     }
 }
 

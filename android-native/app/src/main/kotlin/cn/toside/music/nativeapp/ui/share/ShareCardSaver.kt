@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -11,8 +12,13 @@ import cn.toside.music.core.share.uniqueCardFileName
 import java.io.IOException
 
 sealed interface ShareSaveResult {
+    /**
+     * 落盘成功。[uri] 是 MediaStore 返回的 `content://`，系统分享直接拿它当
+     * `EXTRA_STREAM`（不需要 FileProvider：媒体库 Uri 本身可授权给收端）。
+     */
     data class Saved(
         val fileName: String,
+        val uri: Uri,
     ) : ShareSaveResult
 
     data class Failed(
@@ -46,7 +52,7 @@ object ShareCardSaver {
                 ShareSaveResult.Failed("保存失败，请稍后重试")
             } else {
                 writeBitmap(resolver, uri, bitmap)
-                ShareSaveResult.Saved(fileName)
+                ShareSaveResult.Saved(fileName, uri)
             }
         } catch (t: Throwable) {
             ShareSaveResult.Failed("保存失败，请稍后重试")
@@ -63,7 +69,7 @@ object ShareCardSaver {
 
     private fun writeBitmap(
         resolver: ContentResolver,
-        uri: android.net.Uri,
+        uri: Uri,
         bitmap: Bitmap,
     ) {
         try {
