@@ -39,7 +39,10 @@ object RadioTrackKeys {
     private val BRACKET_RXP = Regex("[(\\[](.*?)[)\\]]")
     private val BRACKET_EDGE_RXP = Regex("^[(\\[]|[)\\]]$")
     private val TAIL_RXP = Regex("(?:\\s*[-–—]\\s*|\\s+)([a-z0-9\\u4e00-\\u9fa5\\s]+?)(?:版|version|ver\\.?)?$")
-    private val BASE_BRACKET_RXP = Regex("[([][^)\\]]*[)\\]]")
+
+    // RN `/[([][^)\]]*[)\]]/g`：JS 允许字符类里出现裸 `[`，Java 正则不允许，必须转义。
+    private val BASE_BRACKET_RXP = Regex("[\\[(][^)\\]]*[)\\]]")
+
     private val BASE_TAIL_RXP =
         Regex(
             "\\s*[-–—]\\s*(?:live|remix|cover|acoustic|instrumental|伴奏|现场|翻唱|纯音乐|dj|piano|demo|karaoke|演唱会|演奏|不插电|清唱)\\s*版?\\s*$",
