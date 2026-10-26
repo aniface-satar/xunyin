@@ -66,6 +66,9 @@ internal fun DesktopLyricSettingsSection(runtime: PlayerRuntime) {
     val locked = settings[KEY_LOCK] as? Boolean ?: false
     val showToggleAnima = settings[KEY_TOGGLE_ANIMA] as? Boolean ?: true
     val singleLine = settings[KEY_SINGLE_LINE] as? Boolean ?: false
+    // W7 新增：桌面歌词独立的译文/罗马音开关（RN 没有这两键，桌面扩展行原本无条件显示）
+    val showTranslation = settings[KEY_SHOW_TRANSLATION] as? Boolean ?: true
+    val showRoma = settings[KEY_SHOW_ROMA] as? Boolean ?: true
     val playedColor = settings[KEY_PLAYED_COLOR] as? String ?: DEFAULT_PLAYED_COLOR
     val fontSize = (settings[KEY_FONT_SIZE] as? Number)?.toInt() ?: 180
     val width = (settings[KEY_WIDTH] as? Number)?.toInt() ?: 100
@@ -104,6 +107,18 @@ internal fun DesktopLyricSettingsSection(runtime: PlayerRuntime) {
         onChange = { save(KEY_SINGLE_LINE, it) },
         text = "单行模式",
         sub = "只显示当前一句，过长时横向滚动",
+    )
+    ItemSwitcher(
+        state = showTranslation,
+        onChange = { save(KEY_SHOW_TRANSLATION, it) },
+        text = "显示翻译",
+        sub = "只管桌面歌词，不影响播放页的译文开关",
+    )
+    ItemSwitcher(
+        state = showRoma,
+        onChange = { save(KEY_SHOW_ROMA, it) },
+        text = "显示罗马音",
+        sub = "只管桌面歌词，不影响播放页的罗马音开关",
     )
     Text(
         text = "颜色",
@@ -311,6 +326,8 @@ private val TEXT_Y =
 private const val KEY_LOCK = "desktopLyric.isLock"
 private const val KEY_TOGGLE_ANIMA = "desktopLyric.showToggleAnima"
 private const val KEY_SINGLE_LINE = "desktopLyric.isSingleLine"
+private const val KEY_SHOW_TRANSLATION = "desktopLyric.isShowTranslation"
+private const val KEY_SHOW_ROMA = "desktopLyric.isShowRoma"
 private const val KEY_WIDTH = "desktopLyric.width"
 private const val KEY_MAX_LINE = "desktopLyric.maxLineNum"
 private const val KEY_FONT_SIZE = "desktopLyric.style.fontSize"

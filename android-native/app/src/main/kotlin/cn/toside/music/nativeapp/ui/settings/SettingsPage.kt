@@ -48,6 +48,7 @@ private val VOLUME_LEVEL_OPTIONS = listOf("low" to "轻", "mid" to "中", "high"
 private enum class SettingsSubPage {
     USER_API,
     LOGS,
+    BACKGROUND_PLAY,
 }
 
 /**
@@ -69,9 +70,11 @@ fun SettingsPage(onBack: () -> Unit) {
                 onBack = onBack,
                 onOpenUserApi = { subPage = SettingsSubPage.USER_API },
                 onOpenLogs = { subPage = SettingsSubPage.LOGS },
+                onOpenBackgroundHelp = { subPage = SettingsSubPage.BACKGROUND_PLAY },
             )
         SettingsSubPage.USER_API -> UserApiManagePage(onBack = { subPage = null })
         SettingsSubPage.LOGS -> UserApiLogsPage(onBack = { subPage = null })
+        SettingsSubPage.BACKGROUND_PLAY -> BackgroundPlayHelpPage(onBack = { subPage = null })
     }
 }
 
@@ -81,6 +84,7 @@ private fun SettingsContent(
     onBack: () -> Unit,
     onOpenUserApi: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenBackgroundHelp: () -> Unit,
 ) {
     val context = LocalContext.current
     val runtime = remember { PlayerRuntime.get(context) }
@@ -217,6 +221,12 @@ private fun SettingsContent(
                 )
             }
             DesktopLyricSettingsSection(runtime)
+            Item(
+                onClick = onOpenBackgroundHelp,
+                text = "后台播放帮助",
+                sub = "锁屏后音乐/桌面歌词被清掉？按厂商指引打开白名单",
+                arrowType = ItemArrowType.Arrow,
+            )
             ItemSpacer()
             Text(text = "音源", color = SaltTheme.colors.subText, modifier = Modifier.padding(horizontal = 16.dp))
             Item(

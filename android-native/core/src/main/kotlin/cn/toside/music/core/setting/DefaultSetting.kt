@@ -93,6 +93,11 @@ object DefaultSetting {
             "theme.fontShadow" to false,
             "theme.dynamicBg" to true,
             "theme.dynamicBgAlgorithm" to "blur",
+            // ---- Wave7 Lane C 表尾追加：桌面歌词「翻译 / 罗马音」独立开关 ----
+            // RN 没有这两键：RN 桌面歌词把扩展行（译文/罗马音）无条件拼上去
+            // （LyricView.setLyric），所以引入开关后默认值取「改造前观感」——两个都开。
+            "desktopLyric.isShowTranslation" to true,
+            "desktopLyric.isShowRoma" to true,
         )
 
     /**

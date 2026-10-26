@@ -139,16 +139,109 @@ class DeeplinkParserTest {
         assertEquals("data invalid", invalid.reason)
     }
 
+    /** W5-10：本波把 RN `handleFileAction` 的七种扩展名补齐，落点见 [FileKind]。 */
     @Test
-    fun `file links only accept json and lxmc this wave`() {
-        val json = DeeplinkParser.parse("content://com.android.providers.downloads/document/1/a.json")
-        assertEquals("json", (json as DeeplinkCommand.OpenFile).extension)
-        val lxmc = DeeplinkParser.parse("file:///storage/emulated/0/Download/lx_list_part_x.lxmc")
-        assertEquals("lxmc", (lxmc as DeeplinkCommand.OpenFile).extension)
-        val js = DeeplinkParser.parse("content://com.android.providers.downloads/document/1/a.js") as DeeplinkCommand.Invalid
-        assertEquals("暂不支持打开 .js 文件", js.reason)
-        val mp3 = DeeplinkParser.parse("file:///storage/emulated/0/Music/a.mp3") as DeeplinkCommand.Invalid
-        assertEquals("暂不支持打开 .mp3 文件", mp3.reason)
+    fun `file links map to the three rn branches`() {
+        val cases =
+            listOf(
+                "content://com.android.providers.downloads/document/1/a.json" to FileKind.LIST_BACKUP,
+                "file:///storage/emulated/0/Download/lx_list_part_x.lxmc" to FileKind.LIST_BACKUP,
+                "content://com.android.providers.downloads/document/1/a.js" to FileKind.USER_API_SCRIPT,
+                "file:///storage/emulated/0/Music/a.mp3" to FileKind.AUDIO,
+                "file:///storage/emulated/0/Music/a.flac" to FileKind.AUDIO,
+                "file:///storage/emulated/0/Music/a.wav" to FileKind.AUDIO,
+                "file:///storage/emulated/0/Music/a.ogg" to FileKind.AUDIO,
+                // 扩展名大小写不敏感：RN 的 extname 不做小写化，但 SAF 的显示名可能带大写后缀
+                "file:///storage/emulated/0/Music/a.MP3" to FileKind.AUDIO,
+            )
+        cases.forEach { (link, kind) ->
+            val file = DeeplinkParser.parse(link) as DeeplinkCommand.OpenFile
+            assertEquals(link, kind, file.kind)
+            assertEquals(link, link.substringAfterLast('.', "").lowercase(), file.extension)
+        }
+    }
+
+    @Test
+    fun `file links outside the whitelist stay rejected`() {
+        val apk = DeeplinkParser.parse("file:///storage/emulated/0/Download/a.apk") as DeeplinkCommand.Invalid
+        assertEquals("暂不支持打开 .apk 文件", apk.reason)
+        // RN 的 default 分支靠 mime 兜底音频，SAF 侧没有稳定 mime，未白名单一律拒绝
+        val m4a = DeeplinkParser.parse("file:///storage/emulated/0/Music/a.m4a") as DeeplinkCommand.Invalid
+        assertEquals("暂不支持打开 .m4a 文件", m4a.reason)
+    }
+
+    /** RN `handleSearchPlayMusic`：paths 优先，按第一个 `-` 拆「歌名 - 歌手」。 */
+    @Test
+    fun `music searchPlay splits name and singer from path`() {
+        val command =
+            DeeplinkParser.parse("lxmusic://music/searchPlay/${encode("晴天 - 周杰伦")}")
+                as DeeplinkCommand.SearchPlay
+        assertEquals("晴天", command.name)
+        assertEquals("周杰伦", command.singer)
+        assertEquals("", command.albumName)
+        assertNull(command.interval)
+        assertEquals(false, command.playLater)
+    }
+
+    @Test
+    fun `music searchPlay keeps only the first two dash segments`() {
+        val command =
+            DeeplinkParser.parse("lxmusic://music/searchPlay/${encode("a - b - c")}")
+                as DeeplinkCommand.SearchPlay
+        assertEquals("a", command.name)
+        assertEquals("b", command.singer)
+    }
+
+    @Test
+    fun `music searchPlay without dash leaves singer empty`() {
+        val command = DeeplinkParser.parse("lxmusic://music/searchPlay/${encode("晴天")}") as DeeplinkCommand.SearchPlay
+        assertEquals("晴天", command.name)
+        assertEquals("", command.singer)
+    }
+
+    @Test
+    fun `music searchPlay reads data json when no path`() {
+        val data = """{"name":"晴天","singer":"周杰伦","albumName":"叶惠美","interval":"04:29","playLater":true}"""
+        val command =
+            DeeplinkParser.parse("lxmusic://music/searchPlay?data=${encode(data)}") as DeeplinkCommand.SearchPlay
+        assertEquals("晴天", command.name)
+        assertEquals("周杰伦", command.singer)
+        assertEquals("叶惠美", command.albumName)
+        assertEquals("04:29", command.interval)
+        assertTrue(command.playLater)
+    }
+
+    /** RN `if (!info.name) return`：空歌名是静默返回，不是报错 → 解析器返回 null。 */
+    @Test
+    fun `music searchPlay with empty name is ignored like rn`() {
+        assertNull(DeeplinkParser.parse("lxmusic://music/searchPlay/%20"))
+        assertNull(DeeplinkParser.parse("lxmusic://music/searchPlay?data=${encode("""{"name":""}""")}"))
+    }
+
+    /** `dataVerify` 的 max 规则：超长照样抛（这里折成 Invalid）。 */
+    @Test
+    fun `music searchPlay enforces rn max lengths`() {
+        val longName = "a".repeat(201)
+        val invalid =
+            DeeplinkParser.parse("lxmusic://music/searchPlay/${encode(longName)}") as DeeplinkCommand.Invalid
+        assertEquals("name max length no match", invalid.reason)
+        val longAlbum =
+            DeeplinkParser.parse(
+                "lxmusic://music/searchPlay?data=${encode("""{"name":"a","albumName":"${"b".repeat(65)}"}""")}",
+            ) as DeeplinkCommand.Invalid
+        assertEquals("albumName max length no match", longAlbum.reason)
+    }
+
+    @Test
+    fun `music searchPlay without path or data is invalid`() {
+        val invalid = DeeplinkParser.parse("lxmusic://music/searchPlay") as DeeplinkCommand.Invalid
+        assertEquals("data missing", invalid.reason)
+    }
+
+    @Test
+    fun `unknown music action stays invalid`() {
+        val invalid = DeeplinkParser.parse("lxmusic://music/rewind/a") as DeeplinkCommand.Invalid
+        assertEquals("Unknown action: rewind", invalid.reason)
     }
 
     @Test

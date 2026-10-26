@@ -56,6 +56,8 @@ import cn.toside.music.nativeapp.ui.list.LocalFileImport
 import cn.toside.music.nativeapp.ui.list.LocalFileImportDialog
 import cn.toside.music.nativeapp.ui.list.onListLongPress
 import cn.toside.music.nativeapp.ui.radio.RadioPage
+import cn.toside.music.nativeapp.ui.search.AlbumDetailPage
+import cn.toside.music.nativeapp.ui.search.ArtistDetailPage
 import cn.toside.music.nativeapp.ui.search.SearchPage
 import cn.toside.music.nativeapp.ui.songlist.RecommendPanel
 import cn.toside.music.nativeapp.ui.songlist.SonglistDetailPage
@@ -217,7 +219,21 @@ private fun HomeTabContent(
                     },
                     onOpenSettings = onOpenSettings,
                 )
-            HomeTab.SEARCH -> SearchPage(onBack = null, onOpenPlayer = onOpenPlayer)
+            HomeTab.SEARCH ->
+                SearchPage(
+                    onBack = null,
+                    onOpenPlayer = onOpenPlayer,
+                    // W6-6：三类详情改走导航栈（返回保留关键词/结果/滚动位置）
+                    onOpenSonglist = { source, id, title ->
+                        navigator.push(HomeNavigator.Route.SonglistDetail(source, id, title))
+                    },
+                    onOpenAlbum = { item ->
+                        navigator.push(HomeNavigator.Route.AlbumDetail(item.source, item.id, item))
+                    },
+                    onOpenArtist = { item ->
+                        navigator.push(HomeNavigator.Route.ArtistDetail(item.source, item))
+                    },
+                )
         }
         when (detail) {
             null -> Unit
@@ -245,6 +261,21 @@ private fun HomeTabContent(
                 )
             HomeNavigator.Route.Radio ->
                 RadioPage(
+                    onBack = { navigator.back() },
+                    onOpenPlayer = onOpenPlayer,
+                )
+            is HomeNavigator.Route.AlbumDetail ->
+                AlbumDetailPage(
+                    source = detail.source,
+                    id = detail.id,
+                    fallback = detail.fallback,
+                    onBack = { navigator.back() },
+                    onOpenPlayer = onOpenPlayer,
+                )
+            is HomeNavigator.Route.ArtistDetail ->
+                ArtistDetailPage(
+                    source = detail.source,
+                    artist = detail.artist,
                     onBack = { navigator.back() },
                     onOpenPlayer = onOpenPlayer,
                 )
