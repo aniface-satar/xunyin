@@ -25,7 +25,7 @@ class LocalImportPlanTest {
 
     @Test
     fun `empty input yields no batches`() {
-        assertTrue(LocalImportPlan.batches(emptyList()).isEmpty())
+        assertTrue(LocalImportPlan.batches(emptyList<String>()).isEmpty())
     }
 
     @Test

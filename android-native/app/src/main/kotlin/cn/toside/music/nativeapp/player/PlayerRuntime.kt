@@ -204,16 +204,13 @@ class PlayerRuntime private constructor(
         )
     }
 
-    /**
-     * 定时停止到点的正规收尾（替代原来的 `exitProcess(0)`）：
-     * 停播 → 关桌面歌词浮窗 → 释放均衡/播放器 → 停播放服务 → 结束任务。
-     * 进程随任务结束由系统回收，不再主动杀自己。
-     */
     // ---------- 本地曲库（Wave5 Lane B） ----------
 
     /** `source == "local"` 时的文件地址（document URI 字符串）；非本地曲目返回 null。 */
-    private fun JsonObject.localFileUri(): String? =
-        if (text("source") == LocalTrack.SOURCE) metaText("filePath") ?: text("id") else null
+    private fun JsonObject.localFileUri(): String? {
+        if (text("source") != LocalTrack.SOURCE) return null
+        return metaText("filePath") ?: text("id")
+    }
 
     /**
      * 本地直连取链：返回 `content://…` 字符串（Media3 原生支持 content URI），**绕开 userApi**。
@@ -240,6 +237,11 @@ class PlayerRuntime private constructor(
         }
     }
 
+    /**
+     * 定时停止到点的正规收尾（替代原来的 `exitProcess(0)`）：
+     * 停播 → 关桌面歌词浮窗 → 释放均衡/播放器 → 停播放服务 → 结束任务。
+     * 进程随任务结束由系统回收，不再主动杀自己。
+     */
     fun shutdown() {
         if (shuttingDown) return
         shuttingDown = true

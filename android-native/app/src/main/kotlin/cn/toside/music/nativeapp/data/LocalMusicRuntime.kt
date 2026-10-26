@@ -69,8 +69,12 @@ object LocalMusicRuntime {
     /** 最近一次导入结果（新一次导入开始时清空）。 */
     val outcome: StateFlow<Outcome?> = _outcome.asStateFlow()
 
-    @Volatile
-    private var importingListId: String? = null
+    private val _importingListId = MutableStateFlow<String?>(null)
+
+    /** 正在导入的列表 id（UI 用来禁用重复触发）；空闲为 null。 */
+    val importingListId: StateFlow<String?> = _importingListId.asStateFlow()
+
+    private val currentImportingListId: String? get() = _importingListId.value
 
     @Volatile
     private var cancelRequested = false
@@ -113,9 +117,9 @@ object LocalMusicRuntime {
         return true
     }
 
-    fun isImporting(listId: String): Boolean = importingListId == listId
+    fun isImporting(listId: String): Boolean = currentImportingListId == listId
 
-    fun isImporting(): Boolean = importingListId != null
+    fun isImporting(): Boolean = currentImportingListId != null
 
     /** 请求中止（当前条处理完就停，已入库的占位曲保留）。 */
     fun cancel() {
@@ -166,25 +170,30 @@ object LocalMusicRuntime {
         val lists = ListRuntime.get(context)
         val player = PlayerRuntime.get(context)
         lists.ensureLoaded()
-        importingListId = listId
+        _importingListId.value = listId
         cancelRequested = false
         _outcome.value = null
         _progress.value = LocalImportProgress()
         Log.d(TAG, "开始导入本地曲库：list=$listTitle($listId) tree=$treeUri")
 
         val entries =
-            SafDocuments.listChildren(context, treeUri).getOrElse { error ->
-                Log.w(TAG, "读取目录失败", error)
-                finish(context, player, listId, Outcome(total = 0, added = 0, failed = 0, cancelled = false))
-                return
-            }.filter { LocalAudio.isAudio(it.name, it.mimeType) }
+            SafDocuments
+                .listChildren(context, treeUri)
+                .getOrElse { error ->
+                    Log.w(TAG, "读取目录失败", error)
+                    finish(context, player, listId, Outcome(total = 0, added = 0, failed = 0, cancelled = false))
+                    return
+                }.filter { LocalAudio.isAudio(it.name, it.mimeType) }
 
         if (entries.isEmpty()) {
             finish(context, player, listId, Outcome(total = 0, added = 0, failed = 0, cancelled = false))
             return
         }
 
-        val locationType = player.settings.store.string("list.addMusicLocationType").ifEmpty { "top" }
+        val locationType =
+            player.settings.store
+                .string("list.addMusicLocationType")
+                .ifEmpty { "top" }
         val placeholders = entries.map { LocalTrack.buildPlaceholder(it.uri.toString(), it.name) }
         // 3) 占位快速入库：与 RN 一致，先让用户看到「共找到 N 个文件」
         lists.store.listMusicAdd(listId, placeholders, locationType)
@@ -211,9 +220,9 @@ object LocalMusicRuntime {
                 }
                 val results =
                     coroutineScope {
-                        group.map { entry ->
-                            async(Dispatchers.IO) { entry to readEntry(context, entry) }
-                        }.awaitAll()
+                        group
+                            .map { entry -> async(Dispatchers.IO) { entry to readEntry(context, entry) } }
+                            .awaitAll()
                     }
                 for ((entry, info) in results) {
                     processed += 1
@@ -259,7 +268,7 @@ object LocalMusicRuntime {
     ) {
         _progress.value?.let { _progress.value = it.copy(processed = it.total) }
         _outcome.value = outcome
-        importingListId = null
+        _importingListId.value = null
         cancelRequested = false
         player.core.handleListMusicsUpdated(listOf(listId))
         Log.d(TAG, "导入结束：$outcome")
