@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- W5-11：FileProvider 只暴露 cacheDir/share_cache（分享卡专用临时目录）。 -->
+<paths>
+    <cache-path
+        name="share_cache"
+        path="share_cache/" />
+</paths>
