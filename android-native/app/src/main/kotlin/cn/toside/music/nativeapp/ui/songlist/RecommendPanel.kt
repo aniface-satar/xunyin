@@ -27,11 +27,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cn.toside.music.core.recommend.PlaylistRank
+import cn.toside.music.core.songlist.PlaylistItem
 import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.data.CuratedNewSongs
 import cn.toside.music.nativeapp.data.CuratedPlaylists
 import cn.toside.music.nativeapp.data.ListRuntime
 import cn.toside.music.nativeapp.data.RecommendRuntime
+import cn.toside.music.nativeapp.data.RecommendStores
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import com.moriafly.salt.ui.SaltTheme
 import com.moriafly.salt.ui.UnstableSaltUiApi
@@ -74,6 +77,8 @@ fun RecommendPanel(
     var newSongsTick by remember { mutableStateOf(0) }
     var newSongsLoaded by remember { mutableStateOf(false) }
 
+    var hiddenHint by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(playlistsTick) {
         playlistsLoading = true
         playlistsError = null
@@ -112,6 +117,18 @@ fun RecommendPanel(
         }
     }
 
+    /** 长按歌单 = 不感兴趣：写隐藏表 → 排序侧下一轮就跳过它（恢复入口在电台页）。 */
+    fun hidePlaylist(
+        item: PlaylistItem,
+        onHidden: (String) -> Unit,
+    ) {
+        scope.launch {
+            val key = PlaylistRank.normalizePlaylistKey(item.source, item.id)
+            runCatching { RecommendStores.hidden.hide(key, item.name, System.currentTimeMillis()) }
+                .onSuccess { onHidden("已隐藏《${item.name}》，可在电台页「已隐藏的歌单」恢复") }
+        }
+    }
+
     LazyColumn(Modifier.fillMaxSize()) {
         item(key = "radio-entry") {
             RadioEntryCard(onClick = onOpenRadio)
@@ -123,6 +140,9 @@ fun RecommendPanel(
                 onRefresh = { playlistsTick++ },
             )
         }
+        hiddenHint?.let { text ->
+            item(key = "playlists-hidden-hint") { SectionHint(text) }
+        }
         val playlistItems = playlists?.list.orEmpty()
         if (playlistsLoading && !playlistsLoaded) {
             item(key = "playlists-loading") { SectionHint("加载中…") }
@@ -133,7 +153,11 @@ fun RecommendPanel(
         } else {
             items(playlistItems.size, key = { index -> "pl_${playlistItems[index].source}_${playlistItems[index].id}_$index" }) { index ->
                 val item = playlistItems[index]
-                PlaylistRow(item = item) { onOpenSonglist(item.source, item.id, item.name) }
+                PlaylistRow(
+                    item = item,
+                    onLongClick = { hidePlaylist(item, onHidden = { hiddenHint = it; playlistsTick++ }) },
+                    onClick = { onOpenSonglist(item.source, item.id, item.name) },
+                )
             }
         }
 

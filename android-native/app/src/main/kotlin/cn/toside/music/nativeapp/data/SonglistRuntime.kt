@@ -257,7 +257,7 @@ object RecommendRuntime {
                                     RecommendProfile.rankState(
                                         profile,
                                         blocked = runCatching { RecommendStores.dislikes.rules() }.getOrNull(),
-                                        hidden = runCatching { RecommendStores.hidden.all() }.getOrNull(),
+                                        hidden = runCatching { RecommendStores.hidden.timestamps() }.getOrNull(),
                                     ),
                                     now,
                                 )

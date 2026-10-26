@@ -1,8 +1,10 @@
 package cn.toside.music.nativeapp.ui.songlist
 
 import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -425,16 +427,23 @@ private fun Chip(
     }
 }
 
+/**
+ * 歌单列表行。`onLongClick` 只由推荐面板用来「不感兴趣（隐藏歌单）」，
+ * 其余调用点保持默认 null，等于点按行为零改动。
+ * 参数顺序特意让 `onClick` 留在最后：既有调用点都是尾随 lambda 写法。
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun PlaylistRow(
     item: PlaylistItem,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

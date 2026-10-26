@@ -22,6 +22,15 @@ data class RadioState(
     val themeWeights: Map<String, ThemePreference> = emptyMap(),
     val tokenWeights: Map<String, ThemePreference> = emptyMap(),
     val artistStats: Map<String, ThemePreference> = emptyMap(),
+
+    /**
+     * 问卷答案（选项 id → 百分比）与其**已播种分量**（分类键 → 初值分量）。
+     * 两者必须与 [themeWeights] 同生共死：重答问卷时先按 [onboardingSeeded] 对称回退再播新的，
+     * 否则「把华语从 100% 改成 0%」只会再叠一层负权，第一次表态永远撤不掉。
+     * 跨重启也靠这里保证幂等 —— 重启后重播一次 = 先退旧再播同值，净变化为零。
+     */
+    val onboardingWeights: Map<String, Double> = emptyMap(),
+    val onboardingSeeded: Map<String, Double> = emptyMap(),
     val channelBandit: Map<String, ChannelBanditArm> = emptyMap(),
     val settledPlayIds: Map<String, LedgerEntry> = emptyMap(),
     val radioHistory: List<RadioPlayRecord> = emptyList(),

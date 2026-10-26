@@ -53,7 +53,35 @@ class SimilarArtistRuntime(
 
     private var pendingNow: Long = 0L
 
+    /**
+     * 后台刷新产出的曲目**缓冲**：候选抓取只来取货、绝不触发网络。
+     *
+     * 一次 [refresh] 至少两位数的秒（MB 与 LB 全局限 1 req/s），而取曲路径是有延迟预算的。
+     * 所以刷新放在独立后台任务里跑，产物留在这里等下一轮取曲 —— 首批队列拿不到 E 的曲子，
+     * 但也不会为它多等 5 秒。这是与 RN 的差异点（RN 走同一套缓存 + 独立刷新循环），
+     * 效果相同：E 是渐进到位而不是首屏到位。
+     */
+    @Volatile
+    private var buffered: List<SimilarArtist.SongFetch<JsonObject>> = emptyList()
+
+    private val bufferLock = Any()
+
     private fun json(): Json = HttpResponseJson
+
+    /** 取走缓冲的曲目（非阻塞，幂等）；候选抓取用这个，不会发任何请求。 */
+    fun drainBuffered(): List<SimilarArtist.SongFetch<JsonObject>> =
+        synchronized(bufferLock) {
+            val snapshot = buffered
+            buffered = emptyList()
+            snapshot
+        }
+
+    private fun buffer(songs: List<SimilarArtist.SongFetch<JsonObject>>) {
+        if (songs.isEmpty()) return
+        synchronized(bufferLock) {
+            buffered = (buffered + songs).takeLast(POLICY.BUFFER_LIMIT)
+        }
+    }
 
     private suspend fun loadCache(now: Long): SimilarArtist.Cache {
         cache?.let { return it }
@@ -118,6 +146,7 @@ class SimilarArtistRuntime(
             }
         seedCursor = result.nextSeedCursor
         save(result.cache)
+        buffer(result.songs)
         return result
     }
 
@@ -229,6 +258,9 @@ class SimilarArtistRuntime(
             const val CACHE_REUSE_COOLDOWN_MS = 6L * 60 * 60 * 1000
             const val MIN_REQUEST_INTERVAL_MS = 1000L
             const val REQUEST_TIMEOUT_MS = 12_000L
+
+            /** 缓冲最多留 24 位歌手的曲目：再多也只是把过期的候选堆在内存里。 */
+            const val BUFFER_LIMIT = 24
         }
 
         private fun escapeQuery(name: String): String = name.replace('"', ' ').replace('\\', ' ').trim()
