@@ -27,12 +27,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cn.toside.music.core.recommend.PlaylistRank
+import cn.toside.music.core.songlist.PlaylistItem
 import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.data.CuratedNewSongs
 import cn.toside.music.nativeapp.data.CuratedPlaylists
 import cn.toside.music.nativeapp.data.ListRuntime
 import cn.toside.music.nativeapp.data.RecommendRuntime
+import cn.toside.music.nativeapp.data.RecommendStores
 import cn.toside.music.nativeapp.player.PlayerRuntime
+import cn.toside.music.nativeapp.ui.radio.OnboardingEntryCard
+import cn.toside.music.nativeapp.ui.radio.OnboardingSheet
 import com.moriafly.salt.ui.SaltTheme
 import com.moriafly.salt.ui.UnstableSaltUiApi
 import kotlinx.coroutines.launch
@@ -74,6 +79,18 @@ fun RecommendPanel(
     var newSongsTick by remember { mutableStateOf(0) }
     var newSongsLoaded by remember { mutableStateOf(false) }
 
+    var hiddenHint by remember { mutableStateOf<String?>(null) }
+
+    // 偏好问卷：入口只在这里（任务书约束），问卷本体在 ui/radio/OnboardingSheet.kt
+    var onboardingAnswers by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
+    var onboardingLoaded by remember { mutableStateOf(false) }
+    var showOnboarding by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        onboardingAnswers = runCatching { runtime.radio.onboardingAnswers() }.getOrElse { emptyMap() }
+        onboardingLoaded = true
+    }
+
     LaunchedEffect(playlistsTick) {
         playlistsLoading = true
         playlistsError = null
@@ -112,7 +129,25 @@ fun RecommendPanel(
         }
     }
 
+    /** 长按歌单 = 不感兴趣：写隐藏表 → 排序侧下一轮就跳过它（恢复入口在电台页）。 */
+    fun hidePlaylist(
+        item: PlaylistItem,
+        onHidden: (String) -> Unit,
+    ) {
+        scope.launch {
+            val key = PlaylistRank.normalizePlaylistKey(item.source, item.id)
+            runCatching { RecommendStores.hidden.hide(key, item.name, System.currentTimeMillis()) }
+                .onSuccess { onHidden("已隐藏《${item.name}》，可在电台页「已隐藏的歌单」恢复") }
+        }
+    }
+
     LazyColumn(Modifier.fillMaxSize()) {
+        item(key = "onboarding-entry") {
+            OnboardingEntryCard(
+                answered = onboardingAnswers.isNotEmpty(),
+                onClick = { showOnboarding = true },
+            )
+        }
         item(key = "radio-entry") {
             RadioEntryCard(onClick = onOpenRadio)
         }
@@ -122,6 +157,9 @@ fun RecommendPanel(
                 loading = playlistsLoading,
                 onRefresh = { playlistsTick++ },
             )
+        }
+        hiddenHint?.let { text ->
+            item(key = "playlists-hidden-hint") { SectionHint(text) }
         }
         val playlistItems = playlists?.list.orEmpty()
         if (playlistsLoading && !playlistsLoaded) {
@@ -133,7 +171,16 @@ fun RecommendPanel(
         } else {
             items(playlistItems.size, key = { index -> "pl_${playlistItems[index].source}_${playlistItems[index].id}_$index" }) { index ->
                 val item = playlistItems[index]
-                PlaylistRow(item = item) { onOpenSonglist(item.source, item.id, item.name) }
+                PlaylistRow(
+                    item = item,
+                    onLongClick = {
+                        hidePlaylist(item, onHidden = {
+                            hiddenHint = it
+                            playlistsTick++
+                        })
+                    },
+                    onClick = { onOpenSonglist(item.source, item.id, item.name) },
+                )
             }
         }
 
@@ -165,6 +212,24 @@ fun RecommendPanel(
                 )
             }
         }
+    }
+
+    if (showOnboarding) {
+        OnboardingSheet(
+            initial = onboardingAnswers,
+            onDismiss = { showOnboarding = false },
+            onSubmit = { submitted ->
+                scope.launch {
+                    onboardingAnswers = runCatching { runtime.radio.submitOnboarding(submitted) }.getOrElse { submitted }
+                    hiddenHint =
+                        if (onboardingAnswers.isEmpty()) {
+                            "已跳过偏好设置"
+                        } else {
+                            "偏好已保存，下一批候选就会按它调整"
+                        }
+                }
+            },
+        )
     }
 }
 

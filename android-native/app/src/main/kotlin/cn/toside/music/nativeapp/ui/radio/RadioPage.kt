@@ -161,6 +161,8 @@ fun RadioPage(
             onNext = { scope.launch { player.core.playNext() } },
         )
 
+        HiddenPlaylistCard()
+
         if (status.upcoming.isNotEmpty()) {
             Text(
                 text = "接下来",

@@ -4,6 +4,9 @@ import android.content.Context
 import cn.toside.music.core.player.DislikeInfo
 import cn.toside.music.core.player.PlayMusicInfo
 import cn.toside.music.core.recommend.DislikeRules
+import cn.toside.music.core.recommend.PlaylistRank
+import cn.toside.music.core.recommend.m3.Discovery
+import cn.toside.music.core.recommend.m3.Onboarding
 import cn.toside.music.core.recommend.radio.CandidateBuildParams
 import cn.toside.music.core.recommend.radio.ChannelId
 import cn.toside.music.core.recommend.radio.ExclusionContext
@@ -23,9 +26,12 @@ import cn.toside.music.core.recommend.radio.RadioSeed
 import cn.toside.music.core.recommend.radio.RadioState
 import cn.toside.music.core.recommend.radio.RadioTrackKeys
 import cn.toside.music.core.recommend.radio.RecommendQueueItem
+import cn.toside.music.core.recommend.radio.SimilarArtistContribution
 import cn.toside.music.core.recommend.radio.TempQueueOrder
+import cn.toside.music.core.songlist.RecommendSelection
 import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.player.PlayerRuntime
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -70,7 +76,9 @@ data class RadioStatus(
  * - 不喜欢 = 写 `@dislike_list` + 引擎负反馈 + 从队列撤下并跳下一首。
  *
  * 与 RN 的差异（降级，已记 lane 报告）：
- * - 相似歌手 / 语种桶 / 音频相似属 M3，候选只走「画像歌手直采 + 榜单 + 推荐歌单」三路；
+ * - 相似歌手（E）只做「后台刷新 + 缓冲取货」，首批队列拿不到 E 的曲子（宁可晚到，不加首屏延迟）；
+ * - 语种桶（L1~L4）已移植纯规则，但候选流的 `lang` 字段只有 kg/tx 逐曲字段才填得上，
+ *   配额在实际选曲里仍是「缺席即不限」；音频相似未移植；
  * - 导入归因（[RadioPlatform.importedOrigins]）返回空，M1 未保存导入来源映射。
  */
 class RadioRuntime(
@@ -106,6 +114,12 @@ class RadioRuntime(
     private var reordering = false
     private var persistJob: Job? = null
 
+    /** 读盘完成信号：播种与开播都要等它，避免被 `restoreState` 覆盖。 */
+    private val stateRestored = CompletableDeferred<Unit>()
+
+    /** 通道 E 的后台刷新（单飞）：产物进缓存/缓冲，不进取曲路径。 */
+    private var similarRefreshJob: Job? = null
+
     @Volatile
     private var dislikeInfoCache = DislikeInfo()
 
@@ -120,7 +134,10 @@ class RadioRuntime(
     init {
         engine.onStateChanged = { state -> schedulePersist(state) }
         scope.launch {
-            stateStore.read()?.let { engine.restoreState(it) }
+            runCatching { stateStore.read()?.let { engine.restoreState(it) } }
+            stateRestored.complete(Unit)
+            // 问卷播种必须在读盘之后：先恢复 themeWeights 再补播，否则读盘会把新播种覆盖回去
+            runCatching { applyOnboardingSeeds() }
             refreshDislikeCache()
             publish()
         }
@@ -161,6 +178,7 @@ class RadioRuntime(
         starting = true
         publish()
         try {
+            stateRestored.await()
             refreshDislikeCache()
             if (active) stop()
             removeCommittedFromPlayerQueue()
@@ -247,6 +265,33 @@ class RadioRuntime(
             engine.onMusicToggled(musicInfo)
             publish()
         }
+    }
+
+    // ---------- 偏好问卷 ----------
+
+    /** 当前问卷答案（选项 id → 百分比），供问卷 UI 回填滑条；没答过返回空表。 */
+    suspend fun onboardingAnswers(): Map<String, Double> = runCatching { RecommendStores.onboarding.weights() }.getOrElse { emptyMap() }
+
+    /** 是否答过卷（决定推荐面板顶部的入口卡片是「去设置偏好」还是「已设置，可修改」）。 */
+    suspend fun hasOnboardingAnswer(): Boolean = onboardingAnswers().isNotEmpty()
+
+    /**
+     * 提交问卷（RN `submitOnboarding`）：落盘 → 引擎播种 → 队列下次刷新吃到新净权。
+     * 空表＝跳过问卷，此时只回退旧播种，不写入新分量。
+     */
+    suspend fun submitOnboarding(answers: Map<String, Double>): Map<String, Double> {
+        val sanitized = runCatching { RecommendStores.onboarding.save(answers) }.getOrElse { answers }
+        stateRestored.await()
+        val applied = engine.applyOnboarding(sanitized, System.currentTimeMillis())
+        publish()
+        return applied
+    }
+
+    /** 把已落盘的问卷补播进分类净权（幂等；读盘完成前调用会等待）。 */
+    suspend fun applyOnboardingSeeds() {
+        stateRestored.await()
+        val weights = runCatching { RecommendStores.onboarding.weights() }.getOrElse { emptyMap() }
+        engine.applyOnboarding(weights, System.currentTimeMillis())
     }
 
     /** 播放进度采样（供引擎算收听区间；面板每秒调用即可）。 */
@@ -535,9 +580,12 @@ class RadioRuntime(
     }
 
     /**
-     * 候选抓取（RN `refreshExternalCandidates` 的三路降级版）：
-     * 画像歌手直采（A）、榜单轮换（D/A）、推荐歌单（B）。
-     * 探索通道 C 与相似歌手 E 依赖 M3 的相似度/语种，本波留空 —— 配额会自动让给有货的通道。
+     * 候选抓取（RN `refreshExternalCandidates` 的四路版）：
+     * 画像歌手直采（A）、榜单轮换（D/A）、推荐歌单（B）、相似歌手（E）。
+     *
+     * 通道 E 是**异步供货**：这里只顺手踢一轮后台刷新，再从缓冲取上一轮的货。
+     * 刷新本身（MB/LB 全局限 1 req/s）绝不占取曲路径的延迟预算；
+     * 缓冲空 = 本轮 E 让位，配额自动分给有货的通道。
      */
     private suspend fun fetchPool(
         reason: String,
@@ -551,6 +599,7 @@ class RadioRuntime(
         val observed = mutableListOf<ObservedPlaylist>()
         val reasons = mutableListOf<String>()
         var requests = 0
+        kickSimilarArtistRefresh(profile, now)
         val steps = if (reason.endsWith("_supplement")) 1 else (budget / 4).coerceIn(1, 3)
         for (offset in 0 until steps) {
             val step = (rotation + offset) % FETCH_STEPS
@@ -558,7 +607,9 @@ class RadioRuntime(
                 when (step) {
                     0 -> fetchArtistHits(params, rotation, candidates, reasons)
                     1 -> fetchChart(params, rotation, candidates, reasons)
-                    else -> fetchPlaylist(params, rotation, candidates, observed, reasons)
+                    2 -> fetchPlaylist(params, rotation, candidates, observed, reasons)
+                    3 -> fetchSimilarArtist(params, rotation, candidates, reasons)
+                    else -> fetchDiscovery(params, rotation, candidates, observed, reasons)
                 }
         }
         val merged = RadioPool.mergeCandidates(emptyList(), candidates)
@@ -647,6 +698,167 @@ class RadioRuntime(
         return 1
     }
 
+    /**
+     * 通道 E 取货：只读缓冲，**不发请求**（返回 0 表示本轮没有占用取曲预算）。
+     * 缓冲由 [kickSimilarArtistRefresh] 拉起的后台任务填充。
+     */
+    private fun fetchSimilarArtist(
+        params: CandidateBuildParams,
+        rotation: Int,
+        candidates: MutableList<PoolCandidate>,
+        reasons: MutableList<String>,
+    ): Int {
+        val runtime = runCatching { RecommendStores.similarArtist }.getOrNull() ?: return 0
+        val songs = runCatching { runtime.drainBuffered() }.getOrNull().orEmpty()
+        if (songs.isEmpty()) {
+            reasons.add("similar_artist:empty")
+            return 0
+        }
+        // 轮换起点按 rotation 错开，避免每次都先吃同一批种子歌手
+        val ordered = songs.sortedBy { it.seedArtist }
+        val start = rotation % ordered.size
+        val picked = (ordered.drop(start) + ordered.take(start)).take(MAX_SIMILAR_SEEDS)
+        val contributions = picked.map { SimilarArtistContribution(it.seedArtist, it.artistName, it.tracks) }
+        val created = RadioCandidates.createSimilarArtistCandidates(contributions, params)
+        candidates.addAll(created)
+        reasons.add("similar_artist:${created.size}")
+        return 0
+    }
+
+    /**
+     * 踢一轮通道 E 的后台刷新（单飞）：一次仅一位种子歌手推进一格阶段，
+     * 所以这行不会堆积任务，只会在电台活跃时慢慢把 E 的缓存铺满。
+     */
+    private fun kickSimilarArtistRefresh(
+        profile: RadioProfile,
+        now: Long,
+    ) {
+        if (similarRefreshJob?.isActive == true) return
+        val seeds =
+            profile.topArtists
+                .sortedByDescending { it.weight }
+                .map { it.artist }
+                .take(MAX_SIMILAR_SEEDS)
+        if (seeds.isEmpty()) return
+        val runtime = runCatching { RecommendStores.similarArtist }.getOrNull() ?: return
+        similarRefreshJob =
+            scope.launch(Dispatchers.IO) {
+                runCatching { runtime.refresh(seeds, now) }
+                // MB 艺人事实 / kg 搜歌结果回灌的歌手语言表统一落盘
+                runCatching { RecommendStores.artistLang.flush() }
+            }
+    }
+
+    /**
+     * 探索通道 C（任务 8）：原生侧没有音频特征也没有跨歌单共现索引，
+     * 所以 RN 的「相似曲」这条来源**不做**，改用两条不依赖音频信号的来源：
+     *
+     * 1. 语种缺口补货 —— 问卷里**明确想要**（> 50%）的语言关键词去搜歌。
+     *    低于中性点的语言项是「不想听」，拿来补货等于逆着用户表态推歌，必须排除；
+     * 2. 新鲜歌单 —— 分类目录里按画像关键词挑标签，用「最新」排序取一张没见过的歌单。
+     *
+     * 两条都是「撞新」性质，产出统一归 C；配额由 `Channels.plan` 的 A7/B5/C4/D2/E2 约束，
+     * 本函数不额外限量。
+     */
+    private suspend fun fetchDiscovery(
+        params: CandidateBuildParams,
+        rotation: Int,
+        candidates: MutableList<PoolCandidate>,
+        observed: MutableList<ObservedPlaylist>,
+        reasons: MutableList<String>,
+    ): Int {
+        var requests = 0
+        requests += fetchDiscoveryRestock(params, rotation, candidates, reasons)
+        requests += fetchDiscoveryPlaylist(params, rotation, candidates, observed, reasons)
+        return requests
+    }
+
+    /** 语种缺口补货：搜歌而不是搜歌单 —— 原生没有「按关键词搜歌单」这条通道。 */
+    private suspend fun fetchDiscoveryRestock(
+        params: CandidateBuildParams,
+        rotation: Int,
+        candidates: MutableList<PoolCandidate>,
+        reasons: MutableList<String>,
+    ): Int {
+        val weights = runCatching { RecommendStores.onboarding.weights() }.getOrNull().orEmpty()
+        val keyword = Discovery.pickRestockKeyword(weights, rotation)
+        if (keyword == null) {
+            reasons.add("discovery_restock:no_language_preference")
+            return 0
+        }
+        val page = runCatching { SearchRuntime.search(keyword, 1, SEARCH_SOURCE) }.getOrNull() ?: return 1
+        val tracks = page.list.take(TRACKS_PER_SOURCE)
+        if (tracks.isEmpty()) return 1
+        val created = RadioCandidates.createDiscoveryCandidates(tracks, keyword, params)
+        candidates.addAll(created)
+        reasons.add("discovery_restock:$keyword:${created.size}")
+        return 1
+    }
+
+    /** 新鲜歌单：标签轮换 + 最新排序，取一张歌单的曲目归 C（并记进 observedPlaylists）。 */
+    private suspend fun fetchDiscoveryPlaylist(
+        params: CandidateBuildParams,
+        rotation: Int,
+        candidates: MutableList<PoolCandidate>,
+        observed: MutableList<ObservedPlaylist>,
+        reasons: MutableList<String>,
+    ): Int {
+        val source = DISCOVERY_SOURCES[Math.floorMod(rotation, DISCOVERY_SOURCES.size)]
+        val sorts = runCatching { SonglistRuntime.sorts(source) }.getOrNull().orEmpty()
+        if (sorts.isEmpty()) return 0
+        // 成新率固定 1.0：RN 的 0.3 是给「一次刷新跑十几次发现请求」设计的，
+        // 原生一次只跑 1-3 步，按 0.3 算 C 几乎永远没货（详见 lane 报告的降级清单）。
+        val pick = Discovery.pickSort(sorts, rotation, RecommendSelection.pickHotSort(sorts)?.id, ratio = 1.0)
+        val tags = runCatching { SonglistRuntime.getTags(source) }.getOrNull() ?: return 1
+        val catalogue = RecommendSelection.flattenTags(tags)
+        if (catalogue.isEmpty()) return 1
+        val prefKeywords =
+            runCatching { RecommendStores.onboarding.weights() }
+                .getOrNull()
+                ?.let { Onboarding.computePreferenceKeywords(it) }
+                .orEmpty()
+        val tag =
+            if (prefKeywords.isEmpty()) {
+                RecommendSelection.pickTag(catalogue, rotation)
+            } else {
+                PlaylistRank.pickPlaylistTag(catalogue, { it.name }, engine.state.themeWeights, prefKeywords, rotation, params.now)
+            }
+        if (tag == null) return 1
+        val pageNum = 1 + Math.floorMod(rotation, 3)
+        val page = runCatching { SonglistRuntime.getList(source, pick.sortId, tag.id, pageNum) }.getOrNull() ?: return 2
+        if (page.list.isEmpty()) return 2
+        val item = page.list[Math.floorMod(rotation, page.list.size)]
+        val tracks = runCatching { SonglistRuntime.getListDetailAll(item.source, item.id) }.getOrNull() ?: return 3
+        if (tracks.isEmpty()) return 3
+        val observedPlaylist =
+            ObservedPlaylist(
+                id = "${item.source}__${item.id}",
+                source = item.source,
+                name = item.name,
+                author = item.author,
+                desc = item.desc,
+                category = tag.name,
+                totalTracks = item.total ?: tracks.size,
+                trackKeys = tracks.take(TRACKS_PER_SOURCE).map { RadioTrackKeys.buildTrackKey(it) },
+                pagesFetched = 1,
+                seedTrackKeys = emptyList(),
+                fetchedAt = params.now,
+                confidence = RadioCandidates.playlistCoverageConfidence(1.0, 1),
+                confirmed = false,
+            )
+        observed.add(observedPlaylist)
+        val created =
+            RadioCandidates.createPlaylistCandidates(
+                observedPlaylist,
+                tracks.take(TRACKS_PER_SOURCE),
+                params,
+                ChannelId.C,
+            )
+        candidates.addAll(created)
+        reasons.add("discovery_playlist:${item.id}${if (pick.useNew) ":newest" else ":hot"}:${created.size}")
+        return 3
+    }
+
     companion object {
         private const val RADIO_COMMIT_AHEAD = 2
         private const val PENDING_LOW_WATER = 4
@@ -655,11 +867,15 @@ class RadioRuntime(
         private const val MAX_PROFILE_ARTISTS = 12
         private const val MAX_PROFILE_SEEDS = 40
         private const val MAX_ARTIST_HITS = 3
+        private const val MAX_SIMILAR_SEEDS = 4
         private const val TRACKS_PER_SOURCE = 20
-        private const val FETCH_STEPS = 3
+        private const val FETCH_STEPS = 5
         private const val SEARCH_SOURCE = "kw"
 
         private val CHART_SOURCES = listOf("kw", "kg", "tx", "wy", "mg")
+
+        /** 探索通道只用目录结构稳定的源（kg/kw/tx 的分类目录覆盖最全）。 */
+        private val DISCOVERY_SOURCES = listOf("kw", "kg", "tx")
     }
 }
 

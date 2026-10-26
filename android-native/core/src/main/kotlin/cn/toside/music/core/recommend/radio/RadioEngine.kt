@@ -1,5 +1,6 @@
 package cn.toside.music.core.recommend.radio
 
+import cn.toside.music.core.recommend.m3.Onboarding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -150,6 +151,38 @@ class RadioEngine(
     fun endSession() {
         queue.invalidate()
         served.clear()
+    }
+
+    /**
+     * 问卷播种（RN `submitOnboarding` 的等价物，同时兼作启动补播）：
+     * 先按 [RadioState.onboardingSeeded] 对称回退旧初值，再按新百分比播种。
+     *
+     * 幂等：同一份答案重放两次净变化为零，所以启动时无条件调用一次是安全的。
+     * 空答案＝跳过问卷（只回退、不播种），完成后 `onboardingWeights` 为空表示「没表态」。
+     *
+     * @return 归一化后的答案（UI 拿它回填滑条，别再自己 sanitize 一遍）
+     */
+    fun applyOnboarding(
+        answers: Map<String, Double>,
+        now: Long = now(),
+    ): Map<String, Double> {
+        val sanitized = Onboarding.sanitizeWeights(answers)
+        // 答案没变就不动状态：播种分量是答案的纯函数，重退重播本就净变化为零
+        if (sanitized == state.onboardingWeights) return sanitized
+        val themes = state.themeWeights.toMutableMap()
+        if (state.onboardingSeeded.isNotEmpty()) Onboarding.revokeSeedWeights(themes, state.onboardingSeeded)
+        val seeds = Onboarding.computeSeedWeights(sanitized)
+        if (seeds.isNotEmpty()) Onboarding.applySeedWeights(themes, seeds, now)
+        state =
+            state
+                .copy(
+                    themeWeights = themes,
+                    onboardingWeights = sanitized,
+                    onboardingSeeded = seeds,
+                ).trim(now)
+        markProfileLearned()
+        emitState()
+        return sanitized
     }
 
     suspend fun warmUp(target: Int = RadioConfig.Queue.TARGET_SIZE): Int {

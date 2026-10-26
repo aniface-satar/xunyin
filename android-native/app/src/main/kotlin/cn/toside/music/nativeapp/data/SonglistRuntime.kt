@@ -254,7 +254,11 @@ object RecommendRuntime {
                                     { it.name },
                                     { it.author },
                                     { it.source to it.id },
-                                    RecommendProfile.rankState(profile),
+                                    RecommendProfile.rankState(
+                                        profile,
+                                        blocked = runCatching { RecommendStores.dislikes.rules() }.getOrNull(),
+                                        hidden = runCatching { RecommendStores.hidden.timestamps() }.getOrNull(),
+                                    ),
                                     now,
                                 )
                             }

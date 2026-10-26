@@ -1,13 +1,15 @@
 package cn.toside.music.core.recommend.radio
 
+import cn.toside.music.core.recommend.m3.LangBucket
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 /**
  * 个性电台 M2 的数据模型 —— RN `core/recommend/types.ts` 的移植。
  *
- * 【M3 退化】`lang` / `langHint` 与语言桶配额依赖 `language.ts`（M3），
- * 这里整体缺席；候选与最终队列都不带语种字段，选曲不做语言硬配额。
+ * 【M3 更新】Wave5 Lane A 起 `PoolCandidate` / `FinalQueueItem` 追加了 `lang` / `langHint`
+ * 等语种字段（全部带默认值，既有构造点不用改），语种硬配额因此接上；
+ * 字段由 `m3/Language.resolveLang` 产出。
  */
 enum class ChannelId { A, B, C, D, E }
 
@@ -158,6 +160,13 @@ data class PoolCandidate(
     val addedAt: Long = 0,
     val confirmedSeedPlaylist: Boolean = false,
     val reasons: List<String> = emptyList(),
+    /** 语种桶（`m3/Language.resolveLang` 的 L1–L4 结果）。 */
+    val lang: LangBucket? = null,
+    val langLevel: Int = 0,
+    /** 整批候选带的语种提示（桶召回时用），`lang` 判不出时的兜底。 */
+    val langHint: LangBucket? = null,
+    /** 作品级 key，用于同作品不同版本的软降频。 */
+    val workKey: String? = null,
 )
 
 /** 候选池里同一首歌的语料来源（歌单观察记录）。 */
@@ -182,7 +191,7 @@ data class ObservedPlaylist(
     val confirmed: Boolean = false,
 )
 
-/** 最终队列评分项（对照 RN `diversity.ts` 的 FinalQueueItem；M3 的多样性字段不移植）。 */
+/** 最终队列评分项（对照 RN `diversity.ts` 的 FinalQueueItem；M3 字段以默认值追加在尾部）。 */
 data class FinalQueueItem(
     val key: String,
     val channels: List<ChannelId>,
@@ -197,6 +206,14 @@ data class FinalQueueItem(
     val groupIds: List<String>,
     val exposureCount: Int,
     val weight: Double,
+    /** 语种桶：配额与连播硬规则的唯一依据。null 与 unknown 同义——不受配额约束。 */
+    val lang: LangBucket? = null,
+    /** 语种判定的命中级别（0=判不出 1=接口字段 2=桶提示 3=歌手表 4=字面统计），只用于诊断。 */
+    val langLevel: Int = 0,
+    /** 候选整批带的语种提示（L2），`lang` 缺席时用。 */
+    val langHint: LangBucket? = null,
+    /** 作品级 key（忽略 Live/Remix 等版本差异），用于软降频而非硬排除。 */
+    val workKey: String? = null,
 )
 
 @Serializable

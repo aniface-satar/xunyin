@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import cn.toside.music.nativeapp.data.RecommendStores
 import cn.toside.music.nativeapp.ui.HomePage
 import cn.toside.music.nativeapp.ui.RetainedContent
 import cn.toside.music.nativeapp.ui.play.CoverImageLoader
@@ -27,6 +28,8 @@ fun MusicApp() {
     val context = LocalContext.current
     // 封面磁盘缓存需要 applicationContext（CoverImageLoader 其余 API 不变）
     remember(context) { CoverImageLoader.init(context) }
+    // 推荐 M3 的存储/运行时（问卷、歌手语言表、隐藏歌单、相似歌手通道 E）统一装配一次
+    remember(context) { RecommendStores.init(context) }
     val isDark = isSystemInDarkTheme()
     SaltTheme(
         configs = SaltConfigs.default(isDarkTheme = isDark),
