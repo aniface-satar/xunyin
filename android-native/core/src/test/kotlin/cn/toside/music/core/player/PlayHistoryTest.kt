@@ -94,7 +94,8 @@ class PlayHistoryTest {
             var calls = 0
             core.onAddPlayHistory = { calls += 1 }
             core.playListById("love", "1")
-            assertTrue(core.state.value.playedList.isEmpty())
+            val played = core.state.value.playedList
+            assertTrue(played.isEmpty())
             assertEquals(1, calls)
         }
 
