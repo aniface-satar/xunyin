@@ -3,7 +3,7 @@
 > 跟踪 `kotlin-saltui-migration-feasibility.md` §七 分批次方案的执行状态。
 > 每批一节，含完成项、遗留项、验收边界。
 
-## 批次状态速查（更新于 2026-10-26，Wave4 三车道已并入）
+## 批次状态速查（更新于 2026-10-26，Wave5 三车道已并入）
 
 | 批次 | 状态 | 备注 |
 |:--:|:--|:--|
@@ -11,26 +11,30 @@
 | B1 数据与领域层 | ✅ 完成 | lxmc 导入导出数据层闭环；63 用例 |
 | B2 播放内核与原生桥 | 🔄 进行中 | 决策层+Media3 平台+crypto+预热+状态同步/通知栏命令+实例接线/失败重试/加载超时/音量均衡已完成；**Wave3 Lane A 补齐三键回读/播放进度记忆/`isPlayedStop` 上升为 PlayerCore 守卫/退出收尾（替代 `exitProcess(0)`）**；**Wave4 Lane A 补 `@play_history` 原生写入方与 `playedList` 唯一写入点（`onMusicToggled` → 电台）**；代码项收口，剩余真机验收 |
 | B3 音源生态 QuickJS | 🔄 进行中 | QuickJS 桥 + 原生 HTTP + 内置源运行时 + 取链 + **更新流全链路（调度/解析/语法闸门/写入回滚/启动检查/updateAlert）** + **自定义源管理页/音源日志页/设置页补齐（Wave1 Lane B）** 已完成；代码项收口，剩余真机取链与更新流验收（见下方 B3 节） |
-| B4 全屏播控页 | 🔄 进行中 | 首版骨架 + **B4 剩余弹层（Wave1 Lane C：播放器设置面板 = 定时关闭/音量/倍速/歌词字号/译文/音译/当前音质只读，歌词设置以设置为唯一来源）** 已完成；**分享卡（Wave4 Lane B：音乐卡/歌词卡/五档比例/保存相册，主动重绘保证预览=成品）**；本批剩余真机视觉与手感验收（见下方 B4 节） |
-| B5 主界面与列表 | 🔄 进行中 | 第一切片：ListStore→播放器接线、歌单页、首页列表入口；第二切片：酷我搜索→试听列表→播放；第三切片：新建/重命名/删除/清空列表、单曲移除、搜索结果加入指定歌单；第四切片：设置存储与设置页（音质/歌词开关/音量均衡/加歌位置）；第五切片：首页迷你播放条、歌单多选批量删除/移动、长按拖拽排序；第六切片：三一级 tab/独立详情栈/发现二级 tab 导航壳与搜索一级 tab 嵌入；第七切片：五源搜索核心与全源聚合规则（app 层尚未接线）；第八切片：五源搜索 app 接线（transport/并发/代次/缓存/源选择/翻页 UI）；第九切片：排行榜内容（五源榜单清单 + kw/kg 榜单详情 + 30 条本地分页 + 临时列表起播，tx/wy/mg 详情未接）；第十切片：排行榜 tx/wy/mg 三源榜单详情收口 + 三源接线 + 25 条用例（Wave1 Lane A，第九切片的「详情未接」到此关闭）；第十一切片：在线歌单五源（标签/列表/详情 + 30 条展示分页）与发现页推荐官方内容通道（推荐歌单/新歌速递，Wave2 Lane A）；第十二切片：歌单详情排序 9 档 + 自定义排序（Wave2 Lane C）；**第十三切片：推荐画像 M1 重排（Wave3 Lane B）+ 歌单搜索五源与在线歌单详情二轮（Wave3 Lane C）**；**第十四切片：歌单长尾（Wave4 Lane C：列表菜单去重、lxmc SAF 导入导出、整单导入为新歌单、歌单链接打开、封面磁盘缓存）**；**第十五切片：个性电台 M2（Wave4 Lane A：bandit 全家桶 + 候选池/队列/选曲/安全模式 + 电台页与喜欢/不感兴趣闭环）**。本批剩余：推荐 M3（音频相似/MMR）、首页长按菜单、deeplink、onboarding 与「更多」分页、真机验收 |
+| B4 全屏播控页 | 🔄 进行中 | 首版骨架 + **B4 剩余弹层（Wave1 Lane C：播放器设置面板 = 定时关闭/音量/倍速/歌词字号/译文/音译/当前音质只读，歌词设置以设置为唯一来源）** 已完成；**分享卡（Wave4 Lane B：音乐卡/歌词卡/五档比例/保存相册，主动重绘保证预览=成品）**；**分享卡「分享卡片」（Wave5 Lane C：MediaStore Uri + `ACTION_SEND` + `ClipData` 授权，同预览内复用已存图）**；本批剩余真机视觉与手感验收（见下方 B4 节） |
+| B5 主界面与列表 | 🔄 进行中 | 第一切片：ListStore→播放器接线、歌单页、首页列表入口；第二切片：酷我搜索→试听列表→播放；第三切片：新建/重命名/删除/清空列表、单曲移除、搜索结果加入指定歌单；第四切片：设置存储与设置页（音质/歌词开关/音量均衡/加歌位置）；第五切片：首页迷你播放条、歌单多选批量删除/移动、长按拖拽排序；第六切片：三一级 tab/独立详情栈/发现二级 tab 导航壳与搜索一级 tab 嵌入；第七切片：五源搜索核心与全源聚合规则（app 层尚未接线）；第八切片：五源搜索 app 接线（transport/并发/代次/缓存/源选择/翻页 UI）；第九切片：排行榜内容（五源榜单清单 + kw/kg 榜单详情 + 30 条本地分页 + 临时列表起播，tx/wy/mg 详情未接）；第十切片：排行榜 tx/wy/mg 三源榜单详情收口 + 三源接线 + 25 条用例（Wave1 Lane A，第九切片的「详情未接」到此关闭）；第十一切片：在线歌单五源（标签/列表/详情 + 30 条展示分页）与发现页推荐官方内容通道（推荐歌单/新歌速递，Wave2 Lane A）；第十二切片：歌单详情排序 9 档 + 自定义排序（Wave2 Lane C）；第十三切片：推荐画像 M1 重排（Wave3 Lane B）+ 歌单搜索五源与在线歌单详情二轮（Wave3 Lane C）；第十四切片：歌单长尾（Wave4 Lane C：列表菜单去重、lxmc SAF 导入导出、整单导入为新歌单、歌单链接打开、封面磁盘缓存）；第十五切片：个性电台 M2（Wave4 Lane A：bandit 全家桶 + 候选池/队列/选曲/安全模式 + 电台页与喜欢/不感兴趣闭环）；**第十六切片：S17 本地曲库（Wave5 Lane B：SAF 目录树扫描 + `MediaMetadataRetriever` 标签/内嵌封面 + `source=local` 的 `content://` 直连取链 + 同名 `.lrc` + 列表操作行第 8 项）；第十七切片：推荐 M3（Wave5 Lane A：语种四级判定与配额、问卷播种、相似度/MMR、时段权重、通道 E 相似歌手异步供货、探索通道 C 接货）+ 首页长按九项菜单与 `lxmusic://` deeplink（Wave5 Lane C）**。本批剩余：「更多」分页、M3 两项供给层接线（W5-1）、音频特征（已评估未实现）、真机验收 |
 | B6 长尾屏幕与桌面歌词 | 🔄 进行中 | **桌面歌词浮窗 MVP（Wave2 Lane B）**：悬浮窗服务 + 逐行滚动（150ms 提前量）+ 更多菜单开关 + 悬浮窗权限流程 + 位置持久化（整数百分比）已完成；**Wave3 Lane A 补齐冷启动自动恢复、设置页桌面歌词小节、锁定/样式实时刷新、`SettingsStore` 小数数值互通**；剩余前台服务/OEM 保活（**Wave4 决议：不实现，见 B6 待办**）与真机验收（见下方 B6 节） |
 | B7 收官 | ⬜ 未开始 | — |
 
 **验证基线**：`cd android-native && gradlew.bat ktlintCheck test assembleDebug`
 （Git Bash 下用 `GRADLE_USER_HOME=E:/GradleHome ./gradlew ...`）
-→ 当前应为 `:core` 742 + `:app` 76（合计 **818**）全绿，APK **28,860,935 B**
-（sha256 `b6fc737667d805d4306ff0c006afba1b47feb790c8aa7344a3c4418ed56cc837`；
-QuickJS 四 ABI + 9 个内置源脚本 + Wave1~Wave4 十二条车道成果）。
-> 数字取自主仓库合并提交 `f214bd8`（Wave4 三车道全部并入后的最终闸门：
+→ 当前应为 `:core` 883 + `:app` 111（合计 **994**）全绿，APK **28,925,062 B**
+（sha256 `0103f7832c69096ccb35001a6d4b7e4ed7060bff0ba02f7e14de2116158ecf92`；
+QuickJS 四 ABI + 9 个内置源脚本 + Wave1~Wave5 十五条车道成果）。
+> 数字取自主仓库 `a4f714b`（Wave5 三车道并入 + 本地曲库装配之后的最终闸门：
 > BUILD SUCCESSFUL，failures/errors/skipped 全 0）。
-> Wave4 各 lane 的闸门数（便于回溯定位是谁的改动）：Lane A core 661 + app 76（新增 core 103：
-> 电台 M2 引擎 21 文件 + 集成用例）；Lane B core 619 + app 76（新增 core 61：分享卡纯规则）；
-> Lane C core 578 + app 76（新增 core 20：去重分组/整单导入冲突/链接解析，app 0）。
-> 可加性核对：core `634 + 20(C) + 61(B) + 103(A) = 818`、app `76` 未变，
-> 与实测 `742 + 76` 一致，说明合并**没有丢测试、没有互相覆盖**。
+> Wave5 三车道并完的中间基线：合并提交 `66a15d7`，core 883 + app 106 = **989**，
+> APK 28,925,062 B，sha256 `c86989f9…`；`a4f714b` 只补跨车道装配（+5 app 用例），
+> core 与 APK 体积均未变。
+> Wave5 各 lane 的闸门数（便于回溯定位是谁的改动）：Lane B core 775 + app 83（新增 core 33 +
+> app 7：`core/local` 五件套与导入弹层文案）；Lane C core 742 + app 99（新增 app 23：
+> deeplink 16 + 菜单规则 7，**core 一位没动**）；Lane A core 850 + app 76（新增 core 108：
+> M3 五件套 + 通道 E + 探索通道 C + 端到端）。
+> 可加性核对：core `742 + 33 + 0 + 108 = 883`、app `76 + 7 + 23 + 0 = 106`（+5 装配用例 = 111），
+> 与实测一致，说明合并**没有丢测试、没有互相覆盖**。
+> Wave4 基线（历史）：合并提交 `f214bd8`，core 742 + app 76 = 818，APK 28,860,935 B。
 > Wave3 基线（历史）：合并提交 `8bdb799`，core 558 + app 76 = 634，APK 28,142,274 B。
-> Wave2 基线（历史）：合并提交 `3a83b8c`，core 470 + app 68 = 538，APK 28,049,076 B，
-> 可加性 core `384 + 49(A) + 21(B) + 16(C) = 470`、app `62 + 6(A) = 68`。
+> Wave2 基线（历史）：合并提交 `3a83b8c`，core 470 + app 68 = 538，APK 28,049,076 B。
 > Wave1 基线（历史）：合并提交 `63e4715`，core 384 + app 62 = 446，APK 27,602,811 B。
 ktlint 已升级到 **14.2.0**（12.2.0 在 AGP 9 内建 Kotlin 下只检查 `.kts`，app 的 Kotlin 源码此前实际未被 lint）；
 全工程统一为 ktlint official 4 空格缩进（`android-native/.editorconfig`）。
@@ -1684,3 +1688,175 @@ musicSdk → Ktor、theme 表生成器双目标输出。Redux slice 边界 = Vie
   7. onboarding、「更多」分页未做（电台页只展示 6 首队列预览）。
 - **M3 立项输入**（未变）：音频相似需 native 方案评审；数据工程仍需词典分词/后缀切分，
   且 M2 已引入逐笔结算，若画像也要逐笔落盘则需补 1500ms 防抖（电台状态侧已实现，画像侧未做）。
+
+## Wave5 集成记录（2026-10-26）
+
+**结论：三条车道按 RULES 走完收尾三步，按 B → C → A 顺序并入 `main`（本地曲库先进、
+推荐 M3 最重最后），零冲突；三条车道各自看不见的跨车道装配点由本会话补齐。**
+
+| 车道 | 任务 | lane 提交 | 各自闸门数 |
+|:--|:--|:--|:--|
+| Lane B | B5 第十六切片 S17 本地曲库（SAF 目录树 + 标签/内嵌封面 + `source=local` 直连取链 + 同名 `.lrc` + 列表第 8 项） | `65e277b` / `40159e4` / `e3a25a3` + 报告 | core 775 + app 83 |
+| Lane C | 首页长按九项菜单 + `lxmusic://` deeplink + 分享卡系统分享（另出「播放页 morph」「搜索歌手/专辑」两份评估） | `3de6f02` / `bcc5e58` / `9fce559` / `26a1e21` + 报告 | core 742 + app 99 |
+| Lane A | B5 第十七切片 推荐 M3（语种四级判定与配额 / 问卷播种 / 相似度与 MMR / 时段权重 / 通道 E 相似歌手 / 探索通道 C 接货 / 音频特征代价评估） | `8f4e2d0`…`193e430` + `e9f1194` 报告 | core 850 + app 76 |
+
+- **波前快照**：`de836cd`（只改 `docs/waves/w5-prompts.md`，与三条车道零交集），三条车道从同一
+  快照分叉，未互相 rebase。
+- **合并提交**：`8e981aa`（laneB）→ `ada033c`（laneC）→ `66a15d7`（laneA），均 `--no-ff`，
+  保留 lane 历史、未 squash。**每并入一条跑一次 `ktlintCheck test assembleDebug`，三条并完再跑一次。**
+- **合并后闸门**：`core 883 + app 106 = 989` 全绿，failures/errors/skipped 全 0；
+  APK **28,925,062 B**（波前 28,860,935 B，+64,127 B）。
+- **可加性核对**：core `742 + 33(B) + 0(C) + 108(A) = 883`，app `76 + 7(B) + 23(C) + 0(A) = 106`，
+  与实测一致，无测试丢失或互相覆盖。
+- **冲突情况：零，无需修复点。** 三条车道的路径几乎不相交，唯一理论交叉是
+  `ui/list/`（C 加长按菜单与 `ListMenuActions`、B 改列表详情页操作行）与
+  `util/SafDocuments.kt`（C 未碰、B 纯新增 API），实际都是**新增文件/新增函数**，无同一行改写。
+  `HomePage.kt` 由 C 独占（长按手势与菜单宿主挂载），B/A 未碰，合并后长按链路完整。
+- **跨车道装配补做（本会话，`a4f714b`）**：Lane C 报告遗留 2 是「任务书层面留给集成会话的必做项」，
+  车道内不可能完成（B 的代码在 C 的 worktree 里不可见）：
+  1. `LocalFileImport.importTo = LocalMusicRuntime::importTo` —— 不赋值则首页长按菜单的
+     「添加本地歌曲」永久置灰（菜单项可用性就是 `importTo != null`）。
+  2. `HomePage` 常驻注册 `OpenDocumentTree` 选择器并立刻持久化授权，同时挂
+     `LocalFileImportDialog`（此前首页触发的导入没有任何可看的进度层）。
+  3. `LocalMusicRuntime` 的目录选择器宿主由**单槽改为栈**：单槽下列表详情页 `onDispose`
+     会把首页常驻的那一份一起清掉——「进过一次列表详情页，首页入口就永久置灰」。
+     栈实现后「后注册优先、退场只弹自己那层」，新增 `LocalMusicPickerStackTest` 5 例锁住语义。
+  → 补做后最终基线：`core 883 + app 111 = 994` 全绿，APK **28,925,062 B**，
+  sha256 `0103f7832c69096ccb35001a6d4b7e4ed7060bff0ba02f7e14de2116158ecf92`（core 与 APK 体积未变）。
+- **集成会话的判断**：
+  1. 未 push（用户未要求）；除上述装配与本文档外没有改业务代码。
+  2. **RN 侧未提交改动全程未碰**（未 add / 未 stash / 未还原），`git status` 中 RN 路径条目
+     与合并前一致；本次只提交 `android-native/`（装配 3 文件）与 `docs/`。
+  3. 三条 lane 的「语义修正」已并入对应批次表格：B5（Wave5 Lane A 推荐 M3、Wave5 Lane B 本地曲库、
+     Wave5 Lane C 首页菜单/deeplink）、B4（Wave5 Lane C 分享卡系统分享）。
+  4. 遗留逐条勾销/改述：Wave4 遗留里的「首页长按菜单」「deeplink」「onboarding」「本地文件」全部关闭；
+     「同步（更新）」「更多分页」仍挂着并已写明依赖。
+  5. Lane A 的两项**未接线**（`Diversity.select` 未替换 M2 选曲器、候选 `lang` 字段供给不足）
+     按报告原样登记为 W5-1，**不当作已完成**——这是本波最重要的诚实边界。
+
+### Wave5 三条车道的语义修正要点
+
+> 全表（B 8 条 / C 11 条 / A 4 条）在各自 lane 报告里，这里只留会影响后续开发的。
+
+**Lane B（本地曲库）**
+
+- **`id` 载体换人**：RN `id = file.path`；SAF 无路径 → `id = meta.filePath = meta.songId = document URI`。
+  去重/覆盖/失败移除全部沿用同一键，语义等价；**换设备/重装后旧 id 失效**（同 RN 换机后旧路径失效），
+  已记 W5-7。
+- **越界说明（唯一一条，已报备）**：`Media3PlayerPlatform` 的 `DataSource.Factory` 上游原为
+  `DefaultHttpDataSource`，`content://` 交给它会直接抛 `Unsupported scheme`，本地曲**根本播不了**。
+  改为按 scheme 分流的 `SchemeRoutingDataSourceFactory`：http(s) 保持「缓存 + UA/超时/重定向」原样，
+  其余走 `DefaultDataSource`；本地文件**不进磁盘缓存**（不会把本地曲库复制进 1 GB 的 TrackPlayer 缓存）。
+- **mime 缺失**：SAF 的 `getType()` 常返回 `application/octet-stream`/null → 退回扩展名白名单；
+  但 mime **明确**说了不是音频（如 `video/mp4`）就尊重它、不收。
+- **空标题**：RN 空名会被 `filterMusicList` 丢掉（表现为「导入后歌凭空消失」）→ 原生退回文件名 stem，用例锁死。
+
+**Lane C（菜单 / deeplink / 分享）**
+
+- **菜单项文案按 i18n**：`list_select_local_file` = 「添加本地歌曲」、`list_sync` = 「更新」
+  （起草稿写的「本地文件」「同步」是错的）。
+- **`local_file` 的开关是导入进行中**（`fetchingListStatus[id]`），与列表身份无关；
+  起草稿「非用户列表禁本地文件」被实证推翻。
+- **deeplink `paths[1]` 是 url 不是 id**；query 解析 `const [key, value] = param.split('=')`
+  会在**第二个 `=`** 处截断；`decodeURIComponent` **不**把 `+` 当空格而 `URLDecoder` 会
+  （先把 `+` 转义成 `%2B`）。三条都逐位照抄并写进 `DeeplinkParserTest`。
+- **`common.shareType` 不管分享卡**：`system|clipboard` 只管文字分享；分享卡是「保存」「分享」
+  两个独立按钮，分享无条件 `shareImage`。故分享按钮直接 `ACTION_SEND`，`shareType` 仍是死键（W5-9）。
+- **Compose 手势**：外层 `combinedClickable` 会被 `Item` 自带的 `clickable` 先消费（Main pass 内→外），
+  长按永不触发 → 自定义 `onListLongPress` 在 **Initial 阶段**观察、正常路径零消费、只有长按成立才吞后续事件。
+
+**Lane A（推荐 M3）**
+
+- **两处起草假设被实证推翻**：① `like/dislike/early_skip` **早已**进 `ThemeFeedback`
+  （`RadioBehavior.applySettlementResult`），A/E 通道不进主题净权与 RN 一致，不是缺陷 →
+  任务 7 改为只做 hidden/blocked 写入方 + 问卷播种闭环；② `Channels.plan` 的 A7/B5/C4/D2/E2
+  与缺货让位 **M2 就是真实分配**，C 的问题是 `availability[C] = 0` 而不是分配算术 →
+  任务 8 改为「给 C 接货」，分配算术一行未动。
+- **`windowSlice` 的 `slice(-0)` 坑**：JS 取整个数组；Kotlin `takeLast(0)` 本就为空，但负数会抛，显式夹紧。
+- **腾讯（tx）数字码表坑**：`Number('') === 0` → 空串必须拦在码表前，否则空字段被判成「粤语」。
+- **播种幂等**：`RadioState.onboardingSeeded` 记录已播分量，重答先 revoke 再 apply；
+  同一份答案重放两次净变化为零，启动时无条件补播安全（`applyingSameAnswersTwiceIsIdempotent`）。
+- **通道 E 不占取曲延迟**：一轮 MB/LB 刷新至少两位数秒 → 后台单飞刷新 + `drainBuffered()` 取货
+  （返回 0 requests）。**代价：首批队列没有 E**（W5-3）。
+- **一个真机对照点**：选择器「近 8 首同歌手不重复」→ 同歌手集中于一个池子时第 5 首就
+  `quota_exhausted`。**队列短不一定是候选少，可能是画像歌手里集中度太高**（M2 既有语义，本波未动）。
+
+### Wave5 遗留清单（合并去重，Wave6 输入）
+
+| # | 遗留 | 来源 | 影响 / 建议 |
+|:--:|:--|:--|:--|
+| W5-1 | **`Diversity.select` 未替换 `RadioSelection.select`；候选 `lang` 字段供给不足** | A 降级 1/2 | MMR / 同作品软降频 / 分类轮换 / **语种硬配额在真机均未生效**（只有问卷播种与语种补货真跑了）。**Wave6 最高优先级**，需同时迁 M2 的 12 个选曲用例 |
+| W5-2 | 供给层三缺：`bucketFromLyric` 无调用方、会话共现 SAR 未移植、`computeBucketDetailReserve`/`computePoolBucketLimits` 只移植不接线 | A 降级 6/7/10 | L3 只靠逐曲字段与 MB 关系链；`coOccurrence` 恒 0。需「候选后台拉歌词」通道与跨歌单倒排索引 |
+| W5-3 | 通道 E 是渐进供货（首批队列无 E） | A 降级 3 | 要求首屏有 E 就把首次 refresh 提前到 `start()` 之前（+2–3 s）或用上一会话缓存兜底 |
+| W5-4 | C 的「相似曲（音频/共现）」来源未做；`Discovery` 调用处成新率固定 1.0（RN 0.3） | A 降级 4/5 | 撞新只有「语种补货 + 新鲜歌单」两路；成新率需真机数据后回调 |
+| W5-5 | **音频特征零代码**（只出评估） | A 任务 9 | 建议 Wave6 先做路线 A（纯谱特征 FFT，3-4 人日、**零包体积**）验证「音频信号有没有用」；路线 B（mel + TFLite）一次到位但要 +4.2–4.5 MB 与模型许可复核 |
+| W5-6 | 问卷 UI 是四档档位（无 material Slider） | A 降级 9 | 颗粒度 0/50/70/100；换滑条只改 `OnboardingSheet.kt`，持久化与算法不动 |
+| W5-7 | 本地曲目**没有重定位入口**，备份/导出会带上 `content://` | B 遗留 6 | 换设备/重装后这些曲目无法播放（RN 同样没有）。建议做「本地曲目重扫/重定位」或导出时剥离 local 曲目 |
+| W5-8 | RN 的在线兜底未做（`getMusicUrl`/`getPicUrl`/`getLyricInfo` 失败后按同名同歌手去在线搜） | B 遗留 1/2 | 与「相似歌曲 / 标签补全」一起做，要复用五源搜索与画像；内嵌歌词（ID3 USLT / MP4）需自写解析器 |
+| W5-9 | `ListMenuActions` 与 `ListDetailPage` 的导入/导出/排序逻辑重复 | C 遗留 1 | Wave6 抽 `ui/list/ListFileActions.kt` 两处都调 |
+| W5-10 | 同步（更新）未移植；`music/searchPlay`、`.js` 音源导入、音频文件打开未做；`.lxmc` 无标准 MIME | C 遗留 3/4/5 | 同步依赖各源 `songList` 能力与 `sourceListId`（字段已有、无消费方）；`.lxmc` 要自定义 MIME，与 B7 一起做 |
+| W5-11 | 分享图片先落相册再分享（无 FileProvider） | C 遗留 6 | 接 FileProvider 后可改「先写 cache 再分享、相册只在点保存时写」 |
+| W5-12 | `common.shareType` 仍是死键；排序档位 `add_time`/`play_count` 无写入方 | C 遗留 7/8 | 文字分享入口落地后再补设置项；两个排序档位取值恒 0（W4 已记，未恶化） |
+| W5-13 | 本地曲目会进推荐画像；`importedOrigins` 恒空 | B 遗留 5 / A 降级 8 | 大批本地导入会影响 `themeWeights`；若要过滤需在画像装配里按 `source == "local"` 处理（Wave6 定产品口径） |
+| W5-14 | 播放页 morph 转场未做（缺 `compose.animation` 依赖 + `RetainedContent` 只 measure 可见页的结构障碍） | C 任务 4 | 先动 gradle，Wave6 与「更多分页」一起做，先验证「播放条→播放页」单元素 |
+| W5-15 | 搜索「歌手 / 专辑」两类未做（10 个解析器 + 2 套编排 + 2 张详情页） | C 任务 5 | 独立 M 级任务，建议 Wave6 单开车道，只碰 `core/music/search/` 与 `ui/search/` |
+| W5-16 | 本地曲库单层扫描、节流未用真实定时器（按批落库） | B 语义修正 5 / 遗留 3 | 递归扫描是产品决策（会改变「这一层」的含义），随「多目录合并」一起定 |
+| W5-17 | 菜单 `Item(enabled = false)` 的置灰对比度未在真机确认 | C 遗留 9 | 与真机清单第 19 项（置灰条件）一起看 |
+
+### 真机验收清单汇总（Wave5，39 条，均需用户在真机执行）
+
+**本地曲库（Lane B，11 条）**
+
+1. 含 mp3/flac/ogg/wav + 1 个 txt + 1 个 jpg 的目录 → 只收 4 个音频，弹层进度到结束。
+2. 重启后**不重新选目录**直接播本地曲 → 能播（持久授权生效）；提示「无法访问」即为授权未持久化缺陷。
+3. 标签齐全的曲目字段正确；**删掉标签**的曲目歌名=文件名、歌手空、**不丢歌**。
+4. 有内嵌封面显示、无内嵌封面显示占位且不崩。
+5. 同目录 `song.lrc` 有歌词；删掉 lrc 后无歌词、不崩不卡。
+6. 拔卡/删文件后播放 → toast「本地文件无法访问…」，不崩。
+7. 拖进度条、后台 10 分钟、通知栏切歌：本地曲全部正常（content URI 要支持 seek）。
+8. 1000 首目录：耗时可接受、进度在动、点「取消」能停（已入库占位曲保留）。
+9. 导入中菜单项灰；导入完可再来一次，**同目录重复导入不产生重复曲目**。
+10. 空目录 → 「没有在当前文件夹中发现歌曲」。
+11. 音量均衡开启时播本地曲音量正常（`isEnableAudioOffload` 互斥未丢）。
+
+**首页菜单 / deeplink / 分享（Lane C，12 条）**
+
+12. `adb shell am start -d "lxmusic://songlist/play/kw/<id>"` 冷启动直达歌单详情，返回落在发现页。
+13. 前台时同命令走 `onNewIntent`，`dumpsys` 里 `MainActivity` 只有一个实例。
+14. `player/togglePlay`、`pause`、`skipNext`、`skipPrev` 各一次有效。
+15. `player/collect` → 收藏多一首；`uncollect` → 少一首。
+16. `music/play?data=…`：正在播立刻切换；停播只入队（与 RN 一致）。
+17. 非法链接 → toast「调用失败：Source no match」。
+18. 长按试听列表/我的收藏/自建列表各一次 → 九项菜单；**普通点击仍进详情页**（手势没抢点击）。
+19. 置灰：试听/收藏的「重命名」「删除」；导入中的「添加本地歌曲」「更新」。
+20. 菜单功能：重命名 / 排序（含自定义排序跳详情）/ 重复歌曲 / **添加本地歌曲（本次装配后应可用）** /
+    导入（.lxmc 走冲突两按钮）/ 导出（同名自动改号）/ 删除（活动列表回落试听列表）。
+21. 分享卡「分享图片」→ 微信图片能预览；「保存图片」仍进相册。
+22. 分享后杀进程重进 → 图仍在（MediaStore `IS_PENDING=0`）。
+23. 全程竖屏（长短按、菜单、chooser 旋转都不出现横屏）。
+
+**推荐 M3（Lane A，16 条）**
+
+24. 连续 30 首「陌生曲」占比：波前 vs 波后，分「有问卷表态 / 无表态」两组。
+25. `getSummary().channelShare` 里 C 与 E 是否都非 0（E 需播够 2-3 分钟）。
+26. 问卷设「华语 100%」→ 华语占比上升；改「0%」→ 下降且**旧正权被撤**（不是叠负权）。
+27. `RadioMode.EXPLORE` 下 C 的占比明显高于电台模式。
+28. 推荐页顶部卡片文案：未答「先花 30 秒设置偏好」→ 答完「偏好已设置 / 修改」。
+29. 全部选「无所谓」→ 提示「等于没表态」且不落库。
+30. 杀进程重进：档位回填正确，语种分布**不出现播种叠加**（`onboardingSeeded` 幂等的真机验证）。
+31. 长按推荐歌单 → 该歌单**立刻**消失（不是刷新才消失），提示文案出现。
+32. 电台页「已隐藏的歌单 N」能列名字、单条恢复，恢复后推荐页重新出现。
+33. 杀进程重进 → 隐藏记录仍在。
+34. 飞行模式开电台：不弹错、不卡住，`reasons` 里能看到 `similar_artist:*`。
+35. 抓包确认 MB/LB 请求间隔 ≥ 1 s 且带 UA（无 UA 会 403）。
+36. 播 5 分钟后 `xunyin_recommend_similar_artist_v1` 生成且 `byArtist` 有条目；
+    `xunyin_recommend_artist_lang_v1` 出现 relation 强度条目。
+37. 日志 `reasons` 关键串：`similar_artist:empty` / `similar_artist:<N>` /
+    `discovery_restock:<语种>:<N>` / `discovery_playlist:<id>:newest:<N>` / `discovery_restock:no_language_preference`。
+38. 开播到首曲耗时不超过波前基线 +10%（E 是后台刷新，变慢说明 `kick` 抢了主线程）。
+39. 额外回归（因 B 改了播放器数据源工厂）：在线曲**取链 → 播放 → 缓存命中**，
+    以及电台自动补位两条链路（B 报告「集成时重点回归」）。
+
+**累计：Wave1 24 + Wave2 16 + Wave3 20 + Wave4 27 + Wave5 39 = 126 条。
+JVM 闸门全绿 ≠ 可发版，建议此刻安排一次真机清账（优先：本地曲库直连播放、推荐撞新与问卷、
+首页长按菜单手势、deeplink 冷启动）。**
