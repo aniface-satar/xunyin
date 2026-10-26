@@ -62,23 +62,41 @@ object Discovery {
      * 低于中性点的语言项是「不想听」，绝不能拿来补货——那会把用户明明降权的
      * 语种当成缺口反复推。`unknown`/`other` 这类没进问卷的桶在这里天然不出现。
      */
-    fun restockKeywords(weights: Map<String, Double>): List<String> =
+    fun restockPicks(weights: Map<String, Double>): List<RestockPick> =
         Onboarding.OPTIONS
             .filter { it.question == Onboarding.Question.LANGUAGE }
             .mapNotNull { option ->
                 val percent = weights[option.id] ?: return@mapNotNull null
                 if (percent <= Onboarding.NEUTRAL_PERCENT) null else option to percent
             }.sortedByDescending { it.second }
-            .map { it.first.aliases.first() }
-            .filter { it.isNotBlank() }
+            .mapNotNull { (option, _) ->
+                val keyword = option.aliases.firstOrNull()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                // 这一批搜索就是为该语种桶发的：L2 提示直接来自问卷选项 id（比关键词精确，
+                // 「欧美」「小语种」这类词不在 kg 语种词表里，靠关键词反查会漏）
+                RestockPick(keyword, LanguageQuota.OPTION_TO_BUCKET[option.id])
+            }
+
+    /** 一条语种补货任务：关键词 + 该批候选的 L2 语种提示（问卷没表态时第二项为 null）。 */
+    data class RestockPick(
+        val keyword: String,
+        val langHint: LangBucket?,
+    )
+
+    /** 只要关键词的旧入口（保留给既有调用方与用例）。 */
+    fun restockKeywords(weights: Map<String, Double>): List<String> = restockPicks(weights).map { it.keyword }
 
     /** 按轮次在补货关键词里游走（没有问卷表态时返回 null，调用方回退到分类轮换）。 */
     fun pickRestockKeyword(
         weights: Map<String, Double>,
         rotation: Int,
-    ): String? {
-        val keywords = restockKeywords(weights)
-        if (keywords.isEmpty()) return null
-        return keywords[Math.floorMod(rotation, keywords.size)]
+    ): String? = pickRestock(weights, rotation)?.keyword
+
+    fun pickRestock(
+        weights: Map<String, Double>,
+        rotation: Int,
+    ): RestockPick? {
+        val picks = restockPicks(weights)
+        if (picks.isEmpty()) return null
+        return picks[Math.floorMod(rotation, picks.size)]
     }
 }

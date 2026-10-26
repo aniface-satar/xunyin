@@ -217,14 +217,14 @@ object Diversity {
 
     private fun applyQualityGate(
         pool: List<FinalQueueItem>,
-        channel: ChannelId,
+        channelOf: (FinalQueueItem) -> ChannelId,
     ): List<FinalQueueItem> {
         val ratio = RadioConfig.Softmax.QUALITY_GATE_RATIO
         if (ratio <= 0.0 || ratio >= 1.0) return pool
         var best = 0.0
-        for (item in pool) best = max(best, qualityWeightOf(item, channel))
+        for (item in pool) best = max(best, qualityWeightOf(item, channelOf(item)))
         if (best <= 0.0) return pool
-        val gated = pool.filter { qualityWeightOf(it, channel) >= best * ratio }
+        val gated = pool.filter { qualityWeightOf(it, channelOf(it)) >= best * ratio }
         return gated.ifEmpty { pool }
     }
 
@@ -256,10 +256,22 @@ object Diversity {
         history: List<FinalQueueItem>,
         picked: List<FinalQueueItem>,
         options: Options,
+    ): Map<FinalQueueItem, Double> = mmrScores(pool, { channel }, history, picked, options)
+
+    /**
+     * 每首候选按**自己的**通道算分（fallback 分支用）：一首歌可能同时属于 A/C，
+     * 用「池中第一首的通道」统一算分会让后面所有候选的分数都取错通道的权重。
+     */
+    private fun mmrScores(
+        pool: List<FinalQueueItem>,
+        channelOf: (FinalQueueItem) -> ChannelId,
+        history: List<FinalQueueItem>,
+        picked: List<FinalQueueItem>,
+        options: Options,
     ): Map<FinalQueueItem, Double> {
         if (pool.isEmpty()) return emptyMap()
         val lambda = max(0.0, min(1.0, options.mmrLambda))
-        val raw = pool.associateWith { weightFor(it, channel, history, options) }
+        val raw = pool.associateWith { weightFor(it, channelOf(it), history, options) }
         val maxRaw = raw.values.maxOrNull() ?: 0.0
         return pool.associateWith { item ->
             val relevance = if (maxRaw > 0.0) raw.getValue(item) / maxRaw else 0.0
@@ -275,15 +287,15 @@ object Diversity {
      */
     private fun pickFrom(
         pool: List<FinalQueueItem>,
-        channel: ChannelId,
+        channelOf: (FinalQueueItem) -> ChannelId,
         history: List<FinalQueueItem>,
         picked: List<FinalQueueItem>,
         options: Options,
     ): FinalQueueItem? {
         if (pool.isEmpty()) return null
-        val gated = applyQualityGate(pool, channel)
+        val gated = applyQualityGate(pool, channelOf)
         val temperature = max(0.05, min(2.0, options.temperature))
-        val scores = mmrScores(gated, channel, history, picked, options)
+        val scores = mmrScores(gated, channelOf, history, picked, options)
         val maxScore = scores.values.maxOrNull() ?: 0.0
         val weights = scores.mapValues { exp((it.value - maxScore) / temperature) }
         val total = weights.values.sum()
@@ -397,7 +409,7 @@ object Diversity {
                                 checkItemConstraints(item, history, relax, langGuard)
                         }
                     if (eligible.isEmpty()) continue
-                    val chosen = pickFrom(eligible, channel, history, pickedItems, options) ?: continue
+                    val chosen = pickFrom(eligible, { channel }, history, pickedItems, options) ?: continue
                     return Triple(chosen, channel, relaxLevel)
                 }
             }
@@ -447,9 +459,14 @@ object Diversity {
                     reasons += "no_candidate_after_relaxation"
                     break
                 }
-                val channel = pool.first().channels.firstOrNull() ?: ChannelId.D
-                val chosen = pickFrom(pool, channel, history, picked.map { it.item }, options) ?: break
-                ladder = Triple(chosen, channel, RELAX_LADDER.lastIndex)
+                // fallback 没有「当前通道」可用：按每首候选自己的通道算权重，
+                // 选中后用**它自己**的通道记账——否则池中第一首是 A，后面选中的 C/E 也会被记成 A，
+                // 通道配额与 getSummary 的 channelShare 会一起错位（Wave6 实证到的真 bug）。
+                val chosen =
+                    pickFrom(pool, { it.channels.firstOrNull() ?: ChannelId.D }, history, picked.map { it.item }, options)
+                        ?: break
+                val chosenChannel = chosen.channels.firstOrNull() ?: ChannelId.D
+                ladder = Triple(chosen, chosenChannel, RELAX_LADDER.lastIndex)
                 reasons += "fallback_channel"
                 if (consecutiveRelaxed) reasons += "lang_consecutive_relaxed"
             }

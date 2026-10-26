@@ -515,6 +515,38 @@ object SimilarArtist {
         val tracks: List<T>,
     )
 
+    /** 首屏补给的一条取货计划：用上一会话缓存里的相似歌手名去 kg 搜歌。 */
+    data class PrefillPick(
+        val seedArtist: String,
+        val artistName: String,
+    )
+
+    /**
+     * 方案 b 的纯计划部分：从上一会话缓存里挑出最多 [maxArtists] 位相似歌手（不碰网络）。
+     *
+     * 排序按缓存的 `fetchedAt` 降序（最近铺完的种子优先），每个种子从自己的 `nextIndex`
+     * 开始取——与后台 refresh 的轮换位一致，避免每次都补给同几个人。
+     * 缓存为空 / 记录里没有相似歌手 / `maxArtists <= 0` 一律返回空表，调用方据此**不发请求**。
+     */
+    fun planCachePrefill(
+        cache: Cache,
+        maxArtists: Int,
+    ): List<PrefillPick> {
+        if (maxArtists <= 0 || cache.byArtist.isEmpty()) return emptyList()
+        val picks = mutableListOf<PrefillPick>()
+        val ordered = cache.byArtist.entries.sortedByDescending { it.value.fetchedAt }
+        for ((seedArtist, record) in ordered) {
+            if (record.similar.isEmpty()) continue
+            val start = Math.floorMod(record.nextIndex, record.similar.size)
+            for (offset in record.similar.indices) {
+                val entry = record.similar[(start + offset) % record.similar.size]
+                picks.add(PrefillPick(seedArtist, entry.name))
+                if (picks.size >= maxArtists) return picks
+            }
+        }
+        return picks
+    }
+
     data class RefreshInput(
         val cache: Cache,
         /** 候选种子歌手，按画像权重降序；调用方已剔除屏蔽歌手。 */

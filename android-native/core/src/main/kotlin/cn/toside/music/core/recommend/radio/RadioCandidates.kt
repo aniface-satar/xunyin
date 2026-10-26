@@ -2,6 +2,8 @@ package cn.toside.music.core.recommend.radio
 
 import cn.toside.music.core.recommend.ThemeFeedback
 import cn.toside.music.core.recommend.ThemePreference
+import cn.toside.music.core.recommend.m3.LangBucket
+import cn.toside.music.core.recommend.m3.Language
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.max
 import kotlin.math.min
@@ -13,13 +15,15 @@ import kotlin.math.min
  * 「抓」留给 app 的 RadioRuntime，「建」保持纯函数，便于 JVM 单测与黄金 fixture。
  *
  * 【M3 退化】`similarity.ts` 的共现/分组不移植：`coOccurrence` 恒为 0，
- * 分组只认歌单自带 groupId；语种桶（L1~L4）整体缺席，不产出 langHint。
+ * 分组只认歌单自带 groupId；语种四级链由 [CandidateLang] 在创建时落位（L1~L4）。
  */
 data class CandidateBuildParams(
     val profile: RadioProfile,
     val now: Long,
     val exclusion: ExclusionContext,
     val themeWeights: Map<String, ThemePreference> = emptyMap(),
+    /** L3 歌手语言表查询（app 注入）；缺省时只靠 L1/L2/L4。 */
+    val artistLang: ArtistLangLookup? = null,
 )
 
 data class SimilarArtistContribution(
@@ -42,15 +46,26 @@ object RadioCandidates {
         pagesFetched: Int,
     ): Double = max(0.15, min(1.0, coverage)) * if (pagesFetched > 0) 1.0 else 0.2
 
+    /**
+     * 歌单语种提示（L2）：分类标签恰好是语种词时（「华语」「粤语」「日语」…）整批候选带提示。
+     *
+     * 只做**精确词表匹配**，不做子串匹配：`Language.mapKgLanguageWord` 的注释已说明
+     * 「表外（如自译解词）交回下一级」，在调用侧绕过它做 `contains` 会把「华语说唱」
+     * 这类分类也判成华语，等于给整个歌单贴上不可撤销的语种事实。
+     */
+    private fun playlistLangHint(observed: ObservedPlaylist): LangBucket? = Language.mapKgLanguageWord(observed.category)
+
     fun createPlaylistCandidates(
         observed: ObservedPlaylist,
         tracks: List<JsonObject>,
         params: CandidateBuildParams,
         channel: ChannelId,
+        langHint: LangBucket? = null,
     ): List<PoolCandidate> {
         val candidates = mutableListOf<PoolCandidate>()
         val profileSeedCount = max(1, params.profile.seedKeys.size)
         val affinity = RadioPool.observedAffinity(observed, profileSeedCount, 0.0)
+        val hint = langHint ?: playlistLangHint(observed)
         val themeFactor =
             RadioFeedback.themeAffinityFactor(
                 ThemeFeedback.themeNetWeight(
@@ -90,6 +105,8 @@ object RadioCandidates {
                         playCount = observed.playCount,
                         confirmedSeedPlaylist = observed.confirmed || observed.seedTrackKeys.isNotEmpty(),
                         reason = reasons.joinToString(","),
+                        langHint = hint,
+                        artistLang = params.artistLang,
                     ),
                 ),
             )
@@ -126,6 +143,7 @@ object RadioCandidates {
                         affinity = max(0.15, artistAffinity * 0.6),
                         confirmedSeedPlaylist = false,
                         reason = "chart_rotation",
+                        artistLang = params.artistLang,
                     ),
                 ),
             )
@@ -156,6 +174,7 @@ object RadioCandidates {
                         exploration = 0.2,
                         confirmedSeedPlaylist = false,
                         reason = "artist_hits:$artist",
+                        artistLang = params.artistLang,
                     ),
                 ),
             )
@@ -192,6 +211,7 @@ object RadioCandidates {
                             exploration = 0.3,
                             confirmedSeedPlaylist = false,
                             reason = "similar_artist:${contribution.seedArtist}",
+                            artistLang = params.artistLang,
                         ),
                     ),
                 )
@@ -212,6 +232,7 @@ object RadioCandidates {
         keyword: String,
         params: CandidateBuildParams,
         channel: ChannelId = ChannelId.C,
+        langHint: LangBucket? = null,
     ): List<PoolCandidate> {
         val candidates = mutableListOf<PoolCandidate>()
         for (musicInfo in tracks) {
@@ -236,6 +257,8 @@ object RadioCandidates {
                         exploration = 0.9,
                         confirmedSeedPlaylist = false,
                         reason = "discovery:$keyword",
+                        langHint = langHint,
+                        artistLang = params.artistLang,
                     ),
                 ),
             )

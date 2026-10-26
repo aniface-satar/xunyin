@@ -4,7 +4,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 最终选曲（M2 降级版 diversity：配额 + 歌手间隔 + 探索间隔 + softmax）单元测试。 */
+/**
+ * 最终选曲（M2 降级版 diversity：配额 + 歌手间隔 + 探索间隔 + softmax）单元测试。
+ *
+ * `RadioSelection` 自 Wave6 起已 `@Deprecated`（选曲点换成 M3 的 `Diversity.select`）：
+ * 这套用例**原样保留**，12 条断言是「新实现在这些老口径上没有退化」的对照基线。
+ * 对照用的 M3 等价断言见 `DiversitySelectionParityTest`。
+ */
+@Suppress("DEPRECATION")
 class RadioSelectionTest {
     private fun options(
         target: Int,

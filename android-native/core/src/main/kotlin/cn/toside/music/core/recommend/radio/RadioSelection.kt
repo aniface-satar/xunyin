@@ -5,12 +5,14 @@ import kotlin.math.min
 import kotlin.math.pow
 
 /**
- * 最终选曲 —— M2 的降级版配额抽样器。
+ * 最终选曲 —— M2 的降级版配额抽样器（**已被 M3 取代，保留为语义参照**）。
  *
- * RN 的 `diversity.ts` 属 M3（本波禁触），这里只保留电台主线真正依赖的部分：
- * 通道配额、同歌手间隔阶梯、20/30 首窗口内的重复上限、探索曲目间隔，
- * 以及按通道权重的 softmax 抽样。同作品版本软降频、分类轮换、语种硬配额等 M3 项缺席。
+ * Wave6 起 `RadioEngine.generateQueue` 改调 [cn.toside.music.core.recommend.m3.Diversity.select]：
+ * 本类没有语种配额/MMR/同作品软降频/分类轮换，通道选择也走「按剩余额度随机」而不是
+ * M3 的「按剩余额度排序」。保留它是为了有一份可对照的旧实现与旧用例，
+ * **不要再新增调用方**。
  */
+@Deprecated("M3 的 Diversity.select 已接管选曲；本对象仅作语义参照与回归对照")
 data class SelectionOptions(
     val target: Int,
     val recent: List<FinalQueueItem>,
@@ -32,6 +34,7 @@ data class SelectionResult(
     val maxRelaxLevel: Int,
 )
 
+@Deprecated("M3 的 Diversity.select 已接管选曲；本对象仅作语义参照与回归对照")
 object RadioSelection {
     private const val ARTIST_GAP = 8
     private const val SAME_ARTIST_IN_LAST_30 = 2

@@ -125,6 +125,12 @@ object RadioConfig {
         const val MIN_CACHE_FOR_INSTANT_START = 20
         const val CANDIDATE_TTL_MS = 24L * 60 * 60 * 1000
         const val DETAIL_FETCHES_PER_REFRESH = 4
+
+        /**
+         * 池子按语种配额淘汰时的宽松系数（RN `candidatePool.poolEvictOverQuotaSlack`）：
+         * 淘汰是慢变量（下次抓取才能补货），卡太死会让某语种突然断供。
+         */
+        const val POOL_EVICT_OVER_QUOTA_SLACK = 1.5
     }
 
     /** 闲置深度巡捞：池子低于目标且距上次抓取足够久时，用加倍预算补池（不阻塞播放）。 */
