@@ -157,28 +157,31 @@ fun ShareCardOverlay(
         if (saving) return
         saving = true
         scope.launch {
-            val result =
-                saved ?: withContext(Dispatchers.IO) {
-                    ShareCardSaver.save(context, image, cardFileName(track.name, track.singer))
-                }
-            saving = false
-            when (result) {
-                is ShareSaveResult.Saved -> {
-                    saved = result
-                    if (shareAfter) {
-                        // RN `ShareCardModal#handleShare` 三个入参：chooser 标题 / SUBJECT / TEXT
-                        ShareImageSender.sendWithToast(
-                            context = context,
-                            uri = result.uri,
-                            chooserTitle = "将「${track.name}」分享到...",
-                            subject = "歌曲分享",
-                            text = "${track.name} - ${track.singer}",
-                        )
-                    } else {
+            if (shareAfter) {
+                // W5-11：分享不落相册——写 cacheDir/share_cache 经 FileProvider 分享；
+                // 「保存图片」按钮才走 MediaStore（那是用户明确要落相册）
+                saving = false
+                ShareImageSender.sendCardWithToast(
+                    context = context,
+                    bitmap = image,
+                    baseName = cardFileName(track.name, track.singer),
+                    chooserTitle = "将「${track.name}」分享到...",
+                    subject = "歌曲分享",
+                    text = "${track.name} - ${track.singer}",
+                )
+            } else {
+                val result =
+                    saved ?: withContext(Dispatchers.IO) {
+                        ShareCardSaver.save(context, image, cardFileName(track.name, track.singer))
+                    }
+                saving = false
+                when (result) {
+                    is ShareSaveResult.Saved -> {
+                        saved = result
                         toast(context, "已保存：${result.fileName}")
                     }
+                    is ShareSaveResult.Failed -> toast(context, result.message)
                 }
-                is ShareSaveResult.Failed -> toast(context, result.message)
             }
         }
     }

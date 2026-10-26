@@ -3,11 +3,14 @@ package cn.toside.music.nativeapp.data
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
+import cn.toside.music.core.local.EmbeddedLyric
 import cn.toside.music.core.local.LocalAudio
 import cn.toside.music.core.local.LocalImportPlan
 import cn.toside.music.core.local.LocalImportProgress
 import cn.toside.music.core.local.LocalLyric
+import cn.toside.music.core.local.LocalRelink
 import cn.toside.music.core.local.LocalTrack
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import cn.toside.music.nativeapp.ui.play.CoverImageLoader
@@ -22,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -151,23 +155,230 @@ object LocalMusicRuntime {
         scope.launch { runImport(context.applicationContext, listId, listTitle, treeUri) }
     }
 
-    /** 本地曲目的同名 `.lrc` 歌词（供 `PlayerRuntime.observeLyrics` 用）；无则 null。 */
+    /**
+     * 本地曲目歌词（供 `PlayerRuntime.observeLyrics` 用），三级顺序与 RN 一致：
+     * **同名 `.lrc` → 内嵌歌词（ID3 USLT / MP4 ©lyr）** → 在线兜底由 PlayerRuntime 接。
+     * 产出 `{lyric, tlyric?, rlyric?}` JSON 形状不变。
+     */
     suspend fun readLyricJson(
         context: Context,
         info: JsonObject,
     ): JsonObject? {
         val filePath = info.localMetaText("filePath") ?: info.localText("id") ?: return null
         val uri = runCatching { Uri.parse(filePath) }.getOrNull() ?: return null
-        val lyricUri = SafDocuments.siblingLyricUri(context, uri) ?: return null
-        val text = SafDocuments.readText(context, lyricUri).getOrNull() ?: return null
-        val parsed = LocalLyric.parse(text)
-        if (!parsed.hasLyric) return null
-        return buildJsonObject {
-            put("lyric", parsed.lyric)
-            parsed.tlyric?.let { put("tlyric", it) }
-            parsed.rlyric?.let { put("rlyric", it) }
+        // 1) 同名 .lrc（RN getMusicFileLyric 的文件歌词优先）
+        val lyricUri = SafDocuments.siblingLyricUri(context, uri)
+        if (lyricUri != null) {
+            val text = SafDocuments.readText(context, lyricUri).getOrNull()
+            if (text != null) {
+                val parsed = LocalLyric.parse(text)
+                if (parsed.hasLyric) {
+                    return buildJsonObject {
+                        put("lyric", parsed.lyric)
+                        parsed.tlyric?.let { put("tlyric", it) }
+                        parsed.rlyric?.let { put("rlyric", it) }
+                    }
+                }
+            }
+        }
+        // 2) 内嵌歌词：只读文件头 1 MB（RN 走原生 readLyric 直出 USLT 文本）
+        return embeddedLyricJson(context, uri)
+    }
+
+    /** 从音频文件头解析内嵌歌词（`EmbeddedLyric` 只做纯字节解析，SAF 读头在这里）。 */
+    suspend fun embeddedLyricJson(
+        context: Context,
+        uri: Uri,
+    ): JsonObject? {
+        val bytes =
+            SafDocuments.readHeader(context, uri, EmbeddedLyric.MAX_INPUT_BYTES).getOrNull()
+                ?: return null
+        val text = EmbeddedLyric.parse(bytes) ?: return null
+        return buildJsonObject { put("lyric", text) }
+    }
+
+    // ---------- 重定位（W5-7：失效曲目重扫持久授权树根找回新 URI） ----------
+
+    /**
+     * 重定位结果（UI 弹提示用）。
+     *
+     * 歧义/未命中**不删**只计数：删曲是破坏性操作（用户可能只是暂时拔了 U 盘），
+     * 本波保持曲目原样留在列表里。
+     */
+    data class RelinkOutcome(
+        val stale: Int,
+        val matched: Int,
+        val unmatched: Int,
+        val ambiguous: Int,
+        val noPermission: Boolean,
+    )
+
+    private val _relinkingListId = MutableStateFlow<String?>(null)
+
+    /** 正在重定位的列表 id（UI 用来禁用重复触发）；空闲为 null。 */
+    val relinkingListId: StateFlow<String?> = _relinkingListId.asStateFlow()
+
+    private val _relinkOutcome = MutableStateFlow<RelinkOutcome?>(null)
+
+    /** 最近一次重定位结果（新一次重定位开始时清空）。 */
+    val relinkOutcome: StateFlow<RelinkOutcome?> = _relinkOutcome.asStateFlow()
+
+    /** 当前列表里 document URI 已失效的曲目数（弹层按钮的 N；0 时不渲染入口）。 */
+    suspend fun countStale(
+        context: Context,
+        listId: String,
+    ): Int =
+        withContext(Dispatchers.IO) {
+            val lists = ListRuntime.get(context)
+            lists.ensureLoaded()
+            lists
+                .musics(listId)
+                .count { track -> track.isLocalTrackInfo() && !track.documentExistsSafe(context) }
+        }
+
+    fun isRelinking(): Boolean = _relinkingListId.value != null
+
+    /** 起后台协程对 [listId] 做一轮重定位（同列表重入直接忽略）。 */
+    fun relink(
+        context: Context,
+        listId: String,
+    ) {
+        if (isRelinking()) return
+        scope.launch { runRelink(context.applicationContext, listId) }
+    }
+
+    private suspend fun runRelink(
+        context: Context,
+        listId: String,
+    ) {
+        val lists = ListRuntime.get(context)
+        val player = PlayerRuntime.get(context)
+        lists.ensureLoaded()
+        _relinkOutcome.value = null
+        _relinkingListId.value = listId
+        try {
+            val tracks = lists.musics(listId)
+            val stale = mutableListOf<StaleTrack>()
+            val takenUris = mutableSetOf<String>()
+            for ((index, track) in tracks.withIndex()) {
+                val uriString = track.localMetaText("filePath") ?: track.localText("id")
+                if (!track.isLocalTrackInfo() || uriString.isNullOrEmpty()) continue
+                if (track.documentExistsSafe(context)) {
+                    takenUris.add(uriString)
+                } else {
+                    stale.add(StaleTrack(oldId = uriString, info = track, position = index))
+                }
+            }
+            if (stale.isEmpty()) {
+                _relinkOutcome.value = RelinkOutcome(0, 0, 0, 0, noPermission = false)
+                return
+            }
+
+            // 与导入同口径：持久授权的树根逐个单层扫描（不递归，递归是 W5-16）
+            val treeUris = linkedSetOf<Uri>()
+            context.contentResolver.persistedUriPermissions
+                .filter { it.isReadPermission }
+                .forEach { treeUris.add(it.uri) }
+            val candidates = mutableListOf<LocalRelink.Candidate>()
+            for (treeUri in treeUris) {
+                SafDocuments
+                    .listChildren(context, treeUri)
+                    .getOrNull()
+                    .orEmpty()
+                    .filter { LocalAudio.isAudio(it.name, it.mimeType) }
+                    .forEach { entry ->
+                        candidates.add(
+                            LocalRelink.Candidate(
+                                stem = LocalTrack.splitNameAndExtension(entry.name).first,
+                                uri = entry.uri.toString(),
+                            ),
+                        )
+                    }
+            }
+
+            val plan =
+                LocalRelink.plan(
+                    expectations =
+                        stale.map { s ->
+                            LocalRelink.Expectation(
+                                oldId = s.oldId,
+                                name = s.info.localText("name").orEmpty(),
+                                singer = s.info.localText("singer").orEmpty(),
+                                originalStem = stemFromUriString(s.oldId),
+                            )
+                        },
+                    candidates = candidates,
+                    takenUris = takenUris,
+                )
+            applyRelinkPlan(lists, player, listId, stale, plan)
+            _relinkOutcome.value =
+                RelinkOutcome(
+                    stale = stale.size,
+                    matched = plan.matched.size,
+                    unmatched = plan.unmatched.size,
+                    ambiguous = plan.ambiguous.size,
+                    noPermission = treeUris.isEmpty(),
+                )
+            Log.d(
+                TAG,
+                "重定位结束：list=$listId stale=${stale.size} matched=${plan.matched.size} " +
+                    "unmatched=${plan.unmatched.size} ambiguous=${plan.ambiguous.size}",
+            )
+        } finally {
+            _relinkingListId.value = null
         }
     }
+
+    /**
+     * 把命中的曲目换成新 URI。`id` / `meta.filePath` / `meta.songId` 三处必须一起换
+     * （Wave5 的语义是三者同键）；`listMusicUpdateInfo` 以 id 定位、不换 id，
+     * 所以走「remove → add(bottom) → 按原索引逐个 move 回位」恢复原布局。
+     */
+    private suspend fun applyRelinkPlan(
+        lists: ListRuntime,
+        player: PlayerRuntime,
+        listId: String,
+        stale: List<StaleTrack>,
+        plan: LocalRelink.Plan,
+    ) {
+        if (plan.matched.isEmpty()) return
+        val infoByOldId = stale.associateBy { it.oldId }
+        val moves =
+            plan.matched.entries
+                .mapNotNull { (oldId, newUri) ->
+                    infoByOldId[oldId]?.let { Triple(it.position, oldId, newUri) }
+                }.sortedBy { it.first }
+        lists.store.listMusicRemove(listId, moves.map { it.second })
+        lists.store.listMusicAdd(listId, moves.map { relinkedInfo(infoByOldId[it.second]!!.info, it.third) }, "bottom")
+        for ((position, _, newUri) in moves) {
+            lists.store.listMusicUpdatePosition(listId, position, listOf(newUri))
+        }
+        player.core.handleListMusicsUpdated(listOf(listId))
+    }
+
+    /** 曲目副本：换 `id` 与 `meta.filePath` / `meta.songId`，其余字段（含封面、标签）原样保留。 */
+    private fun relinkedInfo(
+        old: JsonObject,
+        newUri: String,
+    ): JsonObject =
+        buildJsonObject {
+            old.forEach { (key, value) -> put(key, value) }
+            put("id", JsonPrimitive(newUri))
+            put(
+                "meta",
+                buildJsonObject {
+                    (old["meta"] as? JsonObject)?.forEach { (key, value) -> put(key, value) }
+                    put("filePath", JsonPrimitive(newUri))
+                    put("songId", JsonPrimitive(newUri))
+                },
+            )
+        }
+
+    private data class StaleTrack(
+        val oldId: String,
+        val info: JsonObject,
+        val position: Int,
+    )
 
     // ---------- 导入主流程 ----------
 
@@ -328,3 +539,27 @@ private fun JsonObject.localText(key: String): String? = (this[key] as? JsonPrim
 
 private fun JsonObject.localMetaText(key: String): String? =
     ((this["meta"] as? JsonObject)?.get(key) as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
+
+/** 是否本地曲目（`source == "local"`）。 */
+private fun JsonObject.isLocalTrackInfo(): Boolean = localText("source") == LocalTrack.SOURCE
+
+/** 本地曲目的 document URI 是否仍存在（query 一次；解析不出按失效处理）。 */
+private fun JsonObject.documentExistsSafe(context: Context): Boolean {
+    val uriString = localMetaText("filePath") ?: localText("id") ?: return false
+    val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return false
+    return SafDocuments.documentExists(context, uri)
+}
+
+/**
+ * 从 document URI 字符串里抠出原文件名 stem（`…/歌名 - 歌手.mp3` → `歌名 - 歌手`）。
+ * document URI 里的 document id 是百分号编码的，先经 [DocumentsContract] 解出真名；
+ * 解不出退回字符串截取（导入生成的 id 一定能解出）。
+ */
+private fun stemFromUriString(uriString: String): String {
+    val uri = runCatching { Uri.parse(uriString) }.getOrNull()
+    val documentId =
+        uri?.let { runCatching { DocumentsContract.getDocumentId(it) }.getOrNull() }
+            ?: uriString.substringAfterLast('/')
+    val fileName = documentId.substringAfterLast('/').substringAfterLast(':')
+    return LocalTrack.splitNameAndExtension(fileName).first
+}

@@ -161,6 +161,30 @@ object SafDocuments {
         }
 
     /**
+     * 只读文件头 [limit] 字节（内嵌歌词解析用；ID3/MP4 的元数据都在头部，
+     * 整读一个几百 MB 的 flac 只为找 USLT 不划算）。
+     */
+    suspend fun readHeader(
+        context: Context,
+        uri: Uri,
+        limit: Int,
+    ): Result<ByteArray> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    val buffer = ByteArray(limit)
+                    var read = 0
+                    while (read < limit) {
+                        val n = input.read(buffer, read, limit - read)
+                        if (n < 0) break
+                        read += n
+                    }
+                    buffer.copyOf(read)
+                } ?: throw FileNotFoundException("无法读取所选文件")
+            }
+        }
+
+    /**
      * 同目录同名 `.lrc` 的 document URI；不存在或推不出时 null。
      *
      * 算路在 `core/local/LocalSibling`（纯字符串），这里只负责 `DocumentsContract` 的构造与探测。

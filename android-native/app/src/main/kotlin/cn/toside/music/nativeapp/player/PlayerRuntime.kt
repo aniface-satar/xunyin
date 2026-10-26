@@ -9,9 +9,11 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.DocumentsContract
 import android.util.Log
 import android.widget.Toast
 import androidx.media3.common.util.UnstableApi
+import cn.toside.music.core.local.LocalSourceQuery
 import cn.toside.music.core.local.LocalTrack
 import cn.toside.music.core.lyric.LyricParser
 import cn.toside.music.core.lyric.ParsedLyric
@@ -24,6 +26,7 @@ import cn.toside.music.nativeapp.data.ListRuntime
 import cn.toside.music.nativeapp.data.LocalMusicRuntime
 import cn.toside.music.nativeapp.data.PlayHistoryStore
 import cn.toside.music.nativeapp.data.RadioRuntime
+import cn.toside.music.nativeapp.data.SearchRuntime
 import cn.toside.music.nativeapp.data.SettingsRuntime
 import cn.toside.music.nativeapp.lyric.DesktopLyricController
 import cn.toside.music.nativeapp.lyric.DesktopLyricKeys
@@ -43,6 +46,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.lang.ref.WeakReference
 
 /**
@@ -213,22 +218,125 @@ class PlayerRuntime private constructor(
     }
 
     /**
-     * 本地直连取链：返回 `content://…` 字符串（Media3 原生支持 content URI），**绕开 userApi**。
+     * 本地直连取链 + 在线兜底（W5-8）——**两段式**：
      *
-     * 取链前做一次可读性探测：文件被删/授权失效时给可读提示再返回 null，
-     * 之后的「跳下一首」由既有失败链路（`PlayerCore.loadAndPlay`）决定，本波不改它。
+     * 1. 直连 `content://` 成功 → 原样返回（绝大多数情况，现有行为不变，只顺手做封面兜底）；
+     * 2. 直连失败（文件被删/授权失效）→ 走 [searchOnlineTargets] 的六级候选阶梯
+     *    借在线数据取直链；拿到就返回（不再受本地文件约束）；
+     * 3. 全失败 → 保留可读提示（不静默跳歌，「跳下一首」由既有失败链路决定）。
      */
     private suspend fun localMusicUrl(info: JsonObject): String? {
         val path = info.localFileUri()
         if (path.isNullOrEmpty()) return null
         val readable =
             runCatching { SafDocuments.canRead(appContext, Uri.parse(path)) }.getOrDefault(false)
-        if (!readable) {
-            toast("本地文件无法访问，可能已删除或授权失效：${info.text("name").orEmpty()}")
-            return null
+        if (readable) {
+            maybeFallbackCover(info)
+            return path
         }
-        return path
+        // 直连失败：在线兜底（RN getOtherSourceByLocal 的等价物）
+        val targets = searchOnlineTargets(info)
+        for (target in targets) {
+            val url = runCatching { userApi.getMusicUrl(target) { playQuality() } }.getOrNull()
+            if (!url.isNullOrEmpty()) {
+                fallbackCover(info, targets)
+                return url
+            }
+        }
+        toast(
+            "本地文件无法访问，可能已删除或授权失效：${info.text("name").orEmpty()}" +
+                "（在线兜底也未找到可用音源）",
+        )
+        return null
     }
+
+    /**
+     * 六级候选阶梯（[LocalSourceQuery.candidates]）× 五源搜索（RN `searchMusic` 同口径：
+     * `` `${name} ${singer}`.trim() `` 当关键词搜第 1 页），逐级收集「歌名/歌手对得上」
+     * （[LocalSourceQuery.matches]）的在线曲目；某级有结果就不再往下走。
+     * 网络/解析失败静默降级——本地曲不该因为联网失败播不了。
+     */
+    private suspend fun searchOnlineTargets(info: JsonObject): List<JsonObject> {
+        val name = info.text("name") ?: return emptyList()
+        val stem = fileNameStem(info)
+        for (candidate in LocalSourceQuery.candidates(name, info.text("singer").orEmpty(), stem)) {
+            val matched = mutableListOf<JsonObject>()
+            for ((source, _) in SearchRuntime.SOURCES) {
+                if (source == "all") continue
+                val page =
+                    runCatching { SearchRuntime.search(candidate.keyword, page = 1, source = source) }
+                        .getOrNull() ?: continue
+                for (item in page.list) {
+                    val ok =
+                        LocalSourceQuery.matches(
+                            candidate.expectName,
+                            candidate.expectSinger,
+                            item.text("name").orEmpty(),
+                            item.text("singer").orEmpty(),
+                        )
+                    if (ok) matched.add(item)
+                }
+            }
+            if (matched.isNotEmpty()) return matched
+        }
+        return emptyList()
+    }
+
+    /**
+     * 文件名 stem（RN `meta.filePath.split(/\/|\\/).at(-1)` 去扩展名的 SAF 等价物）。
+     * document URI 的 document id 是百分号编码的，先经 [DocumentsContract] 解出真名；
+     * 推不出返回 null（跳过文件名那三级）。
+     */
+    private fun fileNameStem(info: JsonObject): String? {
+        val path = info.metaText("filePath") ?: info.text("id") ?: return null
+        val uri = runCatching { Uri.parse(path) }.getOrNull() ?: return null
+        val documentId =
+            runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+                ?: uri.lastPathSegment
+                ?: return null
+        val fileName = documentId.substringAfterLast('/').substringAfterLast(':')
+        return LocalTrack.splitNameAndExtension(fileName).first.ifEmpty { null }
+    }
+
+    /**
+     * 封面兜底（RN getPicUrl 等价物）：本地曲目**没有封面时才**借在线曲目补 `meta.picUrl`
+     * 并写回列表（Wave5 导入时落盘封面的路径不受影响，两条路不互相覆盖）。静默降级。
+     */
+    private fun maybeFallbackCover(info: JsonObject) {
+        if (!info.metaText("picUrl").isNullOrEmpty()) return
+        scope.launch { fallbackCover(info, searchOnlineTargets(info)) }
+    }
+
+    /** 把在线曲目的封面写回 `meta.picUrl`（`listMusicUpdateInfo` 以原 id 定位，曲目不在播放列表时是 no-op）。 */
+    private suspend fun fallbackCover(
+        info: JsonObject,
+        targets: List<JsonObject>,
+    ) {
+        if (!info.metaText("picUrl").isNullOrEmpty()) return
+        val picUrl =
+            targets.firstNotNullOfOrNull { it.metaText("picUrl")?.takeIf { p -> p.isNotEmpty() } }
+                ?: return
+        val listId = core.state.value.playerListId ?: return
+        runCatching {
+            lists.store.listMusicUpdateInfo(listOf(listId to withCover(info, picUrl)))
+            core.handleListMusicsUpdated(listOf(listId))
+        }
+    }
+
+    private fun withCover(
+        info: JsonObject,
+        picUrl: String,
+    ): JsonObject =
+        buildJsonObject {
+            info.forEach { (key, value) -> put(key, value) }
+            put(
+                "meta",
+                buildJsonObject {
+                    (info["meta"] as? JsonObject)?.forEach { (key, value) -> put(key, value) }
+                    put("picUrl", picUrl)
+                },
+            )
+        }
 
     private fun toast(message: String) {
         if (message.isEmpty()) return
@@ -369,9 +477,10 @@ class PlayerRuntime private constructor(
                     _lyrics.value = LyricsState(musicId = key, loading = true)
                     val data =
                         try {
-                            // 本地曲目读同目录同名 .lrc（RN getMusicFileLyric 的等价物，内嵌歌词本波不做）
+                            // 本地曲目三级：同名 .lrc → 内嵌（readLyricJson 内）→ 在线兜底（内嵌优先于在线，与 RN 一致）
                             if (info.text("source") == LocalTrack.SOURCE) {
                                 LocalMusicRuntime.readLyricJson(appContext, info)
+                                    ?: onlineLyricFallback(info)
                             } else {
                                 userApi.getLyric(info)
                             }
@@ -409,6 +518,24 @@ class PlayerRuntime private constructor(
             roma = roma,
             parsed = LyricParser.parse(raw, activeExtendedLyrics(translation, roma)),
         )
+    }
+
+    /**
+     * 本地歌词在线兜底（RN getOnlineOtherSourceLyricInfo 等价物）：候选阶梯命中的
+     * 在线曲目逐个取 `userApi.getLyric`，产出与本地链路相同的 `{lyric, tlyric?, rlyric?}`。
+     * 网络失败静默降级返回 null。
+     */
+    private suspend fun onlineLyricFallback(info: JsonObject): JsonObject? {
+        for (target in searchOnlineTargets(info)) {
+            val data = runCatching { userApi.getLyric(target) }.getOrNull() ?: continue
+            val lyric = data.text("lyric")?.takeIf { it.isNotBlank() } ?: continue
+            return buildJsonObject {
+                put("lyric", lyric)
+                data.text("tlyric")?.takeIf { it.isNotBlank() }?.let { put("tlyric", it) }
+                data.text("rlyric")?.takeIf { it.isNotBlank() }?.let { put("rlyric", it) }
+            }
+        }
+        return null
     }
 
     private fun activeExtendedLyrics(

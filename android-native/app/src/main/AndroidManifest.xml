@@ -57,6 +57,18 @@
         <service
             android:name=".lyric.DesktopLyricService"
             android:exported="false" />
+
+        <!-- W5-11 分享不落相册：分享卡先写 cacheDir/share_cache，经 FileProvider 以 content:// 分享。
+             只暴露 cache 子目录（外部拿不到别的路径）；保存到相册仍走 MediaStore。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

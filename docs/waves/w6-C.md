@@ -138,3 +138,98 @@
   本波不做人工确认弹层，记遗留。
 - 重定位只扫「持久授权的树根」单层（与导入同口径），递归扫描是 W5-16，不在本波。
 - 内嵌歌词的 `ogg`/`flac`（Vorbis comment `LYRICS=`/`UNSYNCEDLYRICS=`）本波不做。
+
+## Lane 报告（2026-10-26）
+
+- **结论：完成**。1.1/1.2/1.3/1.4 四块全部落地（前段会话完成 :core 三件套后中断，本会话接手完成全部 app 侧装配与收尾）。
+- **commit**：`8ce24d0`（1.1 重定位装配）→ `ea2dd1d`（1.2+1.3 在线兜底与内嵌歌词）→ `a04335b`（1.4 FileProvider 分享）；测试数 **core 918 + app 116 = 1034 全绿**（基线 883+111，本车道新增 core 35：LocalRelink 12 / LocalSourceQuery 9 / EmbeddedLyric 14；app 5：重定位文案）。APK **30,388,004 B**（sha256 `ff4ca006…`，见「语义修正」第 6 条的基线对照说明）。
+- **触碰文件清单**：
+  - `core/src/main/kotlin/…/core/local/LocalRelink.kt`、`LocalSourceQuery.kt`、`EmbeddedLyric.kt`（前段会话）
+  - `core/src/test/…/core/local/LocalRelinkTest.kt`、`LocalSourceQueryTest.kt`、`EmbeddedLyricTest.kt`（前段会话）
+  - `app/…/data/LocalMusicRuntime.kt`（relink/countStale/readLyricJson 三级歌词/内嵌歌词接入）
+  - `app/…/player/PlayerRuntime.kt`（仅 local 分支：localMusicUrl 兜底、searchOnlineTargets、封面写回、onlineLyricFallback）
+  - `app/…/util/SafDocuments.kt`（**新增** readHeader，既有函数未动）
+  - `app/…/ui/list/LocalFileImportDialog.kt`（重定位入口 + 文案）
+  - `app/…/ui/list/ListDetailPage.kt`（**只动弹层接线**：新增 staleCount/relink 状态与两个 LaunchedEffect，操作行语义未碰）
+  - `app/…/ui/share/ShareImageSender.kt`（新增 sendCard/sendCardWithToast + 清缓存；send 原样保留）
+  - `app/…/ui/share/ShareCardOverlay.kt`（分享分支改走 sendCard；保存分支照旧 MediaStore）
+  - `app/src/main/AndroidManifest.xml`（**只加 provider 段**，其余未动）
+  - `app/src/main/res/xml/file_paths.xml`（新增）
+  - `app/src/test/…/ui/list/LocalFileImportDialogTextTest.kt`（+5 用例）
+
+### 1. RN ↔ Kotlin 兜底阶梯对照表
+
+| 级 | RN（`getOtherSourceByLocal`） | Kotlin（`LocalSourceQuery.candidates` + `PlayerRuntime.searchOnlineTargets`） | 触发条件 | 失败降级 |
+|:--:|:--|:--|:--|:--|
+| 0 | 直连本地路径（`getLocalFilePath`） | `SafDocuments.canRead` 通过即返回 document URI | 恒先走 | 文件不存在 → 进阶梯 |
+| 0.5 | `getOnlineOtherSourceMusicUrlByLocal`（**url 缓存**） | **无等价物**（工程无 url 缓存），跳过 | —— | 进阶梯 |
+| 1 | `getOtherSource`：`name`+`singer` 原样 | `keyword = "name singer".trim()`，五源各搜第 1 页 | 恒有 | 进下一级 |
+| 2 | `name` 含 `-` 拆（歌名，歌手） | 同拆法，`expectName=前段, expectSinger=后段` | name 含 `-` | 进下一级 |
+| 3 | 前后对调再搜 | `expectName=后段, expectSinger=前段` | 同上 | 进下一级 |
+| 4 | 文件名 stem ≠ name 且含 `-` 拆 | 同（stem 经 DocumentsContract 解码取真名） | stem 存在且 ≠ name | 进下一级 |
+| 5 | 同上对调 | 同 | 同上 | 进下一级 |
+| 6 | stem 不含 `-` 纯名称 | `expectName=stem, expectSinger=""`（matches 放行歌手） | 同上 | 全失败 → 可读提示（不静默跳歌） |
+
+- 每级内部：五源（kw/kg/tx/wy/mg）并发口径改串行逐源（RN `Promise.all`），命中过滤同用 `LocalSourceQuery.matches`（filterStr 归一化 + 全半角/小写补强）；某级有命中即停。
+- 匹配成功的在线曲目：`userApi.getMusicUrl(target){quality}` 取直链，成功即返回（本次播放生效，无 url 缓存可写回，见遗留）；网络/搜索失败一律静默降级。
+
+### 2. 内嵌歌词容器/编码矩阵（`EmbeddedLyric`，14 用例）
+
+| 容器 | 帧原子 | 版本/编码 | 支持 |
+|:--|:--|:--|:--:|
+| MP3 ID3v2.2 | `ULT`（6 字节帧头） | 编码 0 Latin-1 / 1 UTF-16 带 BOM | ✅ |
+| MP3 ID3v2.3 | `USLT`（10 字节帧头） | 编码 0/1/3；全局 unsynchronisation（`FF 00`→`FF`） | ✅ |
+| MP3 ID3v2.4 | `USLT` | 编码 0/1/2/3；帧级 unsynchronisation + data-length | ✅ |
+| MP4/M4A | `©lyr` → `data`（`moov/udta/meta/ilst`，meta 跳 4 字节 version/flags） | UTF-8 | ✅ |
+| ogg / flac | Vorbis comment `LYRICS=`/`UNSYNCEDLYRICS=` | —— | ❌ 本波不做，恒 null |
+
+- 边界行为（有用例锁定）：多 USLT 取第一个；帧长跨界截断返回 null；压缩/加密帧跳过；>1 MB 输入立即 null；app 侧只读文件头 1 MB（`SafDocuments.readHeader` 新增）。
+- 接线顺序 `readLyricJson`：**同名 `.lrc` → 内嵌 → null**（在线兜底由 PlayerRuntime 接在后面），产出 `{lyric, tlyric?, rlyric?}` 形状不变，播放器链路零改动。
+
+### 3. 重定位匹配规则表与歧义策略（`LocalRelink`，12 用例）
+
+| 级 | 规则 | 命中条件 | 多候选 |
+|:--:|:--|:--|:--|
+| R1 | 完全同名 stem | 归一化（小写+全角→半角）后 stem 相同 | 进 `ambiguous` |
+| R2 | 同名且歌手一致 | 候选 stem 按 `-` 拆（歌名，歌手）两段都对上 | 进 `ambiguous` |
+| R3 | 同名候选中唯一 | 归一化 stem == 歌名 | 进 `ambiguous` |
+| R4 | 不猜 | 以上皆未唯一命中 | 进 `unmatched` |
+
+- **为什么不猜**：换错文件（听错歌/歌词错位）的代价远大于保持失效让用户手动处理。
+- **为什么不删**：删曲是破坏性操作（可能只是暂时拔 U 盘），歧义/未命中只计数保留在列表。
+- 候选池 = 持久授权树根单层扫描（`persistedUriPermissions` 去重后逐树 `listChildren`，与导入同口径）；已占用 URI（未失效曲目）与已被认领的 URI 从池中剔除，防重复。
+- **装配语义修正**：`listMusicUpdateInfo` 以 `id` 定位且**不更新 id 字段**（ListStore.kt:302），「换 id」走 `listMusicRemove → listMusicAdd(bottom) → listMusicUpdatePosition 按原索引升序逐个回位`，等效原位换 id，列表不重复不重排；`id`/`meta.filePath`/`meta.songId` 三键始终一起换（`relinkedInfo`）。
+- 入口：`LocalFileImportDialog` 底部「重新定位失效曲目（N）」，N = `countStale`（逐曲 `documentExists`），0 时不渲染；弹层完成后刷新列表与失效数。
+
+### 4. FileProvider 权限面
+
+- Manifest 仅新增 provider：`androidx.core.content.FileProvider`，authorities `${applicationId}.fileprovider`，`exported=false`，`grantUriPermissions=true`，paths 指向 `@xml/file_paths`。
+- `file_paths.xml` **只暴露 `cache-dir/share_cache/` 一层**：分享卡是可再生的临时产物，暴露 cache 子目录即使被滥用也不泄露用户数据；外部存储/MediaStore 路径一律不经 provider。
+- 分享链：位图写 `cacheDir/share_cache/<name>_<ts>.png` → `FileProvider.getUriForFile` → `ACTION_SEND`（`FLAG_GRANT_READ_URI_PERMISSION` + `ClipData`，Wave5 的 ROM 兼容写法照旧）。**保存按钮仍走 MediaStore**（用户明确要落相册）。
+- 缓存清理：每次分享前删 `share_cache` 内 >24h 文件（3 行，无 GC 框架）。
+
+### 5. 真机清单（至少覆盖任务书 5 项）
+
+1. **删文件后播放**：删除某本地曲目文件 → 播放 → 直连失败自动走六级阶梯在线兜底；命中则正常出声（通知栏/播放页信息不崩）；五源全无则 toast「本地文件无法访问…（在线兜底也未找到可用音源）」，**不静默跳歌**。
+2. **挪目录后重定位**：文件挪到另一已授权目录 → 列表详情页打开「添加本地歌曲」弹层 → 按钮「重新定位失效曲目（N）」出现 → 点击 → 恢复的曲目原位可播、列表**不重复**、未恢复的仍保留并显示计数。
+3. **内嵌歌词**：无同名 lrc 的 mp3（ID3v2.3 USLT）与 m4a（©lyr）各一首 → 播放页出歌词；有同名 lrc 时 lrc 优先。
+4. **分享不落相册**：分享卡「分享卡片」到微信 → 相册**无**新增图片、微信收图正常；「保存图片」→ 相册有（Pictures/寻音）；二次分享旧缓存被清理。
+5. **全程竖屏**：分享 chooser 旋转不出现横屏布局；授权失效提示文案完整可读。
+
+### 语义修正与实证发现
+
+1. `listMusicUpdateInfo` 不换 id（ListStore.kt:302 以 id 定位）→ 重定位按 §3 的 remove+add+position 装配，等效三键同换。
+2. document URI 的 document id 是百分号编码（`primary%3AMusic%2Fsong.mp3`），文件名 stem 提取必须经 `DocumentsContract.getDocumentId` 解码，直接 `substringAfterLast('/')` 会拿到乱码 stem（影响重定位 R1 与兜底第 4~6 级，已修）。
+3. RN 兜底第 0.5 级 `getOnlineOtherSourceMusicUrlByLocal`（缓存 url）无 Kotlin 等价物：工程没有 UserApi 的 url 缓存，跳过该级；兜底成功的直链**仅本次播放生效**（任务书 1.2 第 3 条允许的降级，记遗留）。
+4. 搜索条数口径：RN 兜底 `searchMusic` limit=25，Kotlin `SearchCoordinator` limit 固定 30（B5 定稿，未改它）——候选集比 RN 略大，方向安全。
+5. 封面兜底触发点与 RN 不同：RN 在展示层调 `getPicUrl`；Kotlin 挂在取链成功路径（直连成功也异步补）与兜底命中后写回，判据 `meta.picUrl` 非空即跳过，与 Wave5「导入时落盘内嵌封面」不互踩。
+6. **基线 APK 对照异常（供集成会话复核）**：主仓现存 app-debug.apk（28,925,062 B，sha256 与进度文档记录一致）内嵌 `lx-sources/moxi_cloud.js` 为 187,866 B，而 `1a837fd`/`a4f714b` 的 git blob 是 192,454 B（本 worktree 与主仓 blob 哈希相同 `6ed3ea7f`）——即「基线 APK」与当前源码在源脚本上本就不一致，本车道 APK 增量（+1,462,942 B）主体是 dex 重排（classes24~28 重新分布）+ 源脚本差量，本车道实际代码增量约 615 行 + 1 个 xml。
+7. 触碰范围说明：`ListDetailPage.kt` 在禁触清单里是「操作行语义」；本次只在其弹层调用点加了 4 个参数与 2 个 LaunchedEffect（重定位入口必须真机验得动），操作行/菜单语义零改动。`HomePage.kt` 的常驻弹层因默认参数（staleCount=0）不需要改动，重定位入口自然不渲染。
+
+### 遗留问题与对后续波次的建议
+
+- 兜底命中的直链无 url 缓存可写回（每次兜底都重新搜索+取链）；建议后续波次给 `UserApiRuntime` 加 RN `saveMusicUrl` 等价的缓存层后，把第 0.5 级接回来。
+- 歌词/封面兜底可能命中同名不同歌手的错版本（RN 同病）；本波无人工确认弹层。
+- 重定位只扫树根单层；递归扫描与「歧义候选人工选择弹层」是天然的后续项（`LocalRelink.plan` 已能返回 ambiguous，UI 只需列出候选让用户挑）。
+- 内嵌歌词 ogg/flac（Vorbis comment）未做；`EmbeddedLyric` 的 MP4 路径假设 `moov` 在文件头（流式写出的 m4a moov 在尾部，会取不到，有用例注释声明）。
+- `countStale` 对大列表逐曲 query（无并发上限问题但慢），如需可换成批量 children 比对。
