@@ -97,3 +97,69 @@ Wave7 把电台的相似/预算/诊断都接了，画像也滤了本地曲，但
 ## Lane 报告（执行会话追加区）
 
 按 RULES 收尾三步，在此追加：结论 / commit / 触碰文件清单 / 语义修正 / 遗留与真机清单。
+
+## Lane 报告（2026-10-27）
+- 结论：**部分完成**。任务 1/2/3/4/5 全部落地；任务 6（音频特征时间盒）**按规则未开工**
+  （评测口径未落纸，任务书明令「口径没定不许写特征代码」，本车道也不具备定义口径的评测数据）。
+  三个必做任务书门（origin 归因 / 主题权重挑选 / @ 归一）均有数值级 JVM 单测；
+  真机项见下，本会话无设备，未跑。
+- commit：`66be6a2`；测试数 **core 1117 + app 150 全绿**（基线 1105+147=1252，新增 15 条：
+  origin 5、相似歌曲 5、踩雷归一 2、发现页挑选 3；zero failures/errors/skips）。
+  闸门命令 `gradlew.bat ktlintCheck test assembleDebug` exit 0。
+- 触碰文件清单（12 个，全部在 §3 允许范围内，未触 `listMusicAdd`、未动 `ListDetailPage`）：
+  - `core/.../recommend/m3/LibraryIndex.kt`（+`PlaylistOriginInput` / `playlistOriginKey` / `buildOriginIndex`）
+  - `core/.../recommend/m3/SimilarSongs.kt`（新增：纯函数排序）
+  - `core/.../recommend/RecommendSignals.kt`（读侧 `@→#` 归一）
+  - `core/src/test/.../m3/LibraryOriginIndexTest.kt`（新增 5 例）
+  - `core/src/test/.../m3/SimilarSongsTest.kt`（新增 5 例）
+  - `core/src/test/.../recommend/DislikeRulesWriteTest.kt`（+2 例）
+  - `app/.../data/RadioRuntime.kt`（`importedOrigins` 实做 + `applyPlaylistNotInterested`）
+  - `app/.../data/RecommendStores.kt`（只读 `radioState` 出口）
+  - `app/.../data/SonglistRuntime.kt`（`pickCuratedTag`，恒传 themeWeights）
+  - `app/.../ui/songlist/RecommendPanel.kt`（隐藏歌单补引擎记账）
+  - `app/.../ui/play/MoreActionSheet.kt`（「相似歌曲」入口 + 弹层）
+  - `app/src/test/.../data/SonglistRuntimeTest.kt`（+3 例）
+- 语义修正与实证发现：
+  1. **`applyThemeFeedback`「未做」是误判**：`RadioFeedback` 早已实现、`RadioBehavior` 已接线。
+     真实缺口就是任务书点名的 `SonglistRuntime` 传 `emptyMap()`。RN 侧 `getCuratedPlaylistCategory`
+     **无条件**传 `state.themeWeights`（不依赖画像关键词是否存在），原生原来的
+     `profile != null && keywords.isNotEmpty()` 分支本身也是错的——问卷播种的权重可以在没有
+     画像关键词时单独存在；已改成恒走 `pickPlaylistTag`，权重来源=`RecommendStores.radioState.read()?.themeWeights`。
+  2. **`rankPlaylistsByProfile` 不该吃 themeWeights**（实证 RN `src/core/recommend/tabSections.ts:147`，
+     `PlaylistRankState` 里根本没有 `themeWeights` 字段）：它只用 token/artist 亲和度 +
+     blocked/hidden 过滤，主题权重完全不参与；吃权重的是同一链路的
+     `rankPlaylistTags`（→`pickPlaylistTag`，RN `index.ts:1331`），已覆盖。原生两处均与 RN 一致，无需补权重。
+  3. **importedOrigins 不是 `listMusicAdd` 的 origin 形参问题**：w7-A 的三步清单假设要新增
+     逐曲 origin 元数据，实证 RN `getPlaylistOriginKey` 用的是**歌单级** `source + sourceListId`，
+     两者缺一即不计来源；RN 也没有逐曲 origin 字段。故不必给 `listMusicAdd` 加形参
+     （该行仍留给 Lane C，零冲突），改为 core 纯函数 `buildOriginIndex` + `RadioRuntime` 现算。
+     `SonglistDetailPage.kt:177` 本就在写 `sourceListId`，导入歌单会有来源。
+  4. **隐藏推荐歌单原先只写本地名册，缺引擎侧记账**：RN `dislikeCuratedPlaylist` =
+     `hiddenPlaylists[key]` + `applyPlaylistNotInterested(key, category)`（歌单负反馈 + 所属分类降权）。
+     原生 `RecommendPanel.hidePlaylist` 只做前半段；已补 `RadioRuntime.applyPlaylistNotInterested`
+     （等 `stateRestored`，引擎落盘走既有 `onStateChanged`），category 取当前展示的 `tagName`。
+  5. **踩雷读侧归一**：`parse()` 现在对每个字段做 `@→#` + lowercase + trim，与写侧 `normalize()`
+     完全同一份 `normalizeRulePart`；用例锁「写进去的规则读回来键一致」（`a@b@歌手` →
+     组合键 `a@b#歌手`）。写侧未重复修改。
+  6. **相似歌曲入口落在播放页「更多」菜单**，不碰 `ListDetailPage`（Lane C 主场）。排序全在
+     `core/m3/SimilarSongs`（歌手 0.5 / 标题 0.3 / 专辑 0.1 / 同歌单 0.1，<0.2 丢弃，
+     同主歌手最多 2 首），UI 只做取数与起播（走 TEMP 覆盖 + `playListById`）。
+  7. **队列「更多」分页第六次延期**（了结挂账）：RN 该功能依赖电台队列全量+分页数据源，
+     原生电台队列只保留当前窗口；做它要改队列数据形状与播放器契约，属于独立波次的设计题，
+     与本波五项收口无关，继续挂账有明确理由，不是为了省事。
+- 遗留问题与对后续波次的建议：
+  1. **onboarding `completed` 语义分歧**：RN `submitOnboarding` 写 `completed=true`（跳过也算完成），
+     原生以「权重非空」判已答，于是「跳过」后入口卡会重现。修需要新增存储字段（存储形状变更），
+     本波按核对批要求只记录不改；建议下一波与设置页一起做。
+  2. **HiddenPlaylistStore 无容量上限**：RN 会按存储上限裁剪隐藏名册，原生只增不减。
+     只影响极端长期使用，记遗留。
+  3. 诊断卡 `reasons` 的归因展示依赖 `RadioPlatform.importedOrigins` 真实返回值，本波只保证
+     数据源正确；UI 层文案/排序未真机复核。
+  4. 任务 6（音频特征）未开工，评测口径仍是空白，下一波若要碰必须先落纸三组样本判据。
+  5. 真机清单（≥5 条，待集成后统一跑）：
+     - 导入一张在线歌单→加入爱心→播放/加歌单后诊断卡 `reasons` 出现 `source::id` 归因路径；
+     - 含 `@` 歌名（如 `@` 在歌名中间）写入踩雷后，列表判重与播放过滤两侧一致；
+     - 发现页歌单分类：喜欢/踩雷若改变 `themeWeights`，同一轮刷新可见分类选择随之变化（非仅电台页）；
+     - 隐藏推荐歌单后：卡片消失、电台页「已隐藏的歌单」可恢复，且同类目歌单出量下降；
+     - 「相似歌曲」入口有候选、点按可播、同歌手不连推超过 2 首、空库时给出空态文案；
+     - 问卷「跳过」后重进推荐页，入口卡现状（当前会重现，待下一波修）。
