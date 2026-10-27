@@ -248,6 +248,11 @@ object LocalMusicRuntime {
     /** 兜底人工确认开关（默认开；关掉 == RN 静默语义）。 */
     var fallbackConfirmEnabled: () -> Boolean = { true }
 
+    /** 设置层接线（W7-2）：只替换开关读取器，规则与弹层都不在这里。 */
+    fun bindFallbackConfirm(enabled: () -> Boolean) {
+        fallbackConfirmEnabled = enabled
+    }
+
     /** 缓存新鲜度的时间源（默认系统时钟，测试可换）。 */
     var nowProvider: () -> Long = { System.currentTimeMillis() }
 

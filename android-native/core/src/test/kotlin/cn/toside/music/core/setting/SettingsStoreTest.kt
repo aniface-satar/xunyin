@@ -54,22 +54,37 @@ class SettingsStoreTest {
         }
 
     @Test
-    fun mergeAcceptsDecimalJsonForIntegerDefaults() =
+    fun mergeAcceptsJsonNumbersForBothIntAndDoubleDefaults() =
         runBlocking {
             // RN 的设置整表存 JSON 数字，桌面歌词滑杆写出来的 72 可能是 72.0。
-            // 按默认类型 Int 收窄时不能把小数形式整条丢掉（否则滑杆值每次重启都回默认）。
+            // 按默认类型收窄时不能把小数形式整条丢掉（否则滑杆值每次重启都回默认）。
             val (store, repo) = newStore()
             repo.saveSetting(
                 buildJsonObject {
                     put("desktopLyric.width", 72.0)
                     put("desktopLyric.style.fontSize", 200.0)
+                    // W7-1：position 的默认值改成 Double，小数必须原样保留（以前截成 33）
                     put("desktopLyric.position.x", 33.5)
                 },
             )
             store.load()
             assertEquals(72, store.int("desktopLyric.width"))
             assertEquals(200, store.int("desktopLyric.style.fontSize"))
-            assertEquals(33, store.int("desktopLyric.position.x"))
+            assertEquals(33.5, store.double("desktopLyric.position.x"), 0.0001)
+        }
+
+    @Test
+    fun fractionalDesktopLyricPositionSurvivesRestart() =
+        runBlocking {
+            val (store, repo) = newStore()
+            store.load()
+            store.set("desktopLyric.position.x", 33.5)
+            store.set("desktopLyric.position.y", 12.25)
+
+            val reloaded = SettingsStore(repo)
+            reloaded.load()
+            assertEquals(33.5, reloaded.double("desktopLyric.position.x"), 0.0001)
+            assertEquals(12.25, reloaded.double("desktopLyric.position.y"), 0.0001)
         }
 
     @Test

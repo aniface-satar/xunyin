@@ -1,5 +1,6 @@
 package cn.toside.music.nativeapp.ui.settings
 
+import cn.toside.music.core.local.LocalFallbackConfirm
 import cn.toside.music.core.userapi.PreviewFailureReason
 import cn.toside.music.core.userapi.UpdateComparison
 import cn.toside.music.core.userapi.UpdatePreview
@@ -31,6 +32,16 @@ fun formatCacheSize(bytes: Long): String {
     val value = bytes / 1024.0.pow(unit)
     return "${String.format(Locale.US, "%.2f", value)} ${CACHE_UNITS[unit]}"
 }
+
+/**
+ * W7-2：本地曲库在线兜底前的人工确认开关（`local.fallbackConfirm`）读取器。
+ *
+ * 键不在表里、或存量设置文件里还没有这个键时按**默认开**返回 —— 兜底确认是
+ * W6-2 加出来的体验增强，缺键必须保持「问一句」而不是静默换源（RN 原版是静默的）。
+ * 拆成纯函数是为了能在 JVM 用例里锁住这层语义：调用点是 `MusicApp` 的顶层装配，
+ * Compose 那里跑不了单测。
+ */
+fun fallbackConfirmEnabled(settings: Map<String, Any?>): Boolean = settings[LocalFallbackConfirm.SETTING_KEY] as? Boolean ?: true
 
 /** 音量（0..1）显示成百分比，和小数点后的余数一起截掉（RN 用 `Math.trunc`）。 */
 fun formatVolumePercent(volume: Double): String = "${floor(volume * 100).toInt()}%"

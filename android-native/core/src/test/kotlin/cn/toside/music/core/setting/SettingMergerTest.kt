@@ -13,13 +13,19 @@ class SettingMergerTest {
     fun defaultSettingTableComplete() {
         val d = DefaultSetting.base
         // RN defaultSetting.ts 的键数（version + 全部配置键）；
-        // W7 Lane C 表尾追加 2 个桌面歌词开关（RN 没有的键），80 + 2 = 82
-        assertEquals(82, d.size)
+        // W7 Lane C 表尾追加 2 个桌面歌词开关（RN 没有的键），W8 Lane A 再追加
+        // local.fallbackConfirm，80 + 2 + 1 = 83
+        assertEquals(83, d.size)
         assertEquals("2.2", d["version"])
         assertEquals(DefaultSetting.DEFAULT_BUILTIN_API_SOURCE_ID, d["common.apiSource"])
         assertEquals("cyan", d["theme.id"])
         assertEquals("listLoop", d["player.togglePlayMethod"])
         assertEquals("blur", d["theme.dynamicBgAlgorithm"])
+        // W7-1：桌面歌词位置默认值必须是 Double，Int 默认会把滑杆的小数截掉
+        assertEquals(0.0, d["desktopLyric.position.x"])
+        assertEquals(0.0, d["desktopLyric.position.y"])
+        // W7-2：本地兜底确认默认开（体验增强的引入不能改变「先问一句」的默认行为）
+        assertEquals(true, d["local.fallbackConfirm"])
     }
 
     @Test

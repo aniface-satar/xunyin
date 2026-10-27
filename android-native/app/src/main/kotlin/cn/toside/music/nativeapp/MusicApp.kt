@@ -16,10 +16,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import cn.toside.music.core.theme.ActiveThemes
+import cn.toside.music.core.theme.ThemeRoles
+import cn.toside.music.nativeapp.data.LocalMusicRuntime
 import cn.toside.music.nativeapp.data.RecommendStores
+import cn.toside.music.nativeapp.data.SettingsRuntime
 import cn.toside.music.nativeapp.ui.HomePage
 import cn.toside.music.nativeapp.ui.LocalMorphScopes
 import cn.toside.music.nativeapp.ui.MorphScopes
@@ -27,13 +34,18 @@ import cn.toside.music.nativeapp.ui.RetainedContent
 import cn.toside.music.nativeapp.ui.play.CoverImageLoader
 import cn.toside.music.nativeapp.ui.play.PlayDetailPage
 import cn.toside.music.nativeapp.ui.settings.SettingsPage
+import cn.toside.music.nativeapp.ui.settings.fallbackConfirmEnabled
+import com.moriafly.salt.ui.SaltColors
 import com.moriafly.salt.ui.SaltConfigs
+import com.moriafly.salt.ui.SaltDynamicColors
 import com.moriafly.salt.ui.SaltTheme
 
 /**
  * 应用根组合函数。
  *
- * SaltTheme 外壳：跟随系统深浅色（主题偏好持久化在 B1 数据层接入后实现）。
+ * SaltTheme 外壳：主题来自设置（`theme.id` / `common.isAutoTheme`），设置一变整棵树实时换色。
+ * 「跟随系统」的语义对齐 RN `getTheme`：只在系统深色时强制 black 主题；
+ * `theme.lightId/darkId` 在 RN 里是死键（读取代码被注释），这里同样不消费。
  * 屏幕方向固定竖屏（AndroidManifest android:screenOrientation="portrait"），
  * 不写横屏分支（AGENTS.md 约定）。
  *
@@ -48,9 +60,32 @@ fun MusicApp() {
     remember(context) { CoverImageLoader.init(context) }
     // 推荐 M3 的存储/运行时（问卷、歌手语言表、隐藏歌单、相似歌手通道 E）统一装配一次
     remember(context) { RecommendStores.init(context) }
-    val isDark = isSystemInDarkTheme()
+    val settingsRuntime = remember(context) { SettingsRuntime.get(context) }
+    val settings by settingsRuntime.state.collectAsState()
+    LaunchedEffect(settingsRuntime) {
+        settingsRuntime.ensureLoaded()
+        // W7-2：本地源兜底的人工确认开关（设置键不存在时保持默认开）
+        LocalMusicRuntime.bindFallbackConfirm { fallbackConfirmEnabled(settingsRuntime.state.value) }
+    }
+    val systemDark = isSystemInDarkTheme()
+    val themeId = settings["theme.id"] as? String
+    val autoTheme = settings["common.isAutoTheme"] as? Boolean ?: false
+    val hideBgDark = settings["theme.hideBgDark"] as? Boolean ?: false
+    val roles =
+        remember(themeId, autoTheme, systemDark, hideBgDark) {
+            ActiveThemes.roles(ActiveThemes.active(themeId, autoTheme, systemDark, hideBgDark))
+        }
     SaltTheme(
-        configs = SaltConfigs.default(isDarkTheme = isDark),
+        configs = SaltConfigs.default(isDarkTheme = roles.isDark),
+        dynamicColors =
+            remember(roles) {
+                val active = saltColors(roles)
+                if (roles.isDark) {
+                    SaltDynamicColors(light = SaltColors.defaultLight(), dark = active)
+                } else {
+                    SaltDynamicColors(light = active, dark = SaltColors.defaultDark())
+                }
+            },
     ) {
         val nav = rememberNavStack(NavStack.Route.Home)
         val homeNavigator = remember { HomeNavigator() }
@@ -100,5 +135,40 @@ fun MusicApp() {
         BackHandler(enabled = route != NavStack.Route.Home) {
             nav.back()
         }
+    }
+}
+
+/** 把 core 的主题角色映射成 SaltUI 的颜色表（success/warning/error 保留 SaltUI 默认）。 */
+private fun saltColors(roles: ThemeRoles): SaltColors {
+    val highlight = Color(roles.highlight)
+    val text = Color(roles.text)
+    val subText = Color(roles.subText)
+    val background = Color(roles.background)
+    val subBackground = Color(roles.subBackground)
+    val popup = Color(roles.popup)
+    val stroke = Color(roles.stroke)
+    val onHighlight = Color(roles.onHighlight)
+    return if (roles.isDark) {
+        SaltColors.defaultDark(
+            highlight = highlight,
+            text = text,
+            subText = subText,
+            background = background,
+            subBackground = subBackground,
+            popup = popup,
+            stroke = stroke,
+            onHighlight = onHighlight,
+        )
+    } else {
+        SaltColors.defaultLight(
+            highlight = highlight,
+            text = text,
+            subText = subText,
+            background = background,
+            subBackground = subBackground,
+            popup = popup,
+            stroke = stroke,
+            onHighlight = onHighlight,
+        )
     }
 }

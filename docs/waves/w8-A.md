@@ -110,3 +110,50 @@ monet 键留了位没有实现，release 还是 debug 签名，冷启动/包体�
 ## Lane 报告（执行会话追加区）
 
 按 RULES 收尾三步，在此追加：结论 / commit / 触碰文件清单 / 语义修正 / 遗留与真机清单。
+
+## Lane 报告（2026-10-27）
+
+- 结论：任务 1（主题全链路）、2（monet/动态取色）、3（无障碍抽查与修复）、4（性能基线实测）、7（W7-1/W7-2 落地 + W7-11 评估落纸）完成；任务 5（签名/R8）与任务 6（RN 迁移范围）按**拍板门**只交清单，未动 gradle/签名/迁移实现。
+- commit：`a36c8df`；测试数 core 1125 + app 150 = **1275** 全绿（起点 1252，只增不减）；`ktlintCheck test assembleDebug` 全过。
+- 触碰文件清单：
+  - `core/theme/`：`ActiveTheme.kt`/`CoverPalette.kt`/`CssColor.kt`（新）+ `ActiveThemeTest.kt`/`CoverPaletteTest.kt`（新）
+  - `core/setting/DefaultSetting.kt`（position 两键 0→0.0 改既有 + 表尾追加 `local.fallbackConfirm`）+ `SettingsStoreTest`/`SettingMergerTest`/`DesktopLyricSettingKeysTest`（用例跟进）
+  - `app/`：`MusicApp.kt`（主题装配+W7-2 绑定）、`ui/settings/SettingsPage.kt`（主题入口+本地曲库 Switch）、`ui/settings/ThemeSettingsPage.kt`（新，主题子页）、`ui/settings/SettingsFormat.kt`（+fallbackConfirmEnabled 纯函数）与其测试、`ui/play/PlayDetailPage.kt`（动态背景接线+无障碍修复）、`ui/play/DynamicBackdrop.kt`（新）、`data/LocalMusicRuntime.kt`（+bindFallbackConfirm 一行接线）
+  - 未动 gradle/settings/版本目录/Manifest（拍板门，本波零 gradle 改动）
+- 语义修正与实证发现：
+  1. **RN `theme.lightId/darkId` 是死键**（RN `getTheme` 里读取代码被注释）；「跟随系统」语义 = `common.isAutoTheme && 系统深色 → 强制 black`，未知 id 回落 `cyan`。原生 `ActiveThemes` 同语义实装，键表三键不再消费（文档化）。
+  2. **monet 取色器可注入种子**（`CoverPaletteExtractor.DEFAULT_SEED` 固定），JVM 黄金单测锁死；HSL+WCAG 替代 HCT，不引 @material 依赖（零新依赖）。
+  3. **冷启动实测（emulator sdk_gphone64_x86_64, API 36, `am start -W` TotalTime 中位）**：debug 包 AOT 后 ≈ **8.0s**（`cmd package compile -m speed -f` 后仍 8s，瓶颈是 debuggable+Compose tooling instrumentation+大 dex 类加载）；release（本机 debug keystore 自签测量包，AOT）≈ **2.6s**（六次 2693/2654/2624/2504/2550/2609ms）；RN 装机 1.0.2（release 签名，AOT）≈ **2.3s**（2477/2421/2284/2234ms）。结论：以 release 口径对照，原生 ≈ RN +0.3s，离 <2s 目标差 ~0.6s；真机（arm64）预期更低，待真机清单复测。
+  4. **AGP debug keystore 实际路径**：`E:\.android\.android\debug.keystore`（按 `ANDROID_SDK_HOME` 拼接解析，2026-07-17 自动生成，弱口令 android/androiddebugkey，SHA-256 `98:62:28:E3…`），**与 RN 的 `android/app/debug.keystore`（2014 老 JKS，SHA-256 `FA:C6:17:45…`）是两把不同钥匙**。
+  5. **列表滚动 jank**：模拟器新装包首页无可滚动列表内容，swipe 0 帧产出，未得有效统计；方法留真机清单（`gfxinfo framestats` + reset 后滑动采样）。
+- 拍板门清单（三处，等用户确认后才动）：
+  - **A. release 签名**：现状 release 无 signingConfig。待拍板：①原生版最终是否与 RN 同 applicationId（`cn.toside.music.mobile`）覆盖升级——若是，签名钥匙**必须**沿用 RN 装机那把（`android/app/debug.keystore` 或 RN 上传钥匙，本机无 `keystore.properties`/`MYAPP_UPLOAD_STORE_FILE`，RN 1.0.2 装机包实为 debug fallback 签名）；若否（保持 `:native` 独立包名），签名任选；②新建正式 keystore 的口令与保管方式（`keystore.properties` 已 gitignore，绝不入库）；③本波维持 debug 签名覆盖装即可。
+  - **B. R8 缺口清单**（本波**不打开** `isMinifyEnabled`，仅列面）：SaltUI 3.0.0-beta03（beta 库，混淆规则未验，传递依赖 `org.lsposed:hiddenapibypass` 隐藏 API 反射）、`wang.harlon.quickjs`（JNI 桥，Java 侧回调入口需 keep，库自带 consumer rules 待验）、kotlinx.serialization（core 多处 `@Serializable`：UserApiCatalog/RecommendProfile/RecommendModels/m3 系列/RadioModels/RadioState——编译期生成 serializer，理论安全待实测）、Media3 ExoPlayer/Session（自带 consumer rules）、`androidx.core.content.FileProvider`/两个 Service/MainActivity（Manifest 声明类安全）。开启面建议：只开 release 的 `isMinifyEnabled` + `shrinkResources`，debug 保持关；验证 = release 冒烟三链路（QuickJS 取链/播放/分享卡保存）。
+  - **C. RN 数据迁移范围清单**（逐键对照，本波零新增迁移代码）：
+    - **可迁**（唯一实测通道 `.lxmc`/json，`playList_v2` 已实装）：歌单三类——试听列表 `default`、我的收藏 `love`（即爱心）、自定义歌单（含曲目元数据 + 在线歌单元信息 source/sourceListId/locationUpdateTime）。入口即现有「列表导入」+ deeplink 文件打开。
+    - **不迁**（无实测通道）：设置键（83 键：RN Backup UI 只有列表导入导出，`setting_v2` 仅是提示分支，无导出入口；两版 applicationId 不同 ⇒ `RKStorage` SQLite 沙箱隔离不可达；RN 装机包 flags 无 `ALLOW_BACKUP` ⇒ adb backup 也不可达）、播放历史、下载/缓存记录、推荐画像/隐藏歌单/onboarding、userapi 音源脚本（用户手动导入的文件，重新导入即可，不需要迁移）。
+    - 建议：迁移引导文案 = 「旧版设置→备份→导出列表得 .lxmc，新版列表页导入」，现有能力即可达成，不需要新码。
+- 无障碍（任务 3）修复与发现：
+  - 修复（本车道文件）：PlayDetailPage——封面 contentDescription「专辑封面」、返回/更多 GlyphButton 语义+Role、进度条 48dp 触控区+`setProgress`、文字按钮 48dp、分页指示点 48dp 命中区+「封面页/歌词页」语义+selected；ThemeSettingsPage——主题格 `Role.Button`+selected 语义。
+  - 记录未修（别车道文件）：`DesktopLyricSettingsSection.kt` 26dp 主题色点无 contentDescription/触控不足 48dp（已抄送 Lane C 报告遗留）；其余 SaltUI Item 系组件未见结构性问题。
+  - 「RN 侧已有的 a11y 整改清单」在仓库 docs 中未找到对应文档（grep TalkBack/无障碍/a11y 无独立清单），按通用 48dp/contentDescription/TalkBack 口径执行。
+- W7-11 歌词增强立项评估（只评估，零实现代码）：
+  - **逐字 lxlyric**：w7-C 评估已有；本波补实证——`core/local/LocalLyric.kt` 已把内嵌 AWLRC 抽成 `lxlyric` 字符串（仅抽串，无帧解析无渲染）；缺口 = 帧级解析（`[start,duration]` → 字级时间轴）+ LyricView 字级插值渲染。建议 Wave9 独立成波，桌面浮窗不跟进（字号小收益低）。
+  - **繁简转换**：内置映射子集 + 设置项默认关（w7-C 同口径），纯函数 JVM 可测。
+  - **换源**：本地兜底链路已在（含本波 W7-2 确认开关）；在线换源入口依赖播放页菜单增量，属体验增量，与下载/收藏同波排。
+  - **工具模式（复制/海报）**：复用 `ui/share/` 位图管线，缺口在长按进模式+选中态交互，纯 UI。
+- 遗留问题与对后续波次的建议：
+  1. `PreloadPlan.PALETTE` 执行器未补（可选加分项，封面取色走 `ui/play/DynamicBackdrop` 直取，未走 PreloadPlan）。
+  2. Macrobenchmark 模块未建（任务书「不强制」决议），测量方法已落报告（logcat TotalTime + gfxinfo）。
+  3. 包体：debug 29,551,706 B（基线 29,263,058，+288KB）/ release 22,845,147 B，≤32MB 达标。
+  4. 原生 manifest `allowBackup="true"` 开着——若未来要做「设置迁移」可以考虑 Auto Backup 通道，或关掉它减少面（记 Wave9 候选）。
+  5. Lane C 合流后核对：`DesktopLyricConfig.positionX/Y` 已 Double 化，与本波键表 `0.0` 默认值互锁；集成冲突时保留两侧。
+- 真机清单（8 条）：
+  1. 主题切换全 app 实时生效（设置→主题→换主题，首页/播放页/设置页即变；一月 `happy_new_year` 日期覆盖核对）。
+  2. monet 两档观感（封面取色/模糊封面）+ 关闭档纯色回落；低版本（<API31）模糊回落观感。
+  3. TalkBack 主流程：播放页（封面→进度→播控→分页点→播放列表弹层）、设置页主题格选中播报。
+  4. 冷启动对照：release 装包 `am start -W` 三次取中位，与 RN 版同机对比（本波模拟器数已落报告，真机复测）。
+  5. 迁移导入：RN 版导出 .lxmc → 原生版列表页导入 → 三类歌单曲目与元信息核对一致。
+  6. release 包冒烟三链路：QuickJS 取链 / 播放 / 分享卡保存（签名拍板后跑）。
+  7. 本地兜底确认开关：设置关掉后本地曲同名兜底不再弹层、直接静默换源（W7-2）。
+  8. 桌面歌词位置小数重启往返（C 并入后验）：拖到非整数位置 → 杀进程重开 → 位置不漂移。

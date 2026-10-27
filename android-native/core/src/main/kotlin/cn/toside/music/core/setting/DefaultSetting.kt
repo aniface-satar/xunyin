@@ -63,8 +63,10 @@ object DefaultSetting {
             "desktopLyric.maxLineNum" to 5,
             "desktopLyric.isSingleLine" to false,
             "desktopLyric.showToggleAnima" to true,
-            "desktopLyric.position.x" to 0,
-            "desktopLyric.position.y" to 0,
+            // W7-1：用 Double 当默认值。SettingsStore.merge 按默认值类型收窄，
+            // 默认写 Int 会把滑杆存下的 33.5 截成 33（每次重启位置都会漂）。
+            "desktopLyric.position.x" to 0.0,
+            "desktopLyric.position.y" to 0.0,
             "desktopLyric.textPosition.x" to "left",
             "desktopLyric.textPosition.y" to "top",
             "desktopLyric.style.fontSize" to 180,
@@ -98,6 +100,8 @@ object DefaultSetting {
             // （LyricView.setLyric），所以引入开关后默认值取「改造前观感」——两个都开。
             "desktopLyric.isShowTranslation" to true,
             "desktopLyric.isShowRoma" to true,
+            // ---- Wave8 Lane A 表尾追加：本地曲库在线兜底前的人工确认（体验增强，默认开）----
+            "local.fallbackConfirm" to true,
         )
 
     /**

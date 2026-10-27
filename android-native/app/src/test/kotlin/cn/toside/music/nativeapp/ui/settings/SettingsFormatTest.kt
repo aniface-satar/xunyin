@@ -1,5 +1,6 @@
 package cn.toside.music.nativeapp.ui.settings
 
+import cn.toside.music.core.local.LocalFallbackConfirm
 import cn.toside.music.core.userapi.PreviewFailureReason
 import cn.toside.music.core.userapi.ScriptHeaderInfo
 import cn.toside.music.core.userapi.UpdateComparison
@@ -8,7 +9,9 @@ import cn.toside.music.core.userapi.UpdatePreview
 import cn.toside.music.nativeapp.userapi.UserApiUpdateOutcome
 import cn.toside.music.nativeapp.userapi.UserApiUpdateStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -244,5 +247,28 @@ class SettingsFormatTest {
             "音源「我的源」更新失败：未知原因",
             userApiUpdateOutcomeTip(UserApiUpdateOutcome(status = UserApiUpdateStatus.FAILED, name = "我的源")),
         )
+    }
+
+    // ---------- W7-2 本地兜底确认开关 ----------
+
+    @Test
+    fun fallbackConfirmDefaultsToOnWhenKeyIsMissing() {
+        // 存量设置文件里还没有这个键（旧版本存下来的）：必须保持「问一句」，
+        // 不能因为缺键就静默换源
+        assertTrue(fallbackConfirmEnabled(emptyMap()))
+        assertTrue(fallbackConfirmEnabled(mapOf("theme.id" to "cyan")))
+    }
+
+    @Test
+    fun fallbackConfirmFollowsTheSettingValue() {
+        assertTrue(fallbackConfirmEnabled(mapOf(LocalFallbackConfirm.SETTING_KEY to true)))
+        assertFalse(fallbackConfirmEnabled(mapOf(LocalFallbackConfirm.SETTING_KEY to false)))
+    }
+
+    @Test
+    fun fallbackConfirmIgnoresWrongTypes() {
+        // 键在但值不是布尔（历史写入异常）：同样回落默认开，而不是崩溃/关闭
+        assertTrue(fallbackConfirmEnabled(mapOf(LocalFallbackConfirm.SETTING_KEY to "true")))
+        assertTrue(fallbackConfirmEnabled(mapOf(LocalFallbackConfirm.SETTING_KEY to 1)))
     }
 }
