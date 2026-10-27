@@ -67,6 +67,10 @@ import cn.toside.music.core.player.PlayerState
 import cn.toside.music.core.player.TogglePlayMethod
 import cn.toside.music.nativeapp.player.LyricsState
 import cn.toside.music.nativeapp.player.PlayerRuntime
+import cn.toside.music.nativeapp.ui.MORPH_COVER_KEY
+import cn.toside.music.nativeapp.ui.MORPH_TITLE_KEY
+import cn.toside.music.nativeapp.ui.sharedMorph
+import cn.toside.music.nativeapp.ui.sharedMorphBounds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonNull
@@ -315,6 +319,7 @@ private fun CoverPage(
             Box(
                 modifier =
                     Modifier
+                        .sharedMorph(MORPH_COVER_KEY)
                         .size(coverSize)
                         .shadow(26.dp, RoundedCornerShape(20.dp), ambientColor = Color.Black, spotColor = Color.Black)
                         .clip(RoundedCornerShape(20.dp))
@@ -338,7 +343,7 @@ private fun CoverPage(
             Spacer(Modifier.height(28.dp))
             BasicText(
                 text = title.ifEmpty { "暂无播放" },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.sharedMorphBounds(MORPH_TITLE_KEY).fillMaxWidth(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style =

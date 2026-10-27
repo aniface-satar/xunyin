@@ -52,8 +52,10 @@ class DesktopLyricScrollMathTest {
 
     @Test
     fun oneFrameBeforeTheEndStillMoves() {
-        val step = DesktopLyricScrollMath.advance(x = -498f, speed = speed, viewWidth = 200f, textLength = 500f)
+        // 临界点：200 - x + 2.7 >= 500，即 x <= -297.3；-295 还差一帧才到底
+        val step = DesktopLyricScrollMath.advance(x = -295f, speed = speed, viewWidth = 200f, textLength = 500f)
         assertFalse(step.stopped)
+        assertEquals(-297.7f, step.x, 1e-4f)
     }
 
     @Test

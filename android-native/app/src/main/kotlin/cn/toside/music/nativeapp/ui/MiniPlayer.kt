@@ -79,6 +79,7 @@ fun MiniPlayer(
         Box(
             modifier =
                 Modifier
+                    .sharedMorph(MORPH_COVER_KEY)
                     .size(44.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(SaltTheme.colors.stroke),
@@ -95,6 +96,7 @@ fun MiniPlayer(
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
             BasicText(
                 text = music.text("name").orEmpty(),
+                modifier = Modifier.sharedMorphBounds(MORPH_TITLE_KEY),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style =

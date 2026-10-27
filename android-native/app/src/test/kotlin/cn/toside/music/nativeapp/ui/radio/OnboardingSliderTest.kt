@@ -66,9 +66,9 @@ class OnboardingSliderTest {
     /** 「无所谓」这一档在落库时会被移除——滑条换了，这个语义不能变。 */
     @Test
     fun neutral_tier_is_still_dropped_by_sanitize() {
-        val answers = mapOf("lang_zh" to snapTierPercent(1 / 3f), "genre_pop" to snapTierPercent(0f))
+        val answers = mapOf("zh" to snapTierPercent(1 / 3f), "pop" to snapTierPercent(0f))
         val sanitized = Onboarding.sanitizeWeights(answers)
-        assertTrue(sanitized["lang_zh"] == null)
-        assertEquals(0.0, sanitized["genre_pop"]!!, 0.0)
+        assertTrue(sanitized["zh"] == null)
+        assertEquals(0.0, sanitized["pop"]!!, 0.0)
     }
 }
