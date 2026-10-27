@@ -38,8 +38,10 @@ class DesktopLyricSettingKeysTest {
             "desktopLyric.maxLineNum" to 5,
             "desktopLyric.isSingleLine" to false,
             "desktopLyric.showToggleAnima" to true,
-            "desktopLyric.position.x" to 0,
-            "desktopLyric.position.y" to 0,
+            // W7-1：RN 的 JSON 数字 0 本身不分整数/小数；Kotlin 默认值必须写 0.0，
+            // 否则 SettingsStore.merge 按 Int 收窄会把滑杆的小数位置截掉。
+            "desktopLyric.position.x" to 0.0,
+            "desktopLyric.position.y" to 0.0,
             "desktopLyric.textPosition.x" to "left",
             "desktopLyric.textPosition.y" to "top",
             "desktopLyric.style.fontSize" to 180,
@@ -99,15 +101,14 @@ class DesktopLyricSettingKeysTest {
             val store = SettingsStore(repo)
             store.load()
             store.set("desktopLyric.enable", true)
-            // position.* 默认值是 Int，SettingsStore.merge 会按默认类型收窄：
-            // 写 Double 会在重载时被丢弃（RN 原版不做收窄）。本车道只能存整数百分比。
-            store.set("desktopLyric.position.x", 33)
-            store.set("desktopLyric.position.y", 13)
+            // W7-1：默认值改成 Double 后，滑杆的小数百分比可以原样往返
+            store.set("desktopLyric.position.x", 33.5)
+            store.set("desktopLyric.position.y", 12.25)
 
             val reloaded = SettingsStore(repo)
             reloaded.load()
             assertEquals(true, reloaded.bool("desktopLyric.enable"))
-            assertEquals(33, reloaded.int("desktopLyric.position.x"))
-            assertEquals(13.0, reloaded.double("desktopLyric.position.y"), 1e-9)
+            assertEquals(33.5, reloaded.double("desktopLyric.position.x"), 1e-9)
+            assertEquals(12.25, reloaded.double("desktopLyric.position.y"), 1e-9)
         }
 }

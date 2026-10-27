@@ -1,6 +1,5 @@
 package cn.toside.music.nativeapp.ui.play
 
-import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -8,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,15 +41,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -57,6 +55,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -65,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.toside.music.core.player.PlayerState
 import cn.toside.music.core.player.TogglePlayMethod
+import cn.toside.music.core.theme.ActiveThemes
 import cn.toside.music.nativeapp.player.LyricsState
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import cn.toside.music.nativeapp.ui.MORPH_COVER_KEY
@@ -115,6 +122,26 @@ fun PlayDetailPage(onBack: () -> Unit) {
     // 字号/译文/音译都以设置为唯一来源（RN：useSettingValue + Lyric.tsx:101-103 除以 10）
     LaunchedEffect(Unit) { runtime.settings.ensureLoaded() }
     val settings by runtime.settings.state.collectAsState()
+    val systemDark = isSystemInDarkTheme()
+    val activeTheme =
+        remember(
+            settings["theme.id"],
+            settings["common.isAutoTheme"],
+            settings["theme.hideBgDark"],
+            systemDark,
+        ) {
+            ActiveThemes.active(
+                settings["theme.id"] as? String,
+                settings["common.isAutoTheme"] as? Boolean ?: false,
+                systemDark,
+                settings["theme.hideBgDark"] as? Boolean ?: false,
+            )
+        }
+    // 播放页墨色恒白：浅色主题下仍用深底，免得白字落在亮背景上（RN 的浅色播放页未移植）
+    val backdropColor =
+        if (activeTheme.isDark) Color(ActiveThemes.roles(activeTheme).background) else Color(0xFF141218)
+    val dynamicBg = settings["theme.dynamicBg"] as? Boolean ?: true
+    val dynamicBgAlgorithm = settings["theme.dynamicBgAlgorithm"] as? String ?: "blur"
     val timeout = remember { TimeoutExitRuntime.get(context) }
     val fontSizeTenths = lrcFontSizeTenths(settings)
     val translationShown = settings["player.isShowLyricTranslation"] as? Boolean ?: true
@@ -135,7 +162,12 @@ fun PlayDetailPage(onBack: () -> Unit) {
     val toggleRoma = { runtime.setLyricRoma(!romaShown) }
 
     Box(Modifier.fillMaxSize()) {
-        PlayerBackdrop(cover)
+        DynamicBackdrop(
+            cover = cover,
+            dynamicBg = dynamicBg,
+            algorithm = dynamicBgAlgorithm,
+            themeBackground = backdropColor,
+        )
         Column(Modifier.fillMaxSize()) {
             PlayerHeader(title = "正在播放", onBack = onBack, onOpenMore = { showMore = true })
             PagerAndControls(
@@ -265,45 +297,6 @@ private fun PlayerHeader(
 }
 
 @Composable
-private fun PlayerBackdrop(cover: CoverArt?) {
-    Box(Modifier.fillMaxSize().background(Color(0xFF141218))) {
-        if (cover != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // API 31+：RenderEffect 硬件模糊
-                Image(
-                    bitmap = cover.cover,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize().blur(70.dp),
-                    contentScale = ContentScale.Crop,
-                    alpha = 0.85f,
-                )
-            } else {
-                // 低版本 Modifier.blur 无效：拿 32px 小图放大，双线性插值近似模糊
-                Image(
-                    bitmap = cover.blurSource ?: cover.cover,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    filterQuality = FilterQuality.Low,
-                    alpha = 0.9f,
-                )
-            }
-        }
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.30f),
-                        0.55f to Color.Black.copy(alpha = 0.42f),
-                        1f to Color(0xF0121016),
-                    ),
-                ),
-        )
-    }
-}
-
-@Composable
 private fun CoverPage(
     cover: CoverArt?,
     title: String,
@@ -329,7 +322,7 @@ private fun CoverPage(
                 if (cover != null) {
                     Image(
                         bitmap = cover.cover,
-                        contentDescription = null,
+                        contentDescription = "专辑封面",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
                     )
@@ -385,15 +378,30 @@ private fun PageDots(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         repeat(pageCount) { index ->
+            // 视觉点只有 5/7dp，命中区必须 ≥48dp（TalkBack/无障碍抽查的 48dp 触达）
+            val pageName = if (index == 0) "封面页" else "歌词页"
             Box(
                 modifier =
                     Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(if (index == current) 7.dp else 5.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = if (index == current) 0.9f else 0.35f))
-                        .clickable { onSelect(index) },
-            )
+                        .clickable { onSelect(index) }
+                        .semantics {
+                            contentDescription =
+                                if (index == current) "$pageName（当前）" else "切换到$pageName"
+                            role = Role.Button
+                            if (index == current) selected = true
+                        },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(if (index == current) 7.dp else 5.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = if (index == current) 0.9f else 0.35f)),
+                )
+            }
         }
     }
 }
@@ -470,12 +478,25 @@ private fun SeekBar(
     var widthPx by remember { mutableStateOf(1) }
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     val shown = dragFraction ?: fraction
+    // 26dp 的轨道放进 48dp 热区；TalkBack 也能用「增大/减小」调节进度
+    val progressSemantics =
+        Modifier.semantics {
+            contentDescription = "播放进度"
+            progressBarRangeInfo = ProgressBarRangeInfo(shown, 0f..1f)
+            if (enabled) {
+                setProgress { target ->
+                    onSeek(target.coerceIn(0f, 1f))
+                    true
+                }
+            }
+        }
     Box(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(26.dp)
+                .height(48.dp)
                 .onSizeChanged { widthPx = it.width.coerceAtLeast(1) }
+                .then(progressSemantics)
                 .pointerInput(enabled) {
                     if (!enabled) return@pointerInput
                     awaitEachGesture {
@@ -528,15 +549,20 @@ private fun TextAction(
     label: String,
     onClick: () -> Unit,
 ) {
-    BasicText(
-        text = label,
+    Box(
         modifier =
             Modifier
+                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .clickable(onClick = onClick)
                 .padding(horizontal = 8.dp, vertical = 6.dp),
-        style = TextStyle(color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp),
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        BasicText(
+            text = label,
+            style = TextStyle(color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp),
+        )
+    }
 }
 
 private enum class Glyph { Play, Pause, Prev, Next, Back, More }
@@ -547,21 +573,37 @@ private fun GlyphButton(
     size: androidx.compose.ui.unit.Dp,
     enabled: Boolean = true,
     filled: Boolean = false,
+    contentDescription: String = glyphLabel(glyph),
     onClick: () -> Unit,
 ) {
     val alpha = if (enabled) 1f else 0.35f
+    val label = contentDescription
     Box(
         modifier =
             Modifier
                 .size(size)
                 .clip(CircleShape)
                 .background(if (filled) Color.White.copy(alpha = 0.14f * alpha) else Color.Transparent)
-                .clickable(enabled = enabled, onClick = onClick),
+                .clickable(enabled = enabled, onClick = onClick)
+                .semantics {
+                    this.contentDescription = label
+                    role = Role.Button
+                },
         contentAlignment = Alignment.Center,
     ) {
         GlyphIcon(glyph = glyph, color = Color.White.copy(alpha = alpha), modifier = Modifier.size(size * 0.46f))
     }
 }
+
+private fun glyphLabel(glyph: Glyph): String =
+    when (glyph) {
+        Glyph.Play -> "播放"
+        Glyph.Pause -> "暂停"
+        Glyph.Prev -> "上一首"
+        Glyph.Next -> "下一首"
+        Glyph.Back -> "返回"
+        Glyph.More -> "更多"
+    }
 
 @Composable
 private fun GlyphIcon(

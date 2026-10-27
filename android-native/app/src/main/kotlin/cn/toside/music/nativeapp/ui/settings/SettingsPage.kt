@@ -2,6 +2,7 @@ package cn.toside.music.nativeapp.ui.settings
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import cn.toside.music.core.local.LocalFallbackConfirm
+import cn.toside.music.core.theme.ActiveThemes
 import cn.toside.music.nativeapp.cache.AppCache
 import cn.toside.music.nativeapp.data.SettingsRuntime
 import cn.toside.music.nativeapp.player.PlayerRuntime
@@ -46,6 +49,7 @@ private val QUALITY_OPTIONS = listOf("128k", "320k", "flac", "flac24bit")
 private val VOLUME_LEVEL_OPTIONS = listOf("low" to "轻", "mid" to "中", "high" to "强")
 
 private enum class SettingsSubPage {
+    THEME,
     USER_API,
     LOGS,
     BACKGROUND_PLAY,
@@ -68,10 +72,12 @@ fun SettingsPage(onBack: () -> Unit) {
         null ->
             SettingsContent(
                 onBack = onBack,
+                onOpenTheme = { subPage = SettingsSubPage.THEME },
                 onOpenUserApi = { subPage = SettingsSubPage.USER_API },
                 onOpenLogs = { subPage = SettingsSubPage.LOGS },
                 onOpenBackgroundHelp = { subPage = SettingsSubPage.BACKGROUND_PLAY },
             )
+        SettingsSubPage.THEME -> ThemeSettingsPage(onBack = { subPage = null })
         SettingsSubPage.USER_API -> UserApiManagePage(onBack = { subPage = null })
         SettingsSubPage.LOGS -> UserApiLogsPage(onBack = { subPage = null })
         SettingsSubPage.BACKGROUND_PLAY -> BackgroundPlayHelpPage(onBack = { subPage = null })
@@ -82,6 +88,7 @@ fun SettingsPage(onBack: () -> Unit) {
 @Composable
 private fun SettingsContent(
     onBack: () -> Unit,
+    onOpenTheme: () -> Unit,
     onOpenUserApi: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenBackgroundHelp: () -> Unit,
@@ -90,6 +97,7 @@ private fun SettingsContent(
     val runtime = remember { PlayerRuntime.get(context) }
     val settings by runtime.settings.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val systemDark = isSystemInDarkTheme()
 
     var qualityPicker by remember { mutableStateOf(false) }
     var levelPicker by remember { mutableStateOf(false) }
@@ -112,6 +120,14 @@ private fun SettingsContent(
     val updateCheck = settings["common.userApiUpdateCheck"] as? String ?: "daily"
     val autoUpdate = settings["common.userApiAutoUpdate"] as? Boolean ?: true
     val allowAlert = settings["common.userApiAllowShowUpdateAlert"] as? Boolean ?: false
+    val themeId = settings["theme.id"] as? String
+    val autoTheme = settings["common.isAutoTheme"] as? Boolean ?: false
+    val hideBgDark = settings["theme.hideBgDark"] as? Boolean ?: false
+    val fallbackConfirm = settings[LocalFallbackConfirm.SETTING_KEY] as? Boolean ?: true
+    val activeThemeName =
+        remember(themeId, autoTheme, hideBgDark, systemDark) {
+            ActiveThemes.active(themeId, autoTheme, systemDark, hideBgDark).name
+        }
 
     // 滑杆拖动时先记在本地，松手才落库：一边拖一边写存储会写出一串没用的中间值
     val storedVolume = ((settings["player.volume"] as? Number)?.toDouble() ?: 1.0).toFloat()
@@ -142,6 +158,14 @@ private fun SettingsContent(
                     .padding(padding),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            ItemSpacer()
+            Text(text = "外观", color = SaltTheme.colors.subText, modifier = Modifier.padding(horizontal = 16.dp))
+            Item(
+                onClick = onOpenTheme,
+                text = "主题",
+                tag = activeThemeName,
+                arrowType = ItemArrowType.Arrow,
+            )
             ItemSpacer()
             Text(text = "播放", color = SaltTheme.colors.subText, modifier = Modifier.padding(horizontal = 16.dp))
             Item(
@@ -272,6 +296,16 @@ private fun SettingsContent(
                 onClick = { locationPicker = true },
                 text = "添加歌曲到列表时的位置",
                 tag = if (location == "bottom") "底部" else "顶部",
+            )
+            ItemSpacer()
+            Text(text = "本地曲库", color = SaltTheme.colors.subText, modifier = Modifier.padding(horizontal = 16.dp))
+            ItemSwitcher(
+                state = fallbackConfirm,
+                onChange = { enable ->
+                    scope.launch { runtime.settings.store.set(LocalFallbackConfirm.SETTING_KEY, enable) }
+                },
+                text = "在线兜底前先让我确认",
+                sub = "本地歌曲找不到时，同名但不同歌手的候选先问你一句",
             )
             ItemSpacer()
             Text(text = "存储与系统", color = SaltTheme.colors.subText, modifier = Modifier.padding(horizontal = 16.dp))
