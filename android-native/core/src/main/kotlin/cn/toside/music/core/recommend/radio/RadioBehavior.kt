@@ -2,6 +2,7 @@ package cn.toside.music.core.recommend.radio
 
 import cn.toside.music.core.recommend.ArtistPrior
 import cn.toside.music.core.recommend.NameTokenFeedback
+import cn.toside.music.core.recommend.isLocalTrack
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.max
 import kotlin.math.min
@@ -338,9 +339,14 @@ object RadioBehavior {
             }
         }
 
-        // 词面学习：显式信号比隐式结算更响
+        // 词面学习：显式信号比隐式结算更响。
+        // W5-13：本地曲的词面不吃进 tokenWeights —— 用户硬盘里的曲目名（无损重制版、
+        // 网盘命名等）不是「想听什么」的表态，大批导入会把这些词整体拉成高权重。
+        // 歌手先验照学（歌手是稳定品味信号），负反馈的词面负向也照记（踩雷本地曲同样成立）。
+        val trackIsLocal = input.musicInfo?.isLocalTrack() == true
         val tokens =
             when {
+                input.musicInfo != null && trackIsLocal -> record?.nameTokens
                 input.musicInfo != null -> NameTokenFeedback.tokenizeTrackName(input.musicInfo.stringField("name"))
                 input.name != null -> NameTokenFeedback.tokenizeTrackName(input.name)
                 else -> record?.nameTokens

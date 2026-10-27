@@ -1,13 +1,16 @@
 package cn.toside.music.nativeapp.ui.radio
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -30,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.toside.music.core.recommend.radio.RadioMode
+import cn.toside.music.nativeapp.data.RadioStatus
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import com.moriafly.salt.ui.SaltTheme
 import com.moriafly.salt.ui.Text
@@ -47,7 +51,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * 队列预览与异常提示。取曲、补位、踩雷持久化全在 [cn.toside.music.nativeapp.data.RadioRuntime]，
  * 本页不持有任何电台状态（只有提示文案是本地状态）。
  */
-@OptIn(UnstableSaltUiApi::class)
+@OptIn(ExperimentalFoundationApi::class, UnstableSaltUiApi::class)
 @Composable
 fun RadioPage(
     onBack: () -> Unit,
@@ -60,6 +64,8 @@ fun RadioPage(
     val playerState by player.core.state.collectAsState()
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<String?>(null) }
+    // 开发者诊断（W6-10）：长按标题开/关。不进设置页、不做持久化 —— 拔掉即走。
+    var showDiag by remember { mutableStateOf(false) }
 
     val current = playerState.playMusicInfo.musicInfo
     val currentIsRadio = current != null && radio.isRadioTrack(current)
@@ -100,7 +106,11 @@ fun RadioPage(
             )
             Text(
                 text = "个性电台",
-                modifier = Modifier.weight(1f).padding(start = 8.dp),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .padding(start = 8.dp)
+                        .combinedClickable(onClick = {}, onLongClick = { showDiag = !showDiag }),
                 color = SaltTheme.colors.text,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
@@ -132,6 +142,8 @@ fun RadioPage(
             negativeStreak = status.negativeStreak,
             error = status.error,
         )
+
+        if (showDiag) DiagCard(status = status)
 
         if (current != null) {
             CurrentTrackCard(
@@ -188,6 +200,83 @@ fun RadioPage(
                 "同时给来源歌单降权；喜欢会立刻影响下一批候选。",
         )
     }
+}
+
+/**
+ * 开发者诊断卡（W6-10）：池子构成 / 通道占比 / 语种桶 / 最近原因滚动。
+ * 数据全部来自 [RadioStatus]，没有第二条取数路径；纯只读，不写任何状态。
+ */
+@OptIn(UnstableSaltUiApi::class)
+@Composable
+private fun DiagCard(status: RadioStatus) {
+    val stats = status.poolStats
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(SaltTheme.colors.subBackground)
+                .padding(14.dp),
+    ) {
+        Text(
+            text = "开发者诊断（长按标题开/关）",
+            color = SaltTheme.colors.highlight,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        val channelLine =
+            stats.byChannel.entries
+                .sortedBy { it.key.ordinal }
+                .joinToString(" · ") { "${it.key.name}:${it.value}" }
+        DiagLine("池子", "${stats.total} 首 · 确认种子 ${stats.confirmed}")
+        DiagLine("池内通道", channelLine.ifEmpty { "空" })
+        val langLine =
+            stats.byLang.entries
+                .sortedBy { it.key.ordinal }
+                .joinToString(" · ") { "${it.key.name}:${it.value}" }
+        DiagLine("语种桶", langLine.ifEmpty { "空" })
+        DiagLine("unknown 占比", "${(stats.unknownShare * 100).toInt()}%")
+        val shareLine =
+            status.channelShare.entries
+                .filter { it.value > 0 }
+                .sortedBy { it.key.ordinal }
+                .joinToString(" · ") { "${it.key.name}:${(it.value * 100).toInt()}%" }
+        DiagLine("队列占比", shareLine.ifEmpty { "空" })
+        Text(
+            text = "最近 reasons（新→旧，最多 20 条）",
+            modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+            color = SaltTheme.colors.subText,
+            fontSize = 12.sp,
+        )
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 220.dp)
+                    .verticalScroll(rememberScrollState()),
+        ) {
+            val reasons = status.reasons.takeLast(20).asReversed()
+            if (reasons.isEmpty()) {
+                DiagLine("（暂无）", "")
+            } else {
+                reasons.forEach { reason -> DiagLine("•", reason) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagLine(
+    label: String,
+    value: String,
+) {
+    Text(
+        text = if (value.isEmpty()) label else "$label：$value",
+        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+        color = SaltTheme.colors.text,
+        fontSize = 12.sp,
+    )
 }
 
 @OptIn(UnstableSaltUiApi::class)

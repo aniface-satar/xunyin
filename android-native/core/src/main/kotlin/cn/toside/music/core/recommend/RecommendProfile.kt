@@ -17,10 +17,11 @@ data class ProfileInput(
     val playHistory: List<ProfileHistoryEntry>,
 )
 
-/** 画像证据曲目：歌名 + 歌手即可（重排只按这两个字段打分）。 */
+/** 画像证据曲目：歌名 + 歌手即可（重排只按这两个字段打分）；`source` 供本地曲过滤（W5-13）。 */
 data class ProfileTrack(
     val name: String?,
     val singer: String?,
+    val source: String? = null,
 )
 
 /** 播放历史一条：曲目 + 播放时间（新近播放权重高）。 */

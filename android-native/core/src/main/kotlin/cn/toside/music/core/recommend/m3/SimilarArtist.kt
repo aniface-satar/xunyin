@@ -521,6 +521,36 @@ object SimilarArtist {
         val artistName: String,
     )
 
+    data class PrefillGate(
+        /** 距上次补给不到冷却期 → 不开闸。 */
+        val cooldownMs: Long = 60_000L,
+        /** 滑窗内最多补给几次（防「反复停播/开播」把 kg 请求堆起来）。 */
+        val maxPerWindow: Int = 3,
+        val windowMs: Long = 10L * 60 * 1000,
+    )
+
+    /**
+     * 首屏补给的闸门（W6-11）：补给挂在开播路径上，反复停播→开播会让它每轮都发
+     * `PREFILL_ARTISTS` 次 kg 搜歌。RN 没有等价入口（E 的推进只在刷新链路里按预算走一格，
+     * 且受 `cacheReuseCooldownMs` 6h 约束），所以这是原生自己的节拍，用两道闸对齐 RN 的节奏：
+     * 1. 冷却期（默认 60 s）—— 抖动式开播不重复搜；
+     * 2. 滑窗次数上限（默认 10 分钟 3 次）—— 长时间来回切换也不会把请求堆成串。
+     *
+     * 缓存状态不能当闸门用：补给是**只读**的（不推进 `nextIndex` / `songsFetchedAt`），
+     * 用缓存里的 `songsFetchedAt` 判断会变成「要么永远开、要么永远关」。
+     */
+    fun prefillAllowed(
+        now: Long,
+        lastPrefillAt: Long,
+        recentPrefills: List<Long> = emptyList(),
+        gate: PrefillGate = PrefillGate(),
+    ): Boolean {
+        // 0 是「本次进程还没补给过」的哨兵：首次开播必须放行，不能把它当成刚补过
+        if (lastPrefillAt > 0 && now - lastPrefillAt < gate.cooldownMs) return false
+        val recent = recentPrefills.count { now - it in 0 until gate.windowMs }
+        return recent < max(1, gate.maxPerWindow)
+    }
+
     /**
      * 方案 b 的纯计划部分：从上一会话缓存里挑出最多 [maxArtists] 位相似歌手（不碰网络）。
      *

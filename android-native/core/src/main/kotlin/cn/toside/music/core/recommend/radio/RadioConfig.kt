@@ -119,12 +119,58 @@ object RadioConfig {
         const val MIN_WEIGHT = 1e-4
     }
 
+    /**
+     * 共现索引（RN `config.similarity` + `config.sessionCoOccurrence` + `storage`）。
+     *
+     * 起草时说的「本地歌单库倒排索引」在 RN 里其实不是共现的输入：RN 的
+     * `library.ts` 只做「已在库」判重与导入归因，共现来自**已观察歌单**的倒排索引
+     * （`similarity.buildTrackPlaylistIndex`）与**播放记录**的会话共现
+     * （`buildSessionCoOccurrence`）。所以这里的常量全部对齐后者。
+     */
+    object CoOccurrence {
+        /** 歌曲 → 歌单倒排索引的容量上限（RN `storage.observedTrackIndexLimit`）。 */
+        const val INDEX_MAX_ENTRIES = 20_000
+
+        /** 共现贡献的热门阻尼指数（RN `similarity.popularityDamping`）。 */
+        const val POPULARITY_DAMPING = 1.0
+
+        /** 单歌单贡献的饱和倍数（RN `similarity.maxMultiPlaylistBoost`）。 */
+        const val MAX_MULTI_PLAYLIST_BOOST = 2.5
+
+        /** 观察歌单并查合并的相似度阈值（RN `candidatePool.similarPlaylistThreshold`）。 */
+        const val SIMILAR_PLAYLIST_THRESHOLD = 0.35
+
+        /** 同一场收听的间隔上限（RN `sessionCoOccurrence.sessionGapMs`）。 */
+        const val SESSION_GAP_MS = 30L * 60 * 1000
+
+        /** 会话共现权重的半衰期（天）。 */
+        const val HALF_LIFE_DAYS = 14.0
+
+        /** 参与会话共现的最近记录条数。 */
+        const val MAX_RECORDS = 300
+
+        /** 种子歌当 anchor 的最低覆盖率（真听完才算正样本）。 */
+        const val ANCHOR_MIN_COVERAGE = 0.8
+
+        /** 非种子歌吸收信号的最低覆盖率（早切的不吸收）。 */
+        const val MEMBER_MIN_COVERAGE = 0.5
+    }
+
     object CandidatePool {
         const val TARGET_SIZE = 500
         const val MAX_SIZE = 1500
         const val MIN_CACHE_FOR_INSTANT_START = 20
         const val CANDIDATE_TTL_MS = 24L * 60 * 60 * 1000
         const val DETAIL_FETCHES_PER_REFRESH = 4
+
+        /** 详情额度里为语种桶召回预留几格（RN `candidatePool.bucketDetailReserve`）。 */
+        const val BUCKET_DETAIL_RESERVE = 1
+
+        /** 池内 unknown 占比过高时预留位加到几格（RN `bucketDetailReserveWhenUnknownHigh`）。 */
+        const val BUCKET_DETAIL_RESERVE_WHEN_UNKNOWN_HIGH = 2
+
+        /** 触发预留扩容的 unknown 占比阈值（RN `candidatePool.unknownShareEscalate`）。 */
+        const val UNKNOWN_SHARE_ESCALATE = 0.3
 
         /**
          * 池子按语种配额淘汰时的宽松系数（RN `candidatePool.poolEvictOverQuotaSlack`）：

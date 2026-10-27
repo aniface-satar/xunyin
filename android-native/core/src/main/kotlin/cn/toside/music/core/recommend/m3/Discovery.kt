@@ -1,6 +1,7 @@
 package cn.toside.music.core.recommend.m3
 
 import cn.toside.music.core.songlist.SonglistSort
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -16,8 +17,13 @@ import kotlin.math.roundToInt
  * 这是唯一一条不依赖音频信号的「不撞熟歌」来源。
  */
 object Discovery {
-    /** RN `candidatePool.newestListRatio`：每 10 轮里有 3 轮用「最新」排序。 */
-    const val NEWEST_RATIO = 0.3
+    /**
+     * RN `candidatePool.newestListRatio`：每 10 轮里有 7 轮用「最新」排序
+     * （RN config.ts:212「最新:最热 = 7:3 轮转」）。
+     * W7 语义修正：Wave5 移植成 0.3 且注释写成「3 轮最新」，是把「7:3」读反了；
+     * 实证 RN 源码后改回 0.7（见 lane 报告）。
+     */
+    const val NEWEST_RATIO = 0.7
 
     private val NEWEST_PATTERN = Regex("最新|新歌|新品|new", RegexOption.IGNORE_CASE)
 
@@ -26,6 +32,18 @@ object Discovery {
         /** true = 本轮走「最新」排序，产出的歌单归 C；false = 沿用热门排序（归 D/B）。 */
         val useNew: Boolean,
     )
+
+    /**
+     * 一次刷新跑几个抓取步骤（app `fetchPool` 的 `steps` 口径）：补货轮只跑 1 步，
+     * 常规轮按预算每 4 个请求一步、上下夹在 [1,3]。
+     *
+     * 放进 core 是为了让「原生一轮刷新到底能跑几次请求」这件事能被单测锁住——
+     * 成新率（[pickSort] 的 ratio）该取多少完全取决于这个数，靠人肉估会算错。
+     */
+    fun planSteps(
+        budget: Int,
+        supplement: Boolean = false,
+    ): Int = if (supplement) 1 else (max(0, budget) / 4).coerceIn(1, 3)
 
     fun isNewestSort(sort: SonglistSort): Boolean = NEWEST_PATTERN.containsMatchIn("${sort.name} ${sort.tid}")
 

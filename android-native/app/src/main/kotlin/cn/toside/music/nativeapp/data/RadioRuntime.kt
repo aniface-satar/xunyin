@@ -7,7 +7,9 @@ import cn.toside.music.core.player.PlayMusicInfo
 import cn.toside.music.core.recommend.DislikeRules
 import cn.toside.music.core.recommend.PlaylistRank
 import cn.toside.music.core.recommend.m3.Discovery
+import cn.toside.music.core.recommend.m3.LanguageQuota
 import cn.toside.music.core.recommend.m3.Onboarding
+import cn.toside.music.core.recommend.m3.SimilarArtist
 import cn.toside.music.core.recommend.radio.ArtistLangLookup
 import cn.toside.music.core.recommend.radio.CandidateBuildParams
 import cn.toside.music.core.recommend.radio.ChannelId
@@ -68,6 +70,8 @@ data class RadioStatus(
     val error: String? = null,
     /** 最近一轮刷新 + 选曲的原因（`lang_quota_relaxed` / `relax_level_N` / `lang_unmet:*` …）。 */
     val reasons: List<String> = emptyList(),
+    /** 池子构成诊断（W6-10）：开发者入口直接读它，不给 UI 第二条取数路径。 */
+    val poolStats: RadioPool.PoolStats = RadioPool.PoolStats(0, emptyMap(), 0),
 )
 
 /**
@@ -138,6 +142,10 @@ class RadioRuntime(
 
     /** 通道 E 的后台刷新（单飞）：产物进缓存/缓冲，不进取曲路径。 */
     private var similarRefreshJob: Job? = null
+
+    /** 首屏补给的节拍状态（W6-11）：上次补给时刻 + 最近的补给时刻。 */
+    private var lastPrefillAt = 0L
+    private var recentPrefills: List<Long> = emptyList()
 
     @Volatile
     private var dislikeInfoCache = DislikeInfo()
@@ -269,10 +277,18 @@ class RadioRuntime(
      * `fetchSimilarArtist` 仍返回 0 requests，取曲路径本身不发任何 E 请求。
      */
     private suspend fun prefillSimilarArtistBuffer() {
+        val now = System.currentTimeMillis()
+        // W6-11 冷却：补给挂在开播路径上，频繁停播→开播会让它每轮都发 kg 搜歌。
+        // 冷却 60 s + 10 分钟最多 3 次，理由与数值见 `SimilarArtist.prefillAllowed`。
+        if (!SimilarArtist.prefillAllowed(now, lastPrefillAt, recentPrefills)) return
         val runtime = runCatching { RecommendStores.similarArtist }.getOrNull() ?: return
-        withTimeoutOrNull(SIMILAR_PREFILL_TIMEOUT_MS) {
-            runCatching { runtime.prefillFromCache(System.currentTimeMillis()) }
-        }
+        val filled =
+            withTimeoutOrNull(SIMILAR_PREFILL_TIMEOUT_MS) {
+                runCatching { runtime.prefillFromCache(now) }.getOrNull() ?: 0
+            } ?: return
+        lastPrefillAt = now
+        recentPrefills = (recentPrefills + now).takeLast(PREFILL_HISTORY_LIMIT)
+        if (filled > 0) Log.d(TAG, "首屏 E 补给：$filled")
     }
 
     suspend fun toggle(targetMode: RadioMode = mode): String? {
@@ -514,6 +530,7 @@ class RadioRuntime(
                 sampleSize = summary?.sessionHealth?.sampleSize ?: 0,
                 error = lastError,
                 reasons = reasons,
+                poolStats = summary?.poolStats ?: RadioPool.PoolStats(0, emptyMap(), 0),
             )
     }
 
@@ -647,7 +664,25 @@ class RadioRuntime(
         val reasons = mutableListOf<String>()
         var requests = 0
         kickSimilarArtistRefresh(profile, now)
-        val steps = if (reason.endsWith("_supplement")) 1 else (budget / 4).coerceIn(1, 3)
+        val steps = Discovery.planSteps(budget, reason.endsWith("_supplement"))
+        // 抓取预算分区（RN `planRefreshBudget`）：详情读取先留固定份额，剩下的给发现型请求。
+        val (detailBudget, discoveryBudget) = RadioPool.planRefreshBudget(budget, RadioConfig.CandidatePool.DETAIL_FETCHES_PER_REFRESH)
+        // 桶召回的详情额度预留（W6-9 接线点）：池内 unknown 占比高时桶召回多占一格、
+        // 并且排在常规摘要之前；没召回到桶歌单时预留必须是 0（RN candidate.ts:468 的硬约束）。
+        val picks = Discovery.restockPicks(runCatching { RecommendStores.onboarding.weights() }.getOrNull().orEmpty())
+        val bucketPlan =
+            LanguageQuota.planBucketReserve(
+                LanguageQuota.BucketReserveOptions(
+                    detailBudget = detailBudget,
+                    poolCounts =
+                        LanguageQuota.countPoolLang(
+                            engine.state.candidateCache.map { LanguageQuota.PoolLangInput(it.lang, it.langHint) },
+                        ),
+                    poolSize = engine.state.candidateCache.size,
+                    bucketSummaries = picks.size,
+                ),
+            )
+        reasons.add("bucket_reserve:${bucketPlan.reserve}/$discoveryBudget:unknown=${(bucketPlan.unknownShare * 100).toInt()}%")
         for (offset in 0 until steps) {
             val step = (rotation + offset) % FETCH_STEPS
             requests +=
@@ -656,7 +691,7 @@ class RadioRuntime(
                     1 -> fetchChart(params, rotation, candidates, reasons)
                     2 -> fetchPlaylist(params, rotation, candidates, observed, reasons)
                     3 -> fetchSimilarArtist(params, rotation, candidates, reasons)
-                    else -> fetchDiscovery(params, rotation, candidates, observed, reasons)
+                    else -> fetchDiscovery(params, rotation, candidates, observed, reasons, picks, bucketPlan)
                 }
         }
         val merged = RadioPool.mergeCandidates(emptyList(), candidates)
@@ -712,6 +747,9 @@ class RadioRuntime(
         val item = curated.list.getOrNull(rotation % maxOf(1, curated.list.size)) ?: return 1
         val tracks = runCatching { SonglistRuntime.getListDetailAll(item.source, item.id) }.getOrNull() ?: return 1
         if (tracks.isEmpty()) return 1
+        val fetched = tracks.take(TRACKS_PER_SOURCE)
+        val trackKeys = fetched.map { RadioTrackKeys.buildTrackKey(it) }
+        val seedTrackKeys = trackKeys.filter { params.profile.seedKeys.contains(it) }
         val observedPlaylist =
             ObservedPlaylist(
                 id = "${item.source}__${item.id}",
@@ -721,22 +759,25 @@ class RadioRuntime(
                 desc = item.desc,
                 category = curated.tagName,
                 totalTracks = item.total ?: tracks.size,
-                trackKeys = tracks.take(TRACKS_PER_SOURCE).map { RadioTrackKeys.buildTrackKey(it) },
+                trackKeys = trackKeys,
                 pagesFetched = 1,
-                seedTrackKeys = params.profile.seedKeys.filter { key -> tracks.any { RadioTrackKeys.buildTrackKey(it) == key } },
+                seedTrackKeys = seedTrackKeys,
+                // 这两项是共现的开关（RN `upsertObservedPlaylist`）：确认含种子才算
+                // 「与我的品味同场」。原生此前恒 false/0，共现因此永远算不出分。
+                seedOverlap = seedTrackKeys.size,
+                confirmed = seedTrackKeys.isNotEmpty(),
                 fetchedAt = params.now,
                 confidence =
                     RadioCandidates.playlistCoverageConfidence(
                         tracks.size.toDouble() / maxOf(1, item.total ?: tracks.size),
                         1,
                     ),
-                confirmed = false,
             )
         observed.add(observedPlaylist)
         val playlistCandidates =
             RadioCandidates.createPlaylistCandidates(
                 observedPlaylist,
-                tracks.take(TRACKS_PER_SOURCE),
+                fetched,
                 params,
                 ChannelId.B,
             )
@@ -813,10 +854,19 @@ class RadioRuntime(
         candidates: MutableList<PoolCandidate>,
         observed: MutableList<ObservedPlaylist>,
         reasons: MutableList<String>,
+        picks: List<Discovery.RestockPick>,
+        bucketPlan: LanguageQuota.BucketReservePlan,
     ): Int {
         var requests = 0
-        requests += fetchDiscoveryRestock(params, rotation, candidates, reasons)
-        requests += fetchDiscoveryPlaylist(params, rotation, candidates, observed, reasons)
+        // spec §3.3：池内 unknown 占比超过阈值时，桶召回（语种补货）排在常规摘要之前；
+        // 否则常规摘要（新鲜歌单）先读，桶召回让位。
+        if (bucketPlan.prioritizeBuckets) {
+            requests += fetchDiscoveryRestock(params, rotation, candidates, reasons, picks)
+            requests += fetchDiscoveryPlaylist(params, rotation, candidates, observed, reasons)
+        } else {
+            requests += fetchDiscoveryPlaylist(params, rotation, candidates, observed, reasons)
+            requests += fetchDiscoveryRestock(params, rotation, candidates, reasons, picks)
+        }
         return requests
     }
 
@@ -826,9 +876,9 @@ class RadioRuntime(
         rotation: Int,
         candidates: MutableList<PoolCandidate>,
         reasons: MutableList<String>,
+        picks: List<Discovery.RestockPick> = emptyList(),
     ): Int {
-        val weights = runCatching { RecommendStores.onboarding.weights() }.getOrNull().orEmpty()
-        val pick = Discovery.pickRestock(weights, rotation)
+        val pick = picks.getOrNull(Math.floorMod(rotation, maxOf(1, picks.size)))
         if (pick == null) {
             reasons.add("discovery_restock:no_language_preference")
             return 0
@@ -855,9 +905,12 @@ class RadioRuntime(
         val source = DISCOVERY_SOURCES[Math.floorMod(rotation, DISCOVERY_SOURCES.size)]
         val sorts = runCatching { SonglistRuntime.sorts(source) }.getOrNull().orEmpty()
         if (sorts.isEmpty()) return 0
-        // 成新率固定 1.0：RN 的 0.3 是给「一次刷新跑十几次发现请求」设计的，
-        // 原生一次只跑 1-3 步，按 0.3 算 C 几乎永远没货（详见 lane 报告的降级清单）。
-        val pick = Discovery.pickSort(sorts, rotation, RecommendSelection.pickHotSort(sorts)?.id, ratio = 1.0)
+        // 成新率回归 core 默认（W7 语义修正）：前会话曾维持 1.0，理由是「RN 的 0.3 在原生
+        // 预算下断供」——但 RN 实际是 0.7（config.ts:212，最新:最热 7:3），0.3 是 Wave5
+        // 把 7:3 读反的移植错误。按 0.7 实测：100 轮里发现通道命中 60 轮，其中 42 轮出
+        // 「最新」歌单、18 轮出热门歌单，无断供且保住 RN 的 7:3 混合（实证见
+        // `DiscoveryTest.newestSupplyUnderNativeBudget`）。
+        val pick = Discovery.pickSort(sorts, rotation, RecommendSelection.pickHotSort(sorts)?.id)
         val tags = runCatching { SonglistRuntime.getTags(source) }.getOrNull() ?: return 1
         val catalogue = RecommendSelection.flattenTags(tags)
         if (catalogue.isEmpty()) return 1
@@ -879,6 +932,9 @@ class RadioRuntime(
         val item = page.list[Math.floorMod(rotation, page.list.size)]
         val tracks = runCatching { SonglistRuntime.getListDetailAll(item.source, item.id) }.getOrNull() ?: return 3
         if (tracks.isEmpty()) return 3
+        val fetched = tracks.take(TRACKS_PER_SOURCE)
+        val trackKeys = fetched.map { RadioTrackKeys.buildTrackKey(it) }
+        val seedTrackKeys = trackKeys.filter { params.profile.seedKeys.contains(it) }
         val observedPlaylist =
             ObservedPlaylist(
                 id = "${item.source}__${item.id}",
@@ -888,18 +944,20 @@ class RadioRuntime(
                 desc = item.desc,
                 category = tag.name,
                 totalTracks = item.total ?: tracks.size,
-                trackKeys = tracks.take(TRACKS_PER_SOURCE).map { RadioTrackKeys.buildTrackKey(it) },
+                trackKeys = trackKeys,
                 pagesFetched = 1,
-                seedTrackKeys = emptyList(),
+                // 发现通道的歌单同样可能撞到种子歌：确认了就给候选额外挂 A 并计入共现
+                seedTrackKeys = seedTrackKeys,
+                seedOverlap = seedTrackKeys.size,
+                confirmed = seedTrackKeys.isNotEmpty(),
                 fetchedAt = params.now,
                 confidence = RadioCandidates.playlistCoverageConfidence(1.0, 1),
-                confirmed = false,
             )
         observed.add(observedPlaylist)
         val created =
             RadioCandidates.createPlaylistCandidates(
                 observedPlaylist,
-                tracks.take(TRACKS_PER_SOURCE),
+                fetched,
                 params,
                 ChannelId.C,
             )
@@ -921,6 +979,9 @@ class RadioRuntime(
 
         /** 首屏 E 补给硬上限：与任务书方案 a 的 2.5 s 同预算；缓存为空时不会走到这里。 */
         private const val SIMILAR_PREFILL_TIMEOUT_MS = 2_500L
+
+        /** 补给节拍只留最近几次的时刻：滑窗之外的数据没有意义。 */
+        private const val PREFILL_HISTORY_LIMIT = 8
         private const val TRACKS_PER_SOURCE = 20
         private const val FETCH_STEPS = 5
         private const val SEARCH_SOURCE = "kw"

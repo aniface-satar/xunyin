@@ -1,5 +1,6 @@
 package cn.toside.music.core.recommend.radio
 
+import cn.toside.music.core.recommend.m3.LangBucket
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -156,5 +157,80 @@ class RadioPoolTest {
         assertEquals(1, stats.byChannel.getValue(ChannelId.A))
         assertEquals(1, stats.byChannel.getValue(ChannelId.B))
         assertEquals(0, stats.confirmed)
+        // 语种构成与 unknown 占比：lang_unmet 诊断的对照组
+        assertEquals(2, stats.byLang[LangBucket.UNKNOWN])
+        assertEquals(1.0, stats.unknownShare, 1e-9)
+        assertTrue(RadioPool.poolStats(emptyList()).unknownShare == 0.0)
+    }
+
+    private fun observed(
+        id: String,
+        tracks: List<String>,
+        confirmed: Boolean = true,
+        seedOverlap: Int = 2,
+    ): ObservedPlaylist =
+        ObservedPlaylist(
+            id = id,
+            source = "kw",
+            trackKeys = tracks,
+            seedOverlap = seedOverlap,
+            confidence = 1.0,
+            confirmed = confirmed,
+        )
+
+    @Test
+    fun `观察歌单按曲目重合打组`() {
+        val a = observed("pA", listOf("t1", "t2", "t3", "t4"))
+        val b = observed("pB", listOf("t1", "t2", "t3", "t4"))
+        val c = observed("pC", listOf("t9"))
+        val grouped = RadioPool.assignPlaylistGroups(listOf(a, b, c))
+        assertEquals(grouped[0].groupId, grouped[1].groupId)
+        assertTrue(grouped[2].groupId != grouped[0].groupId)
+    }
+
+    @Test
+    fun `共现与分组信号回填到候选`() {
+        val hit = candidate("晴天", "周杰伦", playlistId = "pA")
+        val lonely = candidate("稻香", "周杰伦", playlistId = "pB")
+        val others = listOf("other-1", "other-2", "other-3")
+        val playlists =
+            RadioPool.assignPlaylistGroups(
+                listOf(
+                    // pA 已确认含种子、规模 4：贡献 = 2 × 1 / √4 = 1 → 饱和 0.5
+                    observed("pA", listOf(hit.trackKey) + others),
+                    // pB 未确认：里面的候选共现必须是 0
+                    observed("pB", listOf(lonely.trackKey), confirmed = false),
+                ),
+            )
+        val signals = RadioPool.applyObservationSignals(listOf(hit, lonely), playlists)
+        assertEquals(0.5, signals.first { it.trackKey == hit.trackKey }.coOccurrence, 1e-9)
+        // 只在未确认歌单里的候选：共现必须是 0（不造信号）
+        assertEquals(0.0, signals.first { it.trackKey == lonely.trackKey }.coOccurrence, 1e-9)
+        assertTrue(signals.first { it.trackKey == hit.trackKey }.groupIds.isNotEmpty())
+        // 观察歌单为空时保持原样
+        assertEquals(listOf(hit), RadioPool.applyObservationSignals(listOf(hit), emptyList()))
+    }
+
+    @Test
+    fun `会话共现给 A 与 E 通道加权`() {
+        val item = candidate("晴天", "周杰伦", ChannelId.A)
+        val base = RadioPool.channelWeightsFor(item, FinalQueueBuildOptions(now = now))
+        val boosted =
+            RadioPool.channelWeightsFor(
+                item,
+                FinalQueueBuildOptions(now = now, sessionCoOccurrence = mapOf(item.trackKey to 1.0)),
+            )
+        assertTrue(boosted.getValue(ChannelId.A) > base.getValue(ChannelId.A))
+
+        val eItem = candidate("夜曲", "周杰伦", ChannelId.E)
+        val eBase = RadioPool.channelWeightsFor(eItem, FinalQueueBuildOptions(now = now))
+        val eBoosted =
+            RadioPool.channelWeightsFor(
+                eItem,
+                FinalQueueBuildOptions(now = now, sessionCoOccurrence = mapOf(eItem.trackKey to 1.0)),
+            )
+        assertTrue(eBoosted.getValue(ChannelId.E) > eBase.getValue(ChannelId.E))
+        // 权重仍钳在 [0.01, 1]
+        assertTrue(eBoosted.getValue(ChannelId.E) <= 1.0)
     }
 }

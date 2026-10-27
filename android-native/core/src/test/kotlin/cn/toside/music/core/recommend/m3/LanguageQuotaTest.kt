@@ -133,6 +133,63 @@ class LanguageQuotaTest {
     }
 
     @Test
+    fun `桶召回没召回到歌单时预留必须是 0`() {
+        // 详情读是候选池唯一的进货口：没召回到桶歌单还白扣一格 = 给全体用户砍固定份额
+        val plan =
+            LanguageQuota.planBucketReserve(
+                LanguageQuota.BucketReserveOptions(detailBudget = 4, poolCounts = mapOf(LangBucket.UNKNOWN to 90), poolSize = 100),
+            )
+        assertEquals(0, plan.reserve)
+        assertEquals(0.9, plan.unknownShare, 1e-9)
+        assertTrue(plan.prioritizeBuckets)
+    }
+
+    @Test
+    fun `桶召回预留一格并在 unknown 偏高时扩到两格`() {
+        val low =
+            LanguageQuota.planBucketReserve(
+                LanguageQuota.BucketReserveOptions(
+                    detailBudget = 4,
+                    poolCounts = mapOf(LangBucket.UNKNOWN to 10, LangBucket.ZH to 90),
+                    poolSize = 100,
+                    bucketSummaries = 2,
+                ),
+            )
+        assertEquals(1, low.reserve)
+        assertEquals(0.1, low.unknownShare, 1e-9)
+        assertFalse(low.prioritizeBuckets)
+
+        val high =
+            LanguageQuota.planBucketReserve(
+                LanguageQuota.BucketReserveOptions(
+                    detailBudget = 4,
+                    poolCounts = mapOf(LangBucket.UNKNOWN to 50, LangBucket.ZH to 50),
+                    poolSize = 100,
+                    bucketSummaries = 2,
+                ),
+            )
+        assertEquals(2, high.reserve)
+        assertTrue(high.prioritizeBuckets)
+    }
+
+    @Test
+    fun `桶只召回一张时未用完的格子还给常规摘要`() {
+        val plan =
+            LanguageQuota.planBucketReserve(
+                LanguageQuota.BucketReserveOptions(detailBudget = 4, poolSize = 100, bucketSummaries = 1),
+            )
+        assertEquals(1, plan.reserve)
+        // 详情额度只有 1 格时常规摘要优先：桶让位会让画像通道（A/B）饿死
+        assertEquals(
+            0,
+            LanguageQuota
+                .planBucketReserve(
+                    LanguageQuota.BucketReserveOptions(detailBudget = 1, poolSize = 100, bucketSummaries = 3),
+                ).reserve,
+        )
+    }
+
+    @Test
     fun `池内上限按目标首数放大并乘宽松系数`() {
         val targets = LanguageQuota.LangTargets(mapOf(LangBucket.ZH to 2), free = 18, enforced = true)
         val limits =
