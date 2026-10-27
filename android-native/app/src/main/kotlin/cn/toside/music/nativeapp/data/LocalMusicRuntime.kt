@@ -717,6 +717,25 @@ object LocalMusicRuntime {
     // ---------- 单文件 / 多文件导入（W6-3 公开入口：deeplink 打开音频用） ----------
 
     /**
+     * 读单个**已授权**音频文件的标签，不落库（deeplink「用本应用打开音频」用）。
+     *
+     * 与目录导入同一套读法（[readEntry]）：歌名/歌手/专辑/时长/内嵌封面一个不落。
+     * 读不到或不是音频返回 null，调用方自行退化成占位曲目。
+     */
+    suspend fun readFileInfo(
+        context: Context,
+        uri: Uri,
+    ): JsonObject? =
+        withContext(Dispatchers.IO) {
+            val name = SafDocuments.displayName(context.applicationContext, uri) ?: return@withContext null
+            if (!LocalAudio.isAudio(name, null)) return@withContext null
+            readEntry(
+                context.applicationContext,
+                SafDocuments.DocumentEntry(uri = uri, name = name, mimeType = null),
+            )
+        }
+
+    /**
      * 导入若干**已授权**的音频文件（deeplink「用本应用打开音频」入口，Lane C 用）。
      *
      * 与目录导入同口径：读标签失败的不入库；返回导入成功的曲目 info

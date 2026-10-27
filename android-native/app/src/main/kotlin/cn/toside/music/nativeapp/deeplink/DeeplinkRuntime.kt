@@ -9,6 +9,7 @@ import cn.toside.music.core.local.LocalTrack
 import cn.toside.music.core.music.MusicInfoTools
 import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.HomeNavigator
+import cn.toside.music.nativeapp.data.LocalMusicRuntime
 import cn.toside.music.nativeapp.data.SearchRuntime
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import cn.toside.music.nativeapp.util.SafDocuments
@@ -109,24 +110,20 @@ object DeeplinkRuntime {
     /**
      * 单个音频文件进「稍后播放」并起播（RN `handleFileMusicAction`）。
      *
-     * **降级**：RN 先 `readMetadata` 读标签再 `buildLocalMusicInfo`，而
-     * `LocalMusicRuntime` 的标签读取是私有的、对外只有目录树导入
-     * （[cn.toside.music.nativeapp.data.LocalMusicRuntime.importTree]），
-     * 没有单文件入口，所以这里用 [LocalTrack.buildPlaceholder] 按文件名造一条占位曲目
-     * —— 歌名 = 文件名去扩展名、歌手空、时长 null。曲目形状与目录导入一致
-     * （`source=local`、`meta.filePath = id = URI`），起播后的在线兜底链路照旧。
-     * 建议 Wave8 由 Lane B 暴露单文件导入入口补上标签。
+     * 标签走 Lane B 的 [LocalMusicRuntime.readFileInfo]（与目录导入同一套读法），
+     * 读不到再退化成 [LocalTrack.buildPlaceholder] 的占位曲目
+     * （歌名 = 文件名去扩展名、歌手空、时长 null）——起播与后续兜底链路在两种情况下一致。
      */
     private fun playLocalFile(uriString: String) {
         val ctx = context ?: return
         scope.launch {
             val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return@launch
             val name = SafDocuments.displayName(ctx, uri) ?: uriString.substringAfterLast('/')
-            val info = LocalTrack.buildPlaceholder(uriString, name)
+            val info = LocalMusicRuntime.readFileInfo(ctx, uri) ?: LocalTrack.buildPlaceholder(uriString, name)
             val core = PlayerRuntime.get(ctx).core
             core.addTempPlayList(listOf(Triple(null, info, true)))
             if (core.state.value.isPlay) core.playNext()
-            toast("已加入试听列表：$name")
+            toast("已加入试听列表：${info.text("name") ?: name}")
         }
     }
 
