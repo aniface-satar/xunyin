@@ -135,10 +135,14 @@ class DiscoveryTest {
      * 5 个步骤里只有第 4 步是发现通道。
      *
      * W7 语义修正：前会话据此维持 ratio = 1.0，理由是「RN 的 0.3 在原生预算下断供」；
-     * 读 RN 源码实证后推翻 —— RN `candidatePool.newestListRatio = 0.7`（config.ts:212，
-     * 「最新:最热 = 7:3 轮转」），0.3 是 Wave5 移植时读反。按 0.7 实测：100 轮里发现通道
-     * 命中 60 轮，其中 42 轮出「最新」、18 轮出热门，C 通道无断供且保住 RN 的混合比，
-     * 调用侧已回归 core 默认（见 `RadioRuntime.fetchDiscoveryPlaylist`）。
+     * 读 RN 源码实证后推翻 —— RN `candidatePool.newestListRatio = 0.7`（config.ts:212、
+     * candidate.ts:252 同一个 `rotation % 10` 判据），0.3 是 Wave5 移植时读反。
+     *
+     * 但「0.7 就一定 7:3」在原生预算下不成立：发现步只在 `rotation % 5 ∈ {2,3,4}` 时命中，
+     * 与 `rotation % 10 < 7` 的交集是 {2,3,4} 三种，所以 **C 通道实际是 30 轮最新 / 30 轮热门
+     * （50:50）**，而不是 42/18。供给仍然充足：0.3 时交集只有 {2}，仅 10 轮最新；0.7 把
+     * 最新供给提到 3 倍，同时不再像 1.0 那样把 C 变成纯新歌通道。要严格 7:3 得给 C 单独
+     * 记一个调用计数（RN 里 C 每轮都跑，天然均匀），本波按 RN 同构保留全局 rotation。
      */
     @Test
     fun newestSupplyUnderNativeBudget() {
@@ -158,9 +162,9 @@ class DiscoveryTest {
 
         val atRatio = newestRounds(Discovery.NEWEST_RATIO)
         val atFull = newestRounds(1.0)
-        // 100 轮里发现通道命中 60 轮；0.7 时 42 轮出「最新」、18 轮出热门 —— 与 RN 7:3 同构
+        // 100 轮里发现通道命中 60 轮；与 0.7 阈值交集后 30 轮出「最新」、30 轮出热门
         assertEquals(60, atFull)
-        assertEquals(42, atRatio)
+        assertEquals(30, atRatio)
         // 原生预算下 0.7 不会断供（此前 0.3 只剩 10 轮，是移植错误的推论而非 RN 语义）
         assertTrue("0.7 成新率下 C 通道最新歌单供给充足", atRatio * 3 > atFull)
     }

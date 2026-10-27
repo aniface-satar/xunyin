@@ -449,11 +449,11 @@ class RadioEngine(
                     timeSlotFactor = timeSlotAffinity.factorFor,
                 ),
             )
-        lastSelectionReasons =
-            selectionReasons(finalItems, langTargets, selection.reasons) +
-                listOfNotNull(
-                    "session_cooccurrence:${sessionCoOccurrence.size}".takeIf { sessionCoOccurrence.isNotEmpty() },
-                )
+        val sessionReasons =
+            listOfNotNull(
+                "session_cooccurrence:${sessionCoOccurrence.size}".takeIf { sessionCoOccurrence.isNotEmpty() },
+            )
+        lastSelectionReasons = selectionReasons(finalItems, langTargets, selection.reasons) + sessionReasons
         if (selection.items.isEmpty()) return false
         val byKey = state.candidateCache.associateBy { it.trackKey }
         batchId += 1

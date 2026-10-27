@@ -545,7 +545,8 @@ object SimilarArtist {
         recentPrefills: List<Long> = emptyList(),
         gate: PrefillGate = PrefillGate(),
     ): Boolean {
-        if (now - lastPrefillAt < gate.cooldownMs) return false
+        // 0 是「本次进程还没补给过」的哨兵：首次开播必须放行，不能把它当成刚补过
+        if (lastPrefillAt > 0 && now - lastPrefillAt < gate.cooldownMs) return false
         val recent = recentPrefills.count { now - it in 0 until gate.windowMs }
         return recent < max(1, gate.maxPerWindow)
     }
