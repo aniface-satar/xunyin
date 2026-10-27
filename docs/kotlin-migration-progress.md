@@ -2328,3 +2328,26 @@ JVM 闸门全绿 ≠ 可发版，建议此刻安排一次真机清账（优先�
 - **当前有效待清账：169 − 1 + 21 = 189 条**。真机清账是任何发版动作前的硬闸门
   （2026-10-27 拍板），优先播控与取链主干；Wave8 改动覆盖面的条目（主题/monet/同步/
   排序/归因/直达链接）建议同一轮一起跑。
+
+---
+
+## RN 侧专辑/歌手搜索入库（2026-10-27）
+
+主工作区那批长期未提交的 RN 改动（第十八切片的 RN 对照面）已实测后入库，`android-native/` 零改动。
+
+- `e515b60` **feat(rn): 专辑/歌手搜索与详情（对齐原生 Wave6 跨源搜索）+ mylistLibrary/musicLinks**
+  —— 64 文件 +4939/−83。范围：`search.type` 扩为 `music|songlist|album|artist` 并加四类型 tab
+  与专辑/歌手结果视图；五源 `album.js` 补专辑详情取数、新增五源 `artist.js` 与
+  `albumNormalizers`/`artistNormalizers`/`artistResolve` 归一与同名合并；新增 `ArtistDetail` 页
+  与 `store/search/{album,artist}`；`songlist.getListDetail` 按 `isAlbumListId` 分流到
+  `album.getAlbumDetail`；`MylistDetail` 拆出 `AlbumTab`/`ArtistTab`/`useLikedSongs`；
+  `musicLinks` 统一各源外链、`mylistLibrary` 收口「我的收藏」；zh-cn/zh-tw/en-us 三语补齐。
+- **测试：新增 7 个 `.mts`（album/artist normalizers、album/artist wiring、artist-sort、
+  music-links、mylist-library），全量 1036 例 = 通过 1034 / 失败 1 / 取消 1**；对基线 HEAD
+  969 例（967 通过 / 1 失败 / 1 取消）净增 67 例且**全绿，无回归**。两个红点为基线既有、
+  本次未触碰：`monet-texture.mts`「正文区钉在色阶带上沿以下」是源码注释标注的**故意红**
+  （等纹理方向拍板，不许改绿）；`music-recognition-afp-glue.mts` 在全量并发下偶发
+  `cancelledByParent`，单跑 3/3 通过。**故「npm test 全绿」在本基线不可达，非本批引入。**
+- lint：改动涉及的 52 个源文件 **0 错误 0 告警**（仓库另有 22k 条历史告警全在未触碰文件，
+  基线即如此，非本批引入）。竖屏约定：新增 `ArtistDetail` 等页面零横屏依赖，
+  `AndroidManifest.xml` 与 `src/navigation/index.ts` 均未改动。
