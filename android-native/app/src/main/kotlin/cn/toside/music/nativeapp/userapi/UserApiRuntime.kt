@@ -2,7 +2,10 @@ package cn.toside.music.nativeapp.userapi
 
 import android.content.Context
 import android.util.Log
+import cn.toside.music.core.data.DataRepository
+import cn.toside.music.core.data.MusicUrlCache
 import cn.toside.music.core.music.PlayQuality
+import cn.toside.music.core.storage.ShardedKvStore
 import cn.toside.music.core.userapi.UpdateExecutor
 import cn.toside.music.core.userapi.UserApiInfo
 import cn.toside.music.nativeapp.data.DataStoreKvStore
@@ -54,6 +57,9 @@ class UserApiRuntime(
 
     private val appContext = context.applicationContext
     private val repository = BuiltinSourceRepository(appContext)
+
+    /** 取链缓存落盘层（W6-1）：与设置层/列表层同一份 DataStore，只是另一个门面实例。 */
+    private val data = DataRepository(ShardedKvStore(DataStoreKvStore(appContext)))
 
     /** 设置层（与设置页同一个进程级单例）：当前源 id 与音源更新三键都从这里读。 */
     private val settings = SettingsRuntime.get(appContext)
@@ -194,10 +200,28 @@ class UserApiRuntime(
         return Result.success(Unit)
     }
 
-    /** 取播放链接；脚本不可用或取链失败时返回 null（由 PlayerCore 走失败链路）。 */
+    /**
+     * 取链缓存开关（W6-1，默认开）。
+     *
+     * RN 的缓存在 `online.ts/utils.ts` 里是无条件的（只有 `isRefresh` 才跳过），
+     * 原生多给一个关闭位：真机上出现「换了音源还在放旧直链」这类问题时可一键绕过。
+     */
+    var musicUrlCacheEnabled: () -> Boolean = { true }
+
+    /** 缓存新鲜度判定的时间源（默认系统时钟；测试可换）。 */
+    var nowProvider: () -> Long = { System.currentTimeMillis() }
+
+    /**
+     * 取播放链接；脚本不可用或取链失败时返回 null（由 PlayerCore 走失败链路）。
+     *
+     * 缓存（W6-1）在**取链入口前后**拦截：命中直接返回（键 `<musicId>_<quality>`，
+     * RN `data.ts:529` 同口径），未命中取链成功后写回一份。
+     * `refresh = true`（刷新取链）时跳过读、仍写 —— 与 RN `isRefresh` 同语义。
+     */
     suspend fun getMusicUrl(
         musicInfo: JsonObject,
         qualityProvider: () -> String,
+        refresh: Boolean = false,
     ): String? {
         val source = musicInfo.text("source") ?: return null
         ensureReady()
@@ -206,6 +230,19 @@ class UserApiRuntime(
         val meta = musicInfo["meta"] as? JsonObject
         val musicQualitys = (meta?.get("_qualitys") as? JsonObject)?.keys.orEmpty()
         val quality = PlayQuality.pick(qualityProvider(), musicQualitys, support.qualitys)
+        val musicId = musicInfo.text("id")
+        val cacheEnabled = musicUrlCacheEnabled()
+        if (!refresh && cacheEnabled && musicId != null) {
+            val cached =
+                MusicUrlCache.pick(
+                    runCatching { data.getMusicUrlEntry(musicId, quality) }.getOrNull(),
+                    nowProvider(),
+                )
+            if (cached != null) {
+                Log.d(TAG, "music url cache hit: $musicId $quality")
+                return cached
+            }
+        }
         val result =
             sendScriptRequest(
                 buildJsonObject {
@@ -220,7 +257,11 @@ class UserApiRuntime(
                     )
                 },
             )
-        return (result["data"] as? JsonObject)?.text("url")
+        val url = (result["data"] as? JsonObject)?.text("url")
+        if (!url.isNullOrEmpty() && cacheEnabled && musicId != null) {
+            runCatching { data.saveMusicUrlEntry(musicId, quality, url, nowProvider()) }
+        }
+        return url
     }
 
     /** 歌词（B4 播放页接入时用），结构照 preload 的 verifyLyricInfo。 */

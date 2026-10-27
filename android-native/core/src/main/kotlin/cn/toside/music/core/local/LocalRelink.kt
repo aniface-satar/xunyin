@@ -90,6 +90,45 @@ object LocalRelink {
         return Plan(matched = matched, unmatched = unmatched.toList(), ambiguous = ambiguous.toList())
     }
 
+    /**
+     * 某条失效曲目的**歧义候选**（W6-3）—— [plan] 把它们归进 `ambiguous` 不敢猜，
+     * 这里把候选列出来交给 UI 让用户自己挑（挑完走 [plan] 之外的换键路径）。
+     *
+     * 顺序按规则级：R1 完全同名 stem → R2 同名且歌手一致 → R3 同名唯一，
+     * 同级的保持候选池原顺序（让「扫描顺序」这条既有语义不被打乱），按 uri 去重。
+     */
+    fun candidatesFor(
+        expectation: Expectation,
+        candidates: List<Candidate>,
+        takenUris: Set<String> = emptySet(),
+    ): List<Candidate> {
+        val pool =
+            candidates.filter {
+                it.uri !in takenUris && normalize(it.stem).isNotEmpty()
+            }
+        val nameKey = normalize(expectation.name)
+        if (nameKey.isEmpty()) return emptyList()
+        val stemKey = normalize(expectation.originalStem)
+        val singerKey = normalize(expectation.singer)
+        val byStem =
+            if (stemKey.isNotEmpty()) {
+                pool.filter { normalize(it.stem) == stemKey }
+            } else {
+                emptyList()
+            }
+        val bySinger =
+            if (singerKey.isNotEmpty()) {
+                pool.filter { c ->
+                    val parts = LocalTrack.splitArtist(c.stem) ?: return@filter false
+                    normalize(parts.first) == nameKey && normalize(parts.second) == singerKey
+                }
+            } else {
+                emptyList()
+            }
+        val byName = pool.filter { normalize(it.stem) == nameKey }
+        return (byStem + bySinger + byName).distinctBy { it.uri }
+    }
+
     /** 归一化：trim + 小写 + 全角 ASCII 段转半角 + 全角空格转半角空格。 */
     fun normalize(value: String): String =
         buildString(value.length) {

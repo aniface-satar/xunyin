@@ -84,7 +84,12 @@ class PlayerRuntime private constructor(
      */
     var urlResolver: PlayerCore.MusicUrlProvider =
         PlayerCore.MusicUrlProvider { info ->
-            if (info.localFileUri() != null) localMusicUrl(info) else userApi.getMusicUrl(info) { playQuality() }
+            // 具名传 qualityProvider：`refresh` 加在末尾后，尾随 lambda 会被解析成它
+            if (info.localFileUri() != null) {
+                localMusicUrl(info)
+            } else {
+                userApi.getMusicUrl(info, qualityProvider = { playQuality() })
+            }
         }
 
     /** 播放音质设置（设置页可改；默认值对齐 RN defaultSetting）。 */
@@ -234,14 +239,17 @@ class PlayerRuntime private constructor(
             maybeFallbackCover(info)
             return path
         }
-        // 直连失败：在线兜底（RN getOtherSourceByLocal 的等价物）
+        // 直连失败：在线兜底（RN getOtherSourceByLocal 的等价物）——
+        // 缓存读写（W6-1）与人工确认（W6-2）都在 LocalMusicRuntime.fallbackUrl 里，
+        // 这里只保留「取链 + 封面兜底」的既有语义。
         val targets = searchOnlineTargets(info)
-        for (target in targets) {
-            val url = runCatching { userApi.getMusicUrl(target) { playQuality() } }.getOrNull()
-            if (!url.isNullOrEmpty()) {
-                fallbackCover(info, targets)
-                return url
+        val url =
+            LocalMusicRuntime.fallbackUrl(appContext, info, targets) { target ->
+                runCatching { userApi.getMusicUrl(target, qualityProvider = { playQuality() }) }.getOrNull()
             }
+        if (!url.isNullOrEmpty()) {
+            fallbackCover(info, targets)
+            return url
         }
         toast(
             "本地文件无法访问，可能已删除或授权失效：${info.text("name").orEmpty()}" +

@@ -73,6 +73,7 @@ import com.moriafly.salt.ui.dialog.DialogTitle
 import com.moriafly.salt.ui.dialog.InputDialog
 import com.moriafly.salt.ui.dialog.YesNoDialog
 import com.moriafly.salt.ui.screen.BasicScreen
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -147,6 +148,11 @@ fun ListDetailPage(
     var relinkStaleCount by remember { mutableStateOf(0) }
     val relinkingListId by LocalMusicRuntime.relinkingListId.collectAsState()
     val relinkOutcome by LocalMusicRuntime.relinkOutcome.collectAsState()
+    // 重定位歧义候选（W6-3）与兜底候选确认（W6-2）
+    val pendingAmbiguous by LocalMusicRuntime.pendingAmbiguous.collectAsState()
+    var pendingConfirm by remember {
+        mutableStateOf<Pair<LocalMusicRuntime.FallbackConfirmRequest, CompletableDeferred<JsonObject?>>?>(null)
+    }
     var importConflict by remember { mutableStateOf<ImportPartConflict?>(null) }
     var fullImportConfirm by remember { mutableStateOf<PendingImport?>(null) }
     val backup = remember { BackupManager(runtime.lists.store) }
@@ -298,6 +304,17 @@ fun ListDetailPage(
             localTreeLauncher.launch(null)
         }
         onDispose { LocalMusicRuntime.unregisterPicker(localPickerOwner) }
+    }
+
+    // 本地兜底候选确认宿主（W6-2）：只在列表详情页在屏时接管，其余场景按 RN 静默语义放行
+    val fallbackOwner = remember(listId) { Any() }
+    DisposableEffect(fallbackOwner) {
+        LocalMusicRuntime.registerFallbackConfirm(fallbackOwner) { request ->
+            val deferred = CompletableDeferred<JsonObject?>()
+            pendingConfirm = request to deferred
+            deferred.await()
+        }
+        onDispose { LocalMusicRuntime.unregisterFallbackConfirm(fallbackOwner) }
     }
 
     // 导入过程中列表在变，跟着进度刷新，别等弹层关掉才更新
@@ -794,6 +811,85 @@ fun ListDetailPage(
                                 runImport(conflict.pending, BackupManager.PartConflictMode.OVERWRITE)
                             },
                             text = "覆盖掉",
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            pendingConfirm?.let { (request, deferred) ->
+                // 同名不同歌手 / 本地标签没歌手时让用户自己挑（RN 静默，这里是增强）
+                BasicDialog(
+                    onDismissRequest = {
+                        deferred.complete(null)
+                        pendingConfirm = null
+                    },
+                ) {
+                    DialogTitle(text = "匹配到多个在线结果")
+                    Text(
+                        text = "本地文件「${request.localName}」已无法访问，找到多个同名结果，选一个继续播放：",
+                        color = SaltTheme.colors.text,
+                    )
+                    Column(
+                        Modifier
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        request.options.forEach { option ->
+                            Item(
+                                onClick = {
+                                    deferred.complete(option.info)
+                                    pendingConfirm = null
+                                },
+                                text = "${option.name} - ${option.singer.ifEmpty { "未知歌手" }}",
+                                arrowType = ItemArrowType.None,
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                deferred.complete(null)
+                                pendingConfirm = null
+                            },
+                            text = "按最佳匹配继续",
+                            appearance = ButtonAppearance.Subtle,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            pendingAmbiguous?.firstOrNull()?.let { choice ->
+                // 重定位不敢猜的候选列出来让用户挑（W6-3）
+                BasicDialog(onDismissRequest = { LocalMusicRuntime.dismissAmbiguous() }) {
+                    DialogTitle(text = "重新定位：${choice.name}")
+                    Text(
+                        text = "有多个文件都像「${choice.name}」，挑一个恢复（跳过则保持失效，不会删曲）：",
+                        color = SaltTheme.colors.text,
+                    )
+                    Column(
+                        Modifier
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        choice.options.forEach { option ->
+                            Item(
+                                onClick = {
+                                    LocalMusicRuntime.resolveAmbiguous(choice, option.uri)
+                                    scope.launch {
+                                        items = runtime.lists.musics(listId)
+                                        relinkStaleCount = LocalMusicRuntime.countStale(context, listId)
+                                    }
+                                },
+                                text = option.displayName,
+                                arrowType = ItemArrowType.None,
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { LocalMusicRuntime.dismissAmbiguous() },
+                            text = "跳过",
+                            appearance = ButtonAppearance.Subtle,
                             modifier = Modifier.weight(1f),
                         )
                     }
