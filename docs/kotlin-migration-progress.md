@@ -2351,3 +2351,52 @@ JVM 闸门全绿 ≠ 可发版，建议此刻安排一次真机清账（优先�
 - lint：改动涉及的 52 个源文件 **0 错误 0 告警**（仓库另有 22k 条历史告警全在未触碰文件，
   基线即如此，非本批引入）。竖屏约定：新增 `ArtistDetail` 等页面零横屏依赖，
   `AndroidManifest.xml` 与 `src/navigation/index.ts` 均未改动。
+
+## 发版筹备记录（2026-10-27，原生版 1.2.0）
+
+**结论：原生版首发包已构建并自签，**用「同包名 + 沿用 RN 分发钥匙」实现覆盖升级，
+旧版歌单首启自动迁移；发布动作（tag/上传）待用户最终确认。
+
+### 关键决策（用户拍板）
+
+| 项 | 决定 | 依据 |
+|:--|:--|:--|
+| 发版前提 | **带病发版**（真机 190 条清单未执行，记录已知风险） | 无 arm64 真机，模拟器无外网 |
+| 签名 | 沿用 `android/app/debug.keystore`（RN 分发钥匙） | 已核验 GitHub v1.2.0 包证书同为 `fac61745…`；换钥匙则升级路径断裂 |
+| R8 | **本版不开** | release 22.79 MB，≤32MB 目标余量 9MB；开 R8 需补 keep 规则且无真机可验 |
+| 版本号 | 1.2.0（versionCode **89005**） | RN 规则 base×1000+ABI，1.2.0 arm64=89003、x86_64=89004，88905 之上取整 |
+| 数据迁移 | **自动迁移**（直读旧 AsyncStorage），`.lxmc` 手动导入作兜底 | 用户要求「不需要手动导入导出」 |
+
+> 任务书原建议「新建正式 keystore + 异包名 + 1.1.0(10)」两处与现实冲突：`v1.1.0` tag 已存在、
+> RN 已发到 1.2.0；且异包名无法自动迁移。正式钥匙仍已生成（`docs/release/signing.md`），
+> 留作将来换包名时使用。
+
+### 实现
+
+- `app/build.gradle.kts`：`applicationId = cn.toside.music.mobile`、`versionCode = 89005`、
+  `signingConfigs.release` 从 `android-native/keystore.properties`（gitignore）或 `XUNYIN_*` 环境变量读凭据。
+- `app/.../data/RnStorageMigration.kt`（新）：解析 AsyncStorage 的 `@user_list` / `@list__<id>`
+  （含 `@___PART_A___` 分片），拼成 `playList_v2` 交给既有 `BackupManager.importJson`；
+  旧库**复制到缓存再以读写模式打开**（只读连接回放不了 WAL，会静默读到旧值——实测踩到过）。
+- `ListRuntime.ensureLoaded()`：首启在 IO 线程跑一次迁移，失败静默；`filesDir/rn_migration.done` 防重跑；
+  旧版确实为空时不导入也不打标记（避免覆盖用户后来新建的歌单）。
+- `ui/HomePage.kt`：列表为空时给「从旧版导入歌单」兜底入口，复用列表页同一套导入流程。
+
+### 验证
+
+- 闸门：`ktlintCheck test` 全绿，core 1151 + app 177 = **1328**（新增 `RnStorageMigrationTest` 8 例）。
+- **升级演练（模拟器实测，非真机）**：向旧版 AsyncStorage 写入 4 首曲 + 1 个自建歌单 →
+  覆盖安装 1.2.0（89005）→ 首启后 DataStore 内 4 首曲与「升级验证歌单」全部存在，
+  「我的列表」页可见。旧库未被修改（迁移只读副本）。
+
+### 包信息
+
+- `app-release.apk` 22,790,364 B / sha256 `a0095df88d1d4f5ccccd9597dc01acb78674f475be0bba4660feee67c7a4a5c2`
+- 证书 SHA-256 `fa:c61745dc090378…3b9c`；包名/版本经 `aapt2 dump badging` 复核。
+
+### 遗留
+
+1. 真机清账 190 条仍未跑（`docs/waves/w8-device-acceptance-master.md`），发版后补。
+2. 本版缺 **音乐下载 / 听歌识曲**（RN 1.2.0 有），发布说明已声明。
+3. 老用户升级不可回退（Android 不允许降级），发布说明要求先导出 `.lxmc` 备份。
+4. 迁移只搬歌单，不搬设置（83 键无实测通道，沿用 Wave8 laneA 结论）。

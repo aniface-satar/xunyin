@@ -1,15 +1,18 @@
 package cn.toside.music.nativeapp.data
 
 import android.content.Context
+import cn.toside.music.core.backup.BackupManager
 import cn.toside.music.core.data.DataRepository
 import cn.toside.music.core.list.ListStore
 import cn.toside.music.core.list.MusicStatsStore
 import cn.toside.music.core.storage.ShardedKvStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -48,7 +51,12 @@ class ListRuntime private constructor(
         if (loaded) return
         loadLock.withLock {
             if (loaded) return
-            store.loadUserLists()
+            withContext(Dispatchers.IO) {
+                store.loadUserLists()
+                // 从 RN 版覆盖升级的首启：直读旧 AsyncStorage 还原歌单。
+                // 失败静默（返回 false），不阻断启动；手动导入入口仍留在「我的」页。
+                RnAutoMigration(appContext, BackupManager(store)).runIfNeeded()
+            }
             loaded = true
             _ready.value = true
         }

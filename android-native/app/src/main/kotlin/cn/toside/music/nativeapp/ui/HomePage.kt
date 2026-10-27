@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cn.toside.music.core.backup.BackupManager
 import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.HomeNavigator
 import cn.toside.music.nativeapp.HomeTab
@@ -48,13 +49,18 @@ import cn.toside.music.nativeapp.data.LocalMusicRuntime
 import cn.toside.music.nativeapp.data.SearchRuntime
 import cn.toside.music.nativeapp.deeplink.DeeplinkFileHost
 import cn.toside.music.nativeapp.deeplink.DeeplinkRuntime
+import cn.toside.music.nativeapp.player.PlayerRuntime
 import cn.toside.music.nativeapp.ui.leaderboard.LeaderboardDetailPage
 import cn.toside.music.nativeapp.ui.list.ListDetailPage
+import cn.toside.music.nativeapp.ui.list.ListFullImportConfirmDialog
+import cn.toside.music.nativeapp.ui.list.ListImportConflictDialog
 import cn.toside.music.nativeapp.ui.list.ListMenuHost
 import cn.toside.music.nativeapp.ui.list.ListMenuRequest
 import cn.toside.music.nativeapp.ui.list.LocalFileImport
 import cn.toside.music.nativeapp.ui.list.LocalFileImportDialog
 import cn.toside.music.nativeapp.ui.list.onListLongPress
+import cn.toside.music.nativeapp.ui.list.rememberListImportAction
+import cn.toside.music.nativeapp.ui.list.rememberListImportFlow
 import cn.toside.music.nativeapp.ui.radio.RadioPage
 import cn.toside.music.nativeapp.ui.search.AlbumDetailPage
 import cn.toside.music.nativeapp.ui.search.ArtistDetailPage
@@ -499,6 +505,32 @@ private fun MyPage(
     var menuRequest by remember { mutableStateOf<ListMenuRequest?>(null) }
     LaunchedEffect(Unit) { lists.ensureLoaded() }
 
+    // 旧版（RN 版，applicationId 不同）歌单迁移入口。列表为空时直接给一条明路，
+    // 免得用户非得先摸到「长按列表 → 导入」。导入流程与列表页共用同一套实现。
+    val runtime = remember { PlayerRuntime.get(context) }
+    val backup = remember { BackupManager(runtime.lists.store) }
+    val importFlow =
+        rememberListImportFlow(
+            runtime = runtime,
+            backup = backup,
+            toast = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() },
+            onImported = { result ->
+                when (result) {
+                    is BackupManager.ImportResult.PartImported ->
+                        runtime.core.handleListMusicsUpdated(listOf(result.listInfo.id))
+                    BackupManager.ImportResult.FullImported -> {
+                        val userLists = runtime.lists.store.state.value.userLists
+                        runtime.core.handleListMusicsUpdated(
+                            listOf(StorageKeys.ListIds.DEFAULT, StorageKeys.ListIds.LOVE) +
+                                userLists.map { it.id },
+                        )
+                    }
+                    else -> Unit
+                }
+            },
+        )
+    val importAction = rememberListImportAction { importFlow.start(it) }
+
     Box(Modifier.fillMaxSize()) {
         Column(
             modifier =
@@ -509,6 +541,14 @@ private fun MyPage(
             verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
         ) {
             Text(text = "我的列表", color = SaltTheme.colors.subText)
+            if (listState.userLists.isEmpty()) {
+                // 自动迁移（RnAutoMigration）没带过来时的兜底入口。
+                Text(
+                    text = "旧版歌单会在首次启动时自动带过来；若没出现，可在旧版「设置 → 备份 → 导出列表」后点下面导入。",
+                    color = SaltTheme.colors.subText,
+                )
+                Item(onClick = { importAction() }, text = "从旧版导入歌单")
+            }
             Item(
                 onClick = {
                     createName = ""
@@ -581,6 +621,19 @@ private fun MyPage(
                 createVisible = true
             },
         )
+        importFlow.conflict?.let { conflict ->
+            ListImportConflictDialog(
+                conflict = conflict,
+                onDismiss = importFlow.dismissConflict,
+                onChoose = importFlow.resolveConflict,
+            )
+        }
+        importFlow.fullConfirm?.let {
+            ListFullImportConfirmDialog(
+                onDismiss = importFlow.dismissFull,
+                onConfirm = importFlow.confirmFull,
+            )
+        }
     }
 }
 
