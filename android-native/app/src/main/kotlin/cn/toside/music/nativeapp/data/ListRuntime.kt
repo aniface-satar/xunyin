@@ -3,6 +3,7 @@ package cn.toside.music.nativeapp.data
 import android.content.Context
 import cn.toside.music.core.data.DataRepository
 import cn.toside.music.core.list.ListStore
+import cn.toside.music.core.list.MusicStatsStore
 import cn.toside.music.core.storage.ShardedKvStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,7 +30,10 @@ class ListRuntime private constructor(
             ShardedKvStore(DataStoreKvStore(appContext)),
         )
 
-    val store = ListStore(repo)
+    /** 歌曲列表元数据（添加时间 / 播放次数），与 [store] 共用同一持久层。 */
+    val stats = MusicStatsStore(repo)
+
+    val store = ListStore(repo, stats)
 
     private val loadLock = Mutex()
     private var loaded = false

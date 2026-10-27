@@ -123,6 +123,18 @@ class DataRepository(
         type: String,
     ) = kv.removeData(MusicUrlCache.key(musicId, type))
 
+    // ---------- 列表元数据（W8-C：add_time / play_count，对照 RN data.ts） ----------
+
+    /** 读「添加时间」表：key 为 `${listId}/${musicId}`，值为 epoch 毫秒。 */
+    suspend fun getMusicAddTimes(): Map<String, Long> = kv.getData<JsonObject>(StorageKeys.MUSIC_ADD_TIME).toLongMap()
+
+    suspend fun saveMusicAddTimes(map: Map<String, Long>) = kv.saveData(StorageKeys.MUSIC_ADD_TIME, map.toJsonObject())
+
+    /** 读「播放次数」表：key 为 musicId。 */
+    suspend fun getMusicPlayCounts(): Map<String, Long> = kv.getData<JsonObject>(StorageKeys.MUSIC_PLAY_COUNT).toLongMap()
+
+    suspend fun saveMusicPlayCounts(map: Map<String, Long>) = kv.saveData(StorageKeys.MUSIC_PLAY_COUNT, map.toJsonObject())
+
     // ---------- 其他源信息 ----------
 
     suspend fun getOtherSource(musicId: String): List<JsonElement> =
@@ -161,6 +173,33 @@ class DataRepository(
     suspend fun getTempListMeta(): JsonObject = kv.getData(StorageKeys.TEMP_LIST_META) ?: JsonObject(emptyMap())
 
     suspend fun saveTempListMeta(meta: JsonObject) = kv.saveData(StorageKeys.TEMP_LIST_META, meta)
+
+    /** RN data.ts#setListUpdateTime：`@list_update_info` 记 id → `{ updateTime, isAutoUpdate }`。 */
+    suspend fun setListUpdateTime(
+        listId: String,
+        time: Long,
+    ) {
+        val all = (kv.getData<JsonObject>(StorageKeys.LIST_UPDATE_INFO) ?: JsonObject(emptyMap())).toMutableMap()
+        val entry = ((all[listId] as? JsonObject) ?: JsonObject(emptyMap())).toMutableMap()
+        entry["updateTime"] = JsonPrimitive(time)
+        if (!entry.containsKey("isAutoUpdate")) entry["isAutoUpdate"] = JsonPrimitive(false)
+        all[listId] = JsonObject(entry)
+        kv.saveData(StorageKeys.LIST_UPDATE_INFO, JsonObject(all))
+    }
+
+    // ---------- 内部 ----------
+
+    /** RN `Record<string, number>` 的读取口径：忽略非数字值，损坏即空表。 */
+    private fun JsonObject?.toLongMap(): Map<String, Long> {
+        val map = mutableMapOf<String, Long>()
+        this?.forEach { (key, value) ->
+            val number = (value as? JsonPrimitive)?.contentOrNull?.toLongOrNull() ?: return@forEach
+            map[key] = number
+        }
+        return map
+    }
+
+    private fun Map<String, Long>.toJsonObject(): JsonObject = JsonObject(mapValues { (_, value) -> JsonPrimitive(value) })
 }
 
 /** 一条取链缓存记录：[url] 是直链，[savedAt] 是写入时刻（毫秒）。 */

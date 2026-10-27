@@ -88,3 +88,38 @@
 ## Lane 报告（执行会话追加区）
 
 按 RULES 收尾三步，在此追加：结论 / commit / 触碰文件清单 / 语义修正 / 遗留与真机清单。
+
+## Lane 报告（2026-10-27）
+
+- 结论：任务 1–6 全部完成；任务 7（歌词增强可选）时间盒判定不展开（归 Lane A 评估、Wave9 立项，本车道一行实现未加）。
+- commit：`5c942ff`；测试数 core 1119 + app 163 = **1282** 全绿（起点 1252，只增不减）；`ktlintCheck test assembleDebug` 全过。
+- 触碰文件清单：
+  - `app/.../ui/list/`：`ListMenuActions.kt`（收口）、`ListDetailPage.kt`（收口+随机播放/收藏全部）、`ListFileActions.kt`（新，两宿主共享实现）、`ListBatch.kt`（新，去重预演纯规则）、`ListSyncAction.kt`（新，同步网络接线）
+  - `core/list/`：`ListSync.kt`（新，同步判定与落库）、`MusicStatsStore.kt`（新，add_time/play_count 读写）、`ListStore.kt`（+stampAddTimes 挂钩、+setListUpdateTime）
+  - `core/data/DataRepository.kt`（+add_time/play_count 两表读写、+setListUpdateTime；任务书 §3 之外的**最小必需**增量，见语义修正 2）
+  - `app/.../data/ListRuntime.kt`（装配 stats）、`app/.../player/PlayerRuntime.kt`（播放历史时累加 play_count）
+  - `app/.../lyric/DesktopLyricConfig.kt`（读侧 Double 化，W7-1）、`DesktopLyricService.kt`（消费点同步）
+  - `app/.../deeplink/Deeplink.kt`（http(s) 五源歌单链接解析）
+  - `AndroidManifest.xml`（**仅 intent-filter 段**：lxmc filter 增量 + https 五源白名单 filter）
+  - 测试：`ListMenuRulesTest`（扩）、`ListFileActionsTest`/`ListBatchTest`/`DesktopLyricConfigTest`/`DeeplinkParserTest`（新/扩）、`core/list/ListSyncTest`/`MusicStatsStoreTest`（新）
+- 语义修正与实证发现：
+  1. **RN 侧无 `PlayerRandom`/`收藏全部` 组件**：本 fork 的 RN 源码 grep 无命中（`随机播放` 只出现在播放页模式按钮 `PlayModeBtn`）。按任务书语义落为列表详情页两个批量按钮：随机播放 = 切 `RANDOM` 模式 + `playListById` 起播（随机队列由 PlayerCore 按当前歌单重建）；收藏全部 = 整单 `listMusicAdd` 进爱心（预演去重数进 toast）。
+  2. **add_time/play_count 键形对照 RN `utils/data.ts`**：`@music_add_time` 键 `${listId}/${musicId}`、`@music_play_count` 键 `musicId`；RN `initMusicAddTimeTracker` 在加歌/移动时整批重打（含重复项与已在列表的），原生 `ListStore.listMusicAdd` 已挂钩同语义。`DataRepository` 增量属此必需（持久层访问点），非越界扩张。
+  3. **「更新」同步对照 RN `syncSourceList`**：`board__` 前缀走榜单、失败不动列表只 toast、成功记 `locationUpdateTime` + `@list_update_info`（`setListUpdateTime`，原生此前无写者）。可用性在 RN 的 `source`+能力判定上追加 `sourceListId`——RN 同步执行对缺该字段的列表直接早退，老歌单置灰与之一致（非收紧，是对齐早退）。
+  4. **http(s) 直达是本 fork RN 侧没有的能力**（RN manifest 无 https filter）：host 白名单按五源用户分享页域名列，解析走既有 `SonglistLinkParser`，失败/非白名单留在浏览器不拦截。
+  5. **lxmc 外部打开**：对照 RN manifest 的 octet-stream + pathPattern 组合补了 file/content 两 scheme 的 `.lxmc` filter；SAF `content://` 拿不到扩展名时仍走应用内导入（W7-9 同类）。
+- 遗留问题与对后续波次的建议：
+  1. **W7-1 重启全链路依赖 Lane A** 的 `DefaultSetting` 默认值改 `0.0`；本车道读侧已 Double 化（含 33.5 写→读用例），A 并入后全链路等值往返（A 侧已有重启用例）。
+  2. **与 Lane B 交界**：本车道 `listMusicAdd` 签名未动；B 的 `origin` 形参并入后，「收藏全部」如需 origin 装配由集成会话补一行。
+  3. 移动端二级域歌单链接（`y.music.163.com` 等短链/移动页形态）未覆盖，留作后续候选；网易云 `###token` 私域歌单从浏览器直达时链接里不含 token，不受影响。
+  4. `countStale` 1000 首耗时**未量**（需要带 1000 首本地曲库+SAF 授权的真机/模拟器环境）：方法=灌 1000 首本地曲 → 列表详情「本地文件」触发，在 `LocalMusicRuntime.countStale` 出入口加 stopwatch 打点或 logcat 计时。
+  5. 桌面歌词设置小节 `DesktopLyricSettingsSection.kt` 的 26dp 主题色圆点无 contentDescription、触控目标不足 48dp（Lane A 无障碍抽查发现，归本车道文件，建议集成后单独补）。
+- 真机清单（8 条）：
+  1. 在线歌单「更新」全流程：有元数据歌单弹确认 → 成功 toast + 整单替换；无 `sourceListId` 老歌单与 `local` 源置灰。
+  2. 列表页「随机播放」：模式切随机 + 起播 + 切歌顺序随机，与播放页模式循环按钮互不干扰。
+  3. 「收藏全部」：toast 带跳过数；爱心列表不显示该按钮；重复点不重复加。
+  4. 排序「添加时间/播放次数」档：新加歌位置正确；存量无元数据曲目 0 兜底、排序稳定不窜位。
+  5. 浏览器点开五源歌单链接 → 选本应用 → 直达歌单详情；白名单外域名不被拦截。
+  6. 桌面歌词拖到非整数位置 → 杀进程重开 → 位置不漂移（A 并入后验）。
+  7. 文件管理器/下载里点 `.lxmc` → 弹确认 → 导入成功（file:// 场景）；SAF 无扩展名场景仍走应用内导入。
+  8. 首页长按菜单与列表详情页的排序/导入/导出/重命名/删除逐条对照点一遍（W5-9 行为等值回归）。

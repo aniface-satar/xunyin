@@ -29,6 +29,7 @@ import kotlinx.serialization.json.put
  */
 class ListStore(
     private val repo: DataRepository,
+    private val stats: MusicStatsStore? = null,
 ) {
     /** 用户列表项（对应 LX.List.UserListInfo）。 */
     data class UserListInfo(
@@ -271,6 +272,8 @@ class ListStore(
                 else -> targetList.addAll(filtered)
             }
             persistListLocked(listId, targetList)
+            // RN initMusicAddTimeTracker：请求批里的 id 全部重打时间戳（含重复项/已在列表的曲目）
+            stats?.stampAddTimes(listId, musicInfos.mapNotNull { (it as? JsonObject)?.stringField("id") })
             listOf(listId)
         }
 
@@ -376,6 +379,12 @@ class ListStore(
         }
 
     // ---------- 内部 ----------
+
+    /** RN data.ts#setListUpdateTime：同步成功后记录列表更新时间（`@list_update_info`）。 */
+    suspend fun setListUpdateTime(
+        listId: String,
+        time: Long,
+    ) = repo.setListUpdateTime(listId, time)
 
     private suspend fun ensureListLoadedLocked(listId: String): MutableList<JsonObject> {
         allMusicList[listId]?.let { return it }

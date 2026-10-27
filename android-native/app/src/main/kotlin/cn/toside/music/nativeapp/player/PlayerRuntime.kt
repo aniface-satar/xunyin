@@ -162,7 +162,15 @@ class PlayerRuntime private constructor(
     init {
         platform.commandHandler = CorePlaybackCommands(core, scope)
         core.togglePlayMethodProvider = { core.state.value.playMethod }
-        core.onAddPlayHistory = { playHistory.add(it) }
+        core.onAddPlayHistory = { info ->
+            playHistory.add(info)
+            // RN playHistory.ts#addPlayHistory：进播放历史的同时累加列表「播放次数」
+            info.musicInfo?.let { musicInfo ->
+                ((musicInfo["id"] as? JsonPrimitive)?.takeIf { it !is JsonNull })
+                    ?.content
+                    ?.let { lists.stats.addPlayCount(it) }
+            }
+        }
         // 切歌事件转给电台：playedList 只由电台写（RN radio.ts:151），
         // 踩雷集合也由电台侧缓存后同步提供（切歌判定不能等 IO）。
         core.onMusicToggled = { info -> radio.onMusicToggled(info) }

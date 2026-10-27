@@ -45,6 +45,33 @@
                     android:scheme="content"
                     android:mimeType="application/json" />
             </intent-filter>
+            <!-- lxmc（gzip JSON 无标准 MIME）：对照 RN manifest 用 octet-stream + 扩展名
+                 pathPattern 组合拦截；content:// 拿不到扩展名时仍由应用内导入兜底 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:host="*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:pathPattern=".*\.lxmc" />
+                <data android:pathPattern=".*\..*\.lxmc" />
+                <data android:pathPattern=".*\..*\..*\.lxmc" />
+                <data android:pathSuffix=".lxmc" />
+            </intent-filter>
+            <!-- 五源歌单网页外部直达（W8-C）：host 白名单 = SonglistLinkParser 能解析的
+                 五源域名（kw/kg/tx/wy/mg），解析失败留在浏览器，由 DeeplinkParser 收口 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="www.kuwo.cn" />
+                <data android:host="www.kugou.com" />
+                <data android:host="y.qq.com" />
+                <data android:host="music.163.com" />
+                <data android:host="music.migu.cn" />
+            </intent-filter>
         </activity>
 
         <service
