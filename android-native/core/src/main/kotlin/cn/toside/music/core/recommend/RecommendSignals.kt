@@ -19,8 +19,8 @@ fun JsonObject.isLocalTrack(): Boolean = sourceField() == LOCAL_SOURCE
  * 踩雷规则解析 —— RN `utils/dislikeManage.ts` 的 `updateDislikeInfo` 纯规则部分。
  *
  * 规则文本每行一条：`歌名@歌手`（组合规则进 names）、`歌名`（进 musicNames）、
- * `@歌手`（进 singerNames）；`@` 是分隔符，规则文本里歌手名内出现的 `@`
- * 与 RN 一致不做别名转义（RN 的 DISLIKE_NAME_ALIAS 处理保持同语义）。
+ * `@歌手`（进 singerNames）。`@` 是分隔符；字段内再出现的 `@` 与写侧一样转义成 `#`
+ * （RN `DISLIKE_NAME_ALIAS`），否则「写进去的规则读回来对不上」。
  * Kotlin 侧从 `@dislike_list` 原始字符串解析，与 RN 读写同一存储语义。
  */
 object DislikeRulesParser {
@@ -37,23 +37,21 @@ object DislikeRulesParser {
             val name: String?
             val singer: String?
             if (idx >= 0) {
-                name = item.substring(0, idx).ifEmpty { null }
-                singer = item.substring(idx + 1)
+                name = normalizeRulePart(item.substring(0, idx)).ifEmpty { null }
+                singer = normalizeRulePart(item.substring(idx + 1))
             } else {
-                name = item
+                name = normalizeRulePart(item).ifEmpty { null }
                 singer = null
             }
             if (name != null) {
-                val normalized = name.lowercase().trim()
                 if (singer != null && singer.isNotEmpty()) {
-                    val normalizedSinger = singer.lowercase().trim()
                     // 组合规则键：`歌名@歌手`（对照 RN dislikeInfo.names）
-                    names.add("$normalized$SPLIT_CHAR$normalizedSinger")
+                    names.add("$name$SPLIT_CHAR$singer")
                 } else {
-                    musicNames.add(normalized)
+                    musicNames.add(name)
                 }
             } else if (singer != null && singer.isNotEmpty()) {
-                singerNames.add(singer.lowercase().trim())
+                singerNames.add(singer)
             }
         }
         return DislikeRules(names, musicNames, singerNames)

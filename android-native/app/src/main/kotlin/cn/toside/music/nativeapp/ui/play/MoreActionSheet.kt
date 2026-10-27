@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -34,6 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.toside.music.core.player.SleepTimer
+import cn.toside.music.core.recommend.m3.SimilarSongs
+import cn.toside.music.core.recommend.radio.RadioTrackKeys
+import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.lyric.DesktopLyricRow
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import cn.toside.music.nativeapp.ui.share.ShareCardOverlay
@@ -81,6 +85,7 @@ fun MoreActionSheet(
     val timeoutStatus by timeout.status.collectAsState()
     var showTimeout by remember { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
+    var showSimilar by remember { mutableStateOf(false) }
 
     // RN 的滑杆数值空间是整数（音量/倍速按百分比、字号按 ×10），这里保持同一空间再换算
     var volumePercent by remember { mutableFloatStateOf(storedVolumePercent(runtime).toFloat()) }
@@ -96,6 +101,10 @@ fun MoreActionSheet(
         Item(
             onClick = { showShare = true },
             text = "分享",
+        )
+        Item(
+            onClick = { showSimilar = true },
+            text = "相似歌曲",
         )
         ItemSpacer()
         ItemSlider(
@@ -203,7 +212,113 @@ fun MoreActionSheet(
             onDismiss = { showShare = false },
         )
     }
+
+    if (showSimilar) {
+        SimilarSongsSheet(runtime = runtime, onDismiss = { showSimilar = false })
+    }
 }
+
+/** 「相似歌曲」候选上限：本地曲库里最多取这么多首，避免大库把弹层算卡。 */
+private const val SIMILAR_LIMIT = 30
+private const val SIMILAR_LIBRARY_CAP = 2000
+
+/**
+ * 「相似歌曲」弹层 —— 数据全部来自本地曲库（收藏 + 默认列表 + 自建歌单），
+ * 排序规则在 `:core` [SimilarSongs]（纯函数、有单测），这里只做取数与起播。
+ */
+@OptIn(UnstableSaltUiApi::class)
+@Composable
+private fun SimilarSongsSheet(
+    runtime: PlayerRuntime,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val seed = runtime.core.state.value.playMusicInfo.musicInfo
+    var tracks by remember { mutableStateOf<List<kotlinx.serialization.json.JsonObject>?>(null) }
+
+    LaunchedEffect(seed) {
+        tracks =
+            if (seed == null) {
+                emptyList()
+            } else {
+                runCatching { loadSimilarSongs(runtime, seed) }.getOrDefault(emptyList())
+            }
+    }
+
+    fun play(index: Int) {
+        val list = tracks ?: return
+        val musicId = list.getOrNull(index)?.let { jsonText(it, "id") } ?: return
+        scope.launch {
+            runtime.lists.store.listMusicOverwrite(StorageKeys.ListIds.TEMP, list)
+            runtime.core.playListById(StorageKeys.ListIds.TEMP, musicId)
+            runtime.core.handleListMusicsUpdated(listOf(StorageKeys.ListIds.TEMP))
+            onDismiss()
+        }
+    }
+
+    SheetScaffold(title = "相似歌曲", onDismiss = onDismiss) {
+        val loaded = tracks
+        when {
+            loaded == null -> SheetHint("正在查找相似歌曲…")
+            loaded.isEmpty() -> SheetHint("曲库里还没有相似歌曲")
+            else ->
+                loaded.forEachIndexed { index, item ->
+                    Item(
+                        onClick = { play(index) },
+                        text = jsonText(item, "name") ?: "未知歌曲",
+                        sub = jsonText(item, "singer"),
+                    )
+                }
+        }
+    }
+}
+
+private suspend fun loadSimilarSongs(
+    runtime: PlayerRuntime,
+    seed: kotlinx.serialization.json.JsonObject,
+): List<kotlinx.serialization.json.JsonObject> {
+    val lists = runtime.lists
+    lists.ensureLoaded()
+    val seedTrack = similarTrack(seed, "")
+    val listIds =
+        buildList {
+            add(StorageKeys.ListIds.LOVE)
+            add(StorageKeys.ListIds.DEFAULT)
+            for (info in lists.store.state.value.userLists) {
+                if (info.id == StorageKeys.ListIds.TEMP || info.id.startsWith("download")) continue
+                add(info.id)
+            }
+        }.distinct()
+    val candidates = mutableListOf<SimilarSongs.Track>()
+    val byKey = mutableMapOf<String, kotlinx.serialization.json.JsonObject>()
+    for (listId in listIds) {
+        val musics = runCatching { lists.musics(listId) }.getOrNull().orEmpty()
+        for (music in musics.take(SIMILAR_LIBRARY_CAP)) {
+            val track = similarTrack(music, listId)
+            if (track.trackKey.isEmpty()) continue
+            candidates.add(track)
+            byKey.putIfAbsent(track.trackKey, music)
+        }
+    }
+    return SimilarSongs.rank(seedTrack, candidates, SIMILAR_LIMIT).mapNotNull { byKey[it.track.trackKey] }
+}
+
+private fun similarTrack(
+    musicInfo: kotlinx.serialization.json.JsonObject,
+    listId: String,
+): SimilarSongs.Track =
+    SimilarSongs.Track(
+        trackKey = RadioTrackKeys.buildTrackKey(musicInfo),
+        name = jsonText(musicInfo, "name").orEmpty(),
+        singer = jsonText(musicInfo, "singer").orEmpty(),
+        album = RadioTrackKeys.getAlbumName(musicInfo),
+        listIds = if (listId.isEmpty()) emptySet() else setOf(listId),
+    )
+
+private fun jsonText(
+    obj: kotlinx.serialization.json.JsonObject,
+    key: String,
+): String? = (obj[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.content
 
 /**
  * 定时关闭面板（对照 RN `TimeoutExitEditModal.tsx`）：状态行 + 输入分钟 + 「等待播完」开关 +

@@ -136,8 +136,12 @@ fun RecommendPanel(
     ) {
         scope.launch {
             val key = PlaylistRank.normalizePlaylistKey(item.source, item.id)
-            runCatching { RecommendStores.hidden.hide(key, item.name, System.currentTimeMillis()) }
-                .onSuccess { onHidden("已隐藏《${item.name}》，可在电台页「已隐藏的歌单」恢复") }
+            val hidden =
+                runCatching { RecommendStores.hidden.hide(key, item.name, System.currentTimeMillis()) }
+                    .getOrNull() ?: return@launch
+            // RN dislikeCuratedPlaylist 同款后半段：歌单负反馈 + 所属分类降权
+            runCatching { runtime.radio.applyPlaylistNotInterested(key, playlists?.tagName) }
+            onHidden("已隐藏《${item.name}》，可在电台页「已隐藏的歌单」恢复")
         }
     }
 

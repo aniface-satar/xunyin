@@ -1,7 +1,9 @@
 package cn.toside.music.nativeapp.data
 
+import cn.toside.music.core.recommend.ThemePreference
 import cn.toside.music.core.songlist.PlaylistItem
 import cn.toside.music.core.songlist.SonglistPage
+import cn.toside.music.core.songlist.SonglistTag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -65,5 +67,49 @@ class SonglistRuntimeTest {
         assertTrue(SonglistRuntime.sorts("tx").isNotEmpty())
         assertTrue(SonglistRuntime.isSupported("mg"))
         assertFalse(SonglistRuntime.isSupported("bd"))
+    }
+
+    // ---------- 发现页分类挑选（themeWeights 消费） ----------
+
+    private val now = 1_700_000_000_000L
+    private val catalogue =
+        listOf(
+            SonglistTag(id = "a", name = "华语"),
+            SonglistTag(id = "b", name = "治愈"),
+            SonglistTag(id = "c", name = "古风"),
+        )
+    private val healingTheme =
+        ThemePreference(
+            themeId = "治愈",
+            positiveWeight = 3.0,
+            negativeWeight = 0.0,
+            lastDecayTime = now,
+            lastUsedTime = now,
+        )
+
+    @Test
+    fun curated_tag_consumes_theme_weights() {
+        // 关键词与目录无交集，排序只剩主题权重这一条信号：传空权重会退回目录首项
+        assertEquals(
+            "b",
+            pickCuratedTag(catalogue, listOf("民谣"), mapOf("治愈" to healingTheme), 0, now)?.id,
+        )
+        assertEquals(
+            "主题权重为空时冷启动轮换到目录首项",
+            "a",
+            pickCuratedTag(catalogue, listOf("民谣"), emptyMap(), 0, now)?.id,
+        )
+    }
+
+    @Test
+    fun curated_tag_without_keywords_still_uses_theme_weights() {
+        // 问卷播种会在没有画像关键词时单独产生主题权重（RN 同）
+        assertEquals("b", pickCuratedTag(catalogue, emptyList(), mapOf("治愈" to healingTheme), 0, now)?.id)
+    }
+
+    @Test
+    fun curated_tag_cold_start_rotates_catalogue() {
+        assertEquals("a", pickCuratedTag(catalogue, emptyList(), emptyMap(), 0, now)?.id)
+        assertEquals("b", pickCuratedTag(catalogue, emptyList(), emptyMap(), 1, now)?.id)
     }
 }
