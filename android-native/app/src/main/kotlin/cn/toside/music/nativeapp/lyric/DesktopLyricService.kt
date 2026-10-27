@@ -1,5 +1,7 @@
 package cn.toside.music.nativeapp.lyric
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -11,6 +13,8 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import cn.toside.music.core.lyric.DesktopLyricLine
 import cn.toside.music.nativeapp.data.SettingsRuntime
 import cn.toside.music.nativeapp.player.LyricsState
@@ -31,7 +35,9 @@ import kotlin.math.roundToInt
  * - 窗口：`TYPE_APPLICATION_OVERLAY`，百分比定位，拖动后把百分比存回设置；
  * - 内容：订阅 [PlayerRuntime.lyrics] 公开流，按 [PlayerRuntime.positionMs] 每 200ms
  *   重算当前行，只在该换行时更新 TextView（TextSwitcher 才有动画）；
- * - 启停：只由 [DesktopLyricController] 拉起/停止，没有独立通知。
+ * - 启停：只由 [DesktopLyricController] 拉起/停止；
+ * - 前台身份（W7）：`specialUse` 类型 FGS——浮窗要长时间驻留，没有前台身份会被
+ *   低内存与 OEM 策略优先回收（w3-A 任务 5 建议 2）；通知只做身份证明，不交互。
  *
  * 不持有播放器/歌词解析：全部走 PlayerRuntime 的公开接口，避免和 `player/` 内部耦合。
  */
@@ -65,6 +71,8 @@ class DesktopLyricService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
+        // startForegroundService 语义下必须先拿到前台身份再谈退出，否则 5 秒内 stopSelf 会崩
+        goForeground()
         if (!Settings.canDrawOverlays(this)) {
             // 权限在服务存活期间被回收：直接退出，由控制器把开关落回 false
             detach()
@@ -75,9 +83,47 @@ class DesktopLyricService : Service() {
         return START_NOT_STICKY
     }
 
+    /** FGS 身份：常驻静默通知（W7）。MIN_API 26 起必须走渠道。 */
+    private fun goForeground() {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "桌面歌词",
+                    NotificationManager.IMPORTANCE_MIN,
+                ).apply {
+                    setShowBadge(false)
+                    setSound(null, null)
+                },
+            )
+        }
+        val notification =
+            NotificationCompat
+                .Builder(this, CHANNEL_ID)
+                .setSmallIcon(cn.toside.music.nativeapp.R.drawable.ic_launcher_foreground)
+                .setContentTitle("桌面歌词运行中")
+                .setContentText("正在展示当前播放歌曲的歌词浮窗")
+                .setOngoing(true)
+                .setSilent(true)
+                .setPriority(NotificationCompat.PRIORITY_MIN)
+                .build()
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            notification,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            } else {
+                0
+            },
+        )
+    }
+
     override fun onDestroy() {
         detach()
         scope.cancel()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
@@ -143,8 +189,10 @@ class DesktopLyricService : Service() {
                 positionMs = positionMs,
                 singleLine = config.singleLine,
                 maxLineNum = config.maxLineNum,
+                showTranslation = config.showTranslation,
+                showRoma = config.showRoma,
             )
-        overlay.setLyric(lines.joinToString("\n"))
+        overlay.setLyric(lines)
     }
 
     private fun refreshConfig() {
@@ -261,12 +309,26 @@ class DesktopLyricService : Service() {
         return true
     }
 
+    /**
+     * 松手后把百分比写回设置。
+     *
+     * **W7 写侧**：RN 写的是 `x / maxWidth * 100` 的浮点数（会出现 `33.5` 这种值），
+     * 这里同样写浮点（保留两位小数），与 RN 落盘形状对齐。
+     *
+     * **兼容读的已知落差**：`SettingsStore.merge` 按默认值类型强转，而
+     * `desktopLyric.position.x/y` 的默认值仍是 Int 0（W3 没动这个契约，本波
+     * DefaultSetting 只允许表尾追加），所以进程内是 33.5、**重启后读回来是 33**。
+     * 读侧已经在 W3 通了（小数会截断而不是掉成 0），完整互通要把默认值改成 Double，
+     * 见 lane 报告遗留。
+     */
     private fun savePosition(params: WindowManager.LayoutParams) {
         val config = config ?: return
-        val x = DesktopLyricLine.percentOf(params.x, maxWidth).roundToInt().coerceIn(0, 100)
-        val y = DesktopLyricLine.percentOf(params.y, maxHeight).roundToInt().coerceIn(0, 100)
-        if (x == config.positionX && y == config.positionY) return
-        this.config = config.copy(positionX = x, positionY = y)
+        val rawX = DesktopLyricLine.percentOf(params.x, maxWidth).coerceIn(0.0, 100.0)
+        val rawY = DesktopLyricLine.percentOf(params.y, maxHeight).coerceIn(0.0, 100.0)
+        val x = DesktopLyricScrollMath.roundPercent(rawX)
+        val y = DesktopLyricScrollMath.roundPercent(rawY)
+        if (x == config.positionX.toDouble() && y == config.positionY.toDouble()) return
+        this.config = config.copy(positionX = x.roundToInt(), positionY = y.roundToInt())
         scope.launch {
             settings.ensureLoaded()
             settings.store.set(DesktopLyricKeys.POSITION_X, x)
@@ -288,5 +350,7 @@ class DesktopLyricService : Service() {
     private companion object {
         const val POLL_INTERVAL_MS = 200L
         const val LOCKED_ALPHA = 0.8f
+        const val CHANNEL_ID = "desktop_lyric"
+        const val NOTIFICATION_ID = 41
     }
 }

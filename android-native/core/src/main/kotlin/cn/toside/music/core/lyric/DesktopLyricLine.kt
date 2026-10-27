@@ -23,28 +23,56 @@ object DesktopLyricLine {
     ): LyricLine? = parsed.lines.getOrNull(indexAt(parsed, positionMs))
 
     /**
+     * 扩展行的语义位置：RN `Lyric.java#refreshLyric` 按「翻译 → 罗马音」的顺序
+     * `add`，而 [cn.toside.music.core.lyric.LyricParser] 合并 `tlyric`/`rlyric` 也是
+     * 这个顺序，所以扩展行列表按下标认：**0 = 翻译，1 = 罗马音**（更靠后的下标一律当罗马音）。
+     */
+    const val EXTENDED_INDEX_TRANSLATION = 0
+    const val EXTENDED_INDEX_ROMA = 1
+
+    /**
      * 浮窗要显示的文本行：当前行 + 该行的翻译/音译。
      * 对照 RN `LyricView.setLyric`：单行模式或 `maxLineNum <= 1` 只显示当前行，
      * 否则最多 `maxLineNum` 行；`Lyric.java` 只滤掉空串，这里连纯空白也跳过。
+     *
+     * W7：翻译/罗马音改由**桌面独立开关**控制（[showTranslation] / [showRoma]），
+     * 逐字对齐 `Lyric.java#refreshLyric` 的两条 `if`——关掉的那一项根本不进列表，
+     * 而不是进来再隐藏。默认两个都开 = 改造前观感（RN 桌面扩展行无条件显示），
+     * 所以不传参时行为不变。
      */
     fun lines(
         parsed: ParsedLyric,
         positionMs: Long,
         singleLine: Boolean,
         maxLineNum: Int,
+        showTranslation: Boolean = true,
+        showRoma: Boolean = true,
     ): List<String> {
         val line = lineAt(parsed, positionMs) ?: return emptyList()
         val limit = if (singleLine) 1 else maxLineNum.coerceAtLeast(1)
         if (limit == 1) return listOf(line.text)
         return buildList {
             add(line.text)
-            for (extended in line.extendedLyrics) {
-                if (size >= limit) break
-                if (extended.isBlank()) continue
+            line.extendedLyrics.forEachIndexed { index, extended ->
+                if (size >= limit) return@forEachIndexed
+                if (!extendedVisible(index, showTranslation, showRoma)) return@forEachIndexed
+                if (extended.isBlank()) return@forEachIndexed
                 add(extended)
             }
         }
     }
+
+    /** 该扩展行是否该显示（按下标认翻译/罗马音；越界下标一律放行，避免整行丢内容）。 */
+    fun extendedVisible(
+        index: Int,
+        showTranslation: Boolean,
+        showRoma: Boolean,
+    ): Boolean =
+        when (index) {
+            EXTENDED_INDEX_TRANSLATION -> showTranslation
+            EXTENDED_INDEX_ROMA -> showRoma
+            else -> true
+        }
 
     /** 窗口宽度：RN `(int)(maxWidth * widthPercentage)`。 */
     fun windowWidth(

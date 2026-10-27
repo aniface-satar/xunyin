@@ -109,6 +109,67 @@ class DesktopLyricLineTest {
         )
     }
 
+    /**
+     * W7：桌面歌词**独立**的译文/罗马音开关（RN 没有这两键，桌面跟播放页走同一个开关）。
+     *
+     * 扩展行按下标认：0 = 翻译、1 = 罗马音（RN `Lyric.java#refreshLyric` 的构造顺序）。
+     * 关掉的那一项根本不进列表（不是进来再隐藏），所以「最大行数」的配额也跟着省下来。
+     */
+    @Test
+    fun desktopOnlyTranslationAndRomaSwitches() {
+        val parsed =
+            parsed(0L to "主行").let {
+                it.copy(lines = listOf(it.lines[0].copy(extendedLyrics = listOf("翻译", "音译"))))
+            }
+
+        fun lines(
+            translation: Boolean,
+            roma: Boolean,
+        ) = DesktopLyricLine.lines(
+            parsed,
+            0,
+            singleLine = false,
+            maxLineNum = 5,
+            showTranslation = translation,
+            showRoma = roma,
+        )
+
+        // 默认（不传参）行为与改造前一致：两个都显示
+        assertEquals(listOf("主行", "翻译", "音译"), DesktopLyricLine.lines(parsed, 0, singleLine = false, maxLineNum = 5))
+        assertEquals(listOf("主行", "翻译", "音译"), lines(translation = true, roma = true))
+        assertEquals(listOf("主行", "翻译"), lines(translation = true, roma = false))
+        assertEquals(listOf("主行", "音译"), lines(translation = false, roma = true))
+        assertEquals(listOf("主行"), lines(translation = false, roma = false))
+    }
+
+    @Test
+    fun disabledExtendedLineFreesTheMaxLineQuota() {
+        val parsed =
+            parsed(0L to "主行").let {
+                it.copy(lines = listOf(it.lines[0].copy(extendedLyrics = listOf("翻译", "音译"))))
+            }
+        // 关掉译文后，「罗马音」顶上来而不是留一个空位
+        assertEquals(
+            listOf("主行", "音译"),
+            DesktopLyricLine.lines(
+                parsed,
+                0,
+                singleLine = false,
+                maxLineNum = 2,
+                showTranslation = false,
+                showRoma = true,
+            ),
+        )
+    }
+
+    @Test
+    fun extendedVisibilityFallsThroughForUnknownIndexes() {
+        // 扩展行超过两条时（多语种歌词）不做猜测，一律放行，避免整行内容凭空消失
+        assertEquals(true, DesktopLyricLine.extendedVisible(2, showTranslation = false, showRoma = false))
+        assertEquals(false, DesktopLyricLine.extendedVisible(0, showTranslation = false, showRoma = true))
+        assertEquals(false, DesktopLyricLine.extendedVisible(1, showTranslation = true, showRoma = false))
+    }
+
     @Test
     fun dragPercentRoundTrips() {
         assertEquals(50.0, DesktopLyricLine.percentOf(500, 1_000), 1e-9)

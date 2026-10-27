@@ -11,11 +11,24 @@ import org.junit.Test
  * 桌面歌词（S10）设置键契约。
  *
  * 任务书原本要求「追加 desktopLyric.* 键」，实测 RN `src/config/defaultSetting.ts:55-69`
- * 的 15 个键在 Wave1 就全量移植过来了，所以本车道不改 `DefaultSetting.kt`。
- * 这个测试把结论钉住：键集合不多不少、默认值逐键对照 RN，并锁住
- * `defaultSetting.ts:103-106` 的 1、2 月新年皮肤覆盖。
+ * 的 15 个键在 Wave1 就全量移植过来了。
+ *
+ * **Wave7 Lane C 追加了 2 个 RN 没有的键**（[w7Extras]）：桌面歌词独立的译文/罗马音开关。
+ * RN 的桌面歌词跟播放页共用 `player.isShowLyric*` 两个开关，没有桌面专属键；本波按任务书
+ * 在 `DefaultSetting` **表尾**追加，因此这里的断言从「键集合恰好等于 RN 15 键」改成
+ * 「RN 15 键逐键不变 + 额外键只有这 2 个」，RN 那份契约一点没松。
  */
 class DesktopLyricSettingKeysTest {
+    /**
+     * W7 追加：桌面歌词独立的译文/罗马音开关。
+     * 默认两个都开 = 改造前观感（RN 桌面扩展行无条件显示，没有开关可继承）。
+     */
+    private val w7Extras =
+        mapOf(
+            "desktopLyric.isShowTranslation" to true,
+            "desktopLyric.isShowRoma" to true,
+        )
+
     /** RN defaultSetting.ts:55-69 的原文。 */
     private val rnDefaults =
         mapOf(
@@ -37,10 +50,13 @@ class DesktopLyricSettingKeysTest {
         )
 
     @Test
-    fun keySetMatchesRnExactly() {
+    fun rnKeySetIsIntactAndOnlyW7ExtrasAreAdded() {
         val actual = DefaultSetting.base.filterKeys { it.startsWith("desktopLyric.") }
-        assertEquals(15, actual.size)
-        assertEquals(rnDefaults, actual)
+        assertEquals(15 + 2, actual.size)
+        // RN 那 15 键一个不差、一个不多
+        assertEquals(rnDefaults, actual - w7Extras.keys)
+        // 多出来的只有 W7 追加的桌面独立开关
+        assertEquals(w7Extras, actual.filterKeys { it in w7Extras.keys })
     }
 
     @Test
@@ -49,9 +65,9 @@ class DesktopLyricSettingKeysTest {
             val settings = DefaultSetting.defaultSetting(month)
             assertEquals("happy_new_year", settings["theme.id"])
             assertEquals("rgba(255, 18, 34, 1)", settings["desktopLyric.style.lyricPlayedColor"])
-            // 其余桌面歌词键不受皮肤影响
+            // 其余桌面歌词键不受皮肤影响（含 W7 追加的 2 个开关）
             val actual = settings.filterKeys { it.startsWith("desktopLyric.") } - "desktopLyric.style.lyricPlayedColor"
-            assertEquals(rnDefaults - "desktopLyric.style.lyricPlayedColor", actual)
+            assertEquals((rnDefaults - "desktopLyric.style.lyricPlayedColor") + w7Extras, actual)
         }
         for (month in listOf(3, 12)) {
             assertEquals("cyan", DefaultSetting.defaultSetting(month)["theme.id"])

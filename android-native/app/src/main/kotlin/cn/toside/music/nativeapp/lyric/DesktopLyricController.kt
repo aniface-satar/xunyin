@@ -119,7 +119,9 @@ class DesktopLyricController private constructor(
 
     private fun startService() {
         runCatching {
-            appContext.startService(Intent(appContext, DesktopLyricService::class.java))
+            // W7：服务已 FGS 化（specialUse），startForegroundService 前后台都能安全拉起，
+            // 服务侧 onStartCommand 一进来就 startForeground
+            appContext.startForegroundService(Intent(appContext, DesktopLyricService::class.java))
         }.onFailure {
             toast("桌面歌词启动失败：${it.message}")
         }

@@ -50,7 +50,6 @@ import cn.toside.music.nativeapp.data.SearchTypes
 import cn.toside.music.nativeapp.data.SonglistSearchRuntime
 import cn.toside.music.nativeapp.player.PlayerRuntime
 import cn.toside.music.nativeapp.ui.songlist.AddToListDialog
-import cn.toside.music.nativeapp.ui.songlist.SonglistDetailPage
 import com.moriafly.salt.ui.Button
 import com.moriafly.salt.ui.SaltTheme
 import com.moriafly.salt.ui.Text
@@ -63,18 +62,29 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * 搜索页（B5 第八切片 + S12 歌单类型 + W6 专辑/歌手类型）——
- * 五源单曲/歌单/专辑/歌手搜索 + 「全部」聚合 + 翻页 + 详情页内覆盖。
+ * 五源单曲/歌单/专辑/歌手搜索 + 「全部」聚合 + 翻页 + 详情走导航栈（W6-6）。
  *
  * 对照 RN `screens/Home/Views/Search`：HeaderBar 的源下拉（含「全部」）+
  * SearchTypeSelector 的四类型切换 + OnlineList 的 onEndReached 加载更多。
  * 点击歌曲 = 写入试听列表 → `playListById` → 进播放页；点击歌单/专辑/歌手 =
- * 页内打开详情（SEARCH tab 既有覆盖模式，HomeNavigator 壳结构禁触，见 lane 报告）。
+ * 压进 [cn.toside.music.nativeapp.HomeNavigator] 的详情栈（W6-6 前的页内覆盖已移除）。
  */
 @OptIn(UnstableSaltUiApi::class)
 @Composable
 fun SearchPage(
     onBack: (() -> Unit)? = null,
     onOpenPlayer: () -> Unit,
+    /**
+     * W6-6：三类详情改走 [cn.toside.music.nativeapp.HomeNavigator] 的详情栈。
+     *
+     * 页内覆盖（`detailTarget` 那种 `return` 换内容）会丢掉搜索页的组合状态之外的东西：
+     * 返回时关键词/结果/滚动位置靠 `remember` 侥幸留住，但详情再叠详情（歌手 → 专辑）
+     * 与系统返回键的层级都对不上。改走导航栈后，搜索页留在组合里不销毁，
+     * 返回只是弹栈，状态天然保留。**搜索逻辑与详情页本体一点没动。**
+     */
+    onOpenSonglist: (source: String, id: String, title: String) -> Unit = { _, _, _ -> },
+    onOpenAlbum: (AlbumItem) -> Unit = {},
+    onOpenArtist: (ArtistItem) -> Unit = {},
 ) {
     val context = LocalContext.current
     val runtime = remember { PlayerRuntime.get(context) }
@@ -86,9 +96,6 @@ fun SearchPage(
     var songlists by remember { mutableStateOf<List<SonglistSearchItem>>(emptyList()) }
     var albums by remember { mutableStateOf<List<AlbumItem>>(emptyList()) }
     var artists by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
-    var detailTarget by remember { mutableStateOf<SonglistSearchItem?>(null) }
-    var albumTarget by remember { mutableStateOf<AlbumItem?>(null) }
-    var artistTarget by remember { mutableStateOf<ArtistItem?>(null) }
     var loading by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -230,40 +237,6 @@ fun SearchPage(
         }
     }
 
-    // 详情：页内覆盖（SEARCH tab 既有模式；HomeNavigator 壳结构禁触，见 lane 报告）
-    val target = detailTarget
-    if (target != null) {
-        SonglistDetailPage(
-            source = target.source,
-            id = target.id,
-            title = target.name,
-            onBack = { detailTarget = null },
-            onOpenPlayer = onOpenPlayer,
-        )
-        return
-    }
-    val openAlbum = albumTarget
-    if (openAlbum != null) {
-        AlbumDetailPage(
-            source = openAlbum.source,
-            id = openAlbum.id,
-            fallback = openAlbum,
-            onBack = { albumTarget = null },
-            onOpenPlayer = onOpenPlayer,
-        )
-        return
-    }
-    val openArtist = artistTarget
-    if (openArtist != null) {
-        ArtistDetailPage(
-            source = openArtist.source,
-            artist = openArtist,
-            onBack = { artistTarget = null },
-            onOpenPlayer = onOpenPlayer,
-        )
-        return
-    }
-
     val searchContent: @Composable (Modifier) -> Unit = { contentModifier ->
         Column(contentModifier) {
             Row(
@@ -325,7 +298,7 @@ fun SearchPage(
                             reachedEnd = reachedEnd,
                             showSource = source == "all",
                             onEndReached = { loadMore() },
-                            onOpen = { detailTarget = it },
+                            onOpen = { onOpenSonglist(it.source, it.id, it.name) },
                         )
                     }
                 }
@@ -343,7 +316,7 @@ fun SearchPage(
                             reachedEnd = reachedEnd,
                             showSource = source == "all",
                             onEndReached = { loadMore() },
-                            onOpen = { albumTarget = it },
+                            onOpen = onOpenAlbum,
                         )
                     }
                 }
@@ -361,7 +334,7 @@ fun SearchPage(
                             reachedEnd = reachedEnd,
                             showSource = source == "all",
                             onEndReached = { loadMore() },
-                            onOpen = { artistTarget = it },
+                            onOpen = onOpenArtist,
                         )
                     }
                 }

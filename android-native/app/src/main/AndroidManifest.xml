@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- 桌面歌词浮窗的前台身份（w3-A 任务 5 建议 2）：specialUse 类型 + 用途属性 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
@@ -54,9 +56,17 @@
             </intent-filter>
         </service>
 
+        <!-- 桌面歌词浮窗：specialUse 前台服务（用途 = 展示正在播放歌曲的桌面歌词）。
+             不用 mediaPlayback：本服务不持有播放器，只有浮窗身份；
+             不用 dataSync：Android 15 起有 6 小时运行上限，mediaPlayback 无限时。 -->
         <service
             android:name=".lyric.DesktopLyricService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Desktop lyric overlay for the currently playing track" />
+        </service>
 
         <!-- W5-11 分享不落相册：分享卡先写 cacheDir/share_cache，经 FileProvider 以 content:// 分享。
              只暴露 cache 子目录（外部拿不到别的路径）；保存到相册仍走 MediaStore。 -->

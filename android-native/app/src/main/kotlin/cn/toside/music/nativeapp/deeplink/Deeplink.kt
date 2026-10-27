@@ -65,16 +65,47 @@ sealed interface DeeplinkCommand {
         val action: PlayerActionKind,
     ) : DeeplinkCommand
 
-    /** 文件打开（`file://` / `content://`）：本波只认 json 与 lxmc。 */
+    /**
+     * `music/searchPlay`：按「歌名 / 歌手」跨源搜一首再播（RN `handleSearchPlayMusic`）。
+     *
+     * 与 `music/play` 的区别：`play` 自带完整音源信息直接可播，这里只有元信息，
+     * 需要先走跨源搜索（Wave6 Lane B 落的能力），搜不到就什么都不做（RN 同）。
+     */
+    data class SearchPlay(
+        val name: String,
+        val singer: String,
+        val albumName: String,
+        val interval: String?,
+        val playLater: Boolean,
+    ) : DeeplinkCommand
+
+    /** 文件打开（`file://` / `content://`）：json/lxmc 走列表导入，js 走音源，音频走试听列表。 */
     data class OpenFile(
         val uri: String,
         val extension: String,
+        val kind: FileKind,
     ) : DeeplinkCommand
 
     /** 解析失败；[reason] 直接拼进 RN 的 `deep_link__handle_error_tip`。 */
     data class Invalid(
         val reason: String,
     ) : DeeplinkCommand
+}
+
+/**
+ * 文件打开的三种落点（对照 RN `fileAction.ts#handleFileAction` 的 switch）：
+ *
+ * - [LIST_BACKUP]：`json` / `lxmc` → `handleFileLXMCAction`（确认后导入列表备份）；
+ * - [USER_API_SCRIPT]：`js` → `handleFileJSAction`（确认后导入自定义音源）；
+ * - [AUDIO]：`ogg` / `flac` / `wav` / `mp3` → `handleFileMusicAction`（不确认，直接进试听列表起播）。
+ *
+ * RN 的 default 分支还会按 `mimeType.startsWith('audio/')` 兜底，SAF 侧拿不到稳定 mime，
+ * 所以这里只认扩展名白名单（与 RN 四个 case 逐字一致）。
+ */
+enum class FileKind {
+    LIST_BACKUP,
+    USER_API_SCRIPT,
+    AUDIO,
 }
 
 /**
@@ -97,8 +128,11 @@ object DeeplinkParser {
     /** RN `deeplink/utils.js#sources`。 */
     private val ONLINE_SOURCES = setOf("kw", "kg", "tx", "wy", "mg")
 
-    /** 本波支持的文件类型；`js` 音源与音频文件留 Wave6（见 lane 报告）。 */
-    private val SUPPORTED_FILE_EXTENSIONS = setOf("json", "lxmc")
+    /** RN `handleFileAction` 认的七种扩展名（见 [FileKind]）。 */
+    private val SUPPORTED_FILE_EXTENSIONS = setOf("json", "lxmc", "js", "ogg", "flac", "wav", "mp3")
+
+    /** RN `handleSearchPlayMusic` 拆「歌名 - 歌手」的分隔符。 */
+    private const val ARTIST_SEPARATOR = "-"
 
     private const val MAX_NAME = 200
     private const val MAX_SINGER = 200
@@ -127,10 +161,21 @@ object DeeplinkParser {
         if (extension !in SUPPORTED_FILE_EXTENSIONS) {
             return DeeplinkCommand.Invalid("暂不支持打开 .$extension 文件")
         }
-        return DeeplinkCommand.OpenFile(link, extension)
+        return DeeplinkCommand.OpenFile(link, extension, fileKindOf(extension))
     }
 
-    private fun parseDeepLink(link: String): DeeplinkCommand {
+    /**
+     * 扩展名 → 落点。白名单之外返回 [FileKind.AUDIO] 是**不可能**的（调用前已过滤），
+     * 这里让 `else` 落在 AUDIO 上只为让 `when` 穷尽，避免悄悄丢命令。
+     */
+    fun fileKindOf(extension: String): FileKind =
+        when (extension.lowercase()) {
+            "json", "lxmc" -> FileKind.LIST_BACKUP
+            "js" -> FileKind.USER_API_SCRIPT
+            else -> FileKind.AUDIO
+        }
+
+    private fun parseDeepLink(link: String): DeeplinkCommand? {
         val urlPart = link.substringBefore('?')
         val queryPart = link.substringAfter('?', "")
         val segments = urlPart.removePrefix(SCHEME).split('/')
@@ -182,12 +227,59 @@ object DeeplinkParser {
         action: String,
         paths: List<String>,
         query: Map<String, String>,
+    ): DeeplinkCommand? =
+        when (action) {
+            "play" -> parseMusicPlay(paths, query)
+            "searchPlay" -> parseSearchPlay(paths, query)
+            else -> DeeplinkCommand.Invalid("Unknown action: $action")
+        }
+
+    private fun parseMusicPlay(
+        paths: List<String>,
+        query: Map<String, String>,
     ): DeeplinkCommand {
-        // music/searchPlay 需要跨源搜索（Lane A/搜索通道），本波只做 music/play
-        if (action != "play") return DeeplinkCommand.Invalid("Unknown action: $action")
         val data = query["data"]?.let { parseData(it) } ?: return DeeplinkCommand.Invalid("data missing")
         val musicInfo = buildMusicInfo(data, paths) ?: return DeeplinkCommand.Invalid("data invalid")
         return DeeplinkCommand.MusicPlay(musicInfo, data.bool("playLater"))
+    }
+
+    /**
+     * RN `handleSearchPlayMusic`：
+     *
+     * - 有 paths → 取 `paths[0]`，按第一个 `-` 拆成「歌名 - 歌手」（只取前两段，第三段起丢弃）；
+     *   没有 paths → 整个 `data` 当 info；
+     * - `verifyInfo` 的五项 `dataVerify`：**类型不符与超长都会抛**，所以这里照样报 Invalid；
+     * - `if (!info.name) return` —— 空歌名是**静默返回**，不是报错，故这里返回 null
+     *   （[parse] 返回 null = 不是本应用能处理的链接，RN 同样什么都不做）。
+     */
+    private fun parseSearchPlay(
+        paths: List<String>,
+        query: Map<String, String>,
+    ): DeeplinkCommand? {
+        val data = query["data"]?.let { parseData(it) }
+        val (name, singer) =
+            if (paths.isNotEmpty()) {
+                val raw = paths[0].trim()
+                if (raw.contains(ARTIST_SEPARATOR)) {
+                    val parts = raw.split(ARTIST_SEPARATOR).map { it.trim() }
+                    parts.getOrElse(0) { "" } to parts.getOrElse(1) { "" }
+                } else {
+                    raw to ""
+                }
+            } else {
+                if (data == null) return DeeplinkCommand.Invalid("data missing")
+                data.str("name").orEmpty() to data.str("singer").orEmpty()
+            }
+        if (name.isEmpty()) return null
+        if (name.length > MAX_NAME) return DeeplinkCommand.Invalid("name max length no match")
+        if (singer.length > MAX_SINGER) return DeeplinkCommand.Invalid("singer max length no match")
+        val albumName = data?.str("albumName").orEmpty()
+        if (albumName.length > MAX_ALBUM) return DeeplinkCommand.Invalid("albumName max length no match")
+        val interval = data?.str("interval")?.takeIf { it.isNotEmpty() }
+        if (interval != null && interval.length > MAX_INTERVAL) {
+            return DeeplinkCommand.Invalid("interval max length no match")
+        }
+        return DeeplinkCommand.SearchPlay(name, singer, albumName, interval, data?.bool("playLater") ?: false)
     }
 
     private fun parsePlayer(action: String): DeeplinkCommand {

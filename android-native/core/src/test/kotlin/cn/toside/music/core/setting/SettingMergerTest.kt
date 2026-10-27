@@ -12,8 +12,9 @@ class SettingMergerTest {
     @Test
     fun defaultSettingTableComplete() {
         val d = DefaultSetting.base
-        // RN defaultSetting.ts 的键数（version + 全部配置键）
-        assertEquals(80, d.size)
+        // RN defaultSetting.ts 的键数（version + 全部配置键）；
+        // W7 Lane C 表尾追加 2 个桌面歌词开关（RN 没有的键），80 + 2 = 82
+        assertEquals(82, d.size)
         assertEquals("2.2", d["version"])
         assertEquals(DefaultSetting.DEFAULT_BUILTIN_API_SOURCE_ID, d["common.apiSource"])
         assertEquals("cyan", d["theme.id"])
