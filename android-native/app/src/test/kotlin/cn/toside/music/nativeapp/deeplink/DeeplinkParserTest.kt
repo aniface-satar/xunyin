@@ -251,6 +251,58 @@ class DeeplinkParserTest {
         assertNull(DeeplinkParser.parse(null))
     }
 
+    // ---------- W8-C 任务 6：五源歌单网页 http(s) 直达 ----------
+
+    @Test
+    fun `https songlist links resolve for all five sources`() {
+        // 各源用户分享页形态（对照各源 normalizeId 的链接规则）
+        val cases =
+            mapOf(
+                "kw" to "https://www.kuwo.cn/playlist_detail/6597544",
+                "kg" to "https://www.kugou.com/yy/special/single/12345.html",
+                "tx" to "https://y.qq.com/n/ryqq/playlist/8682232291",
+                "wy" to "https://music.163.com/playlist?id=24381616",
+                "mg" to "https://music.migu.cn/v3/music/playlist/183033588",
+            )
+        cases.forEach { (source, url) ->
+            val command = songlist(DeeplinkParser.parse(url))
+            assertEquals(source, command.source)
+            assertTrue("id expected for $url", !command.id.isNullOrEmpty())
+            assertNull(command.url)
+            assertNull(command.index)
+        }
+    }
+
+    @Test
+    fun `https wy playlist with hash fragment resolves`() {
+        // 网易云常见的 #/playlist?id= 形态
+        val command = songlist(DeeplinkParser.parse("https://music.163.com/#/playlist?id=24381616"))
+        assertEquals("wy", command.source)
+        assertEquals("24381616", command.id)
+    }
+
+    @Test
+    fun `https links outside the host whitelist stay untouched`() {
+        // 白名单外：不是本应用的链接（浏览器自己开）
+        assertNull(DeeplinkParser.parse("https://www.kuwo.cn.evil.example/playlist_detail/1"))
+        assertNull(DeeplinkParser.parse("https://y.qq.com.evil.example/n/ryqq/playlist/1"))
+        assertNull(DeeplinkParser.parse("https://api.music.163.com/playlist?id=1"))
+    }
+
+    @Test
+    fun `https whitelisted host without playlist id stays untouched`() {
+        // host 命中但不是歌单页：解析不出 id，留给浏览器
+        assertNull(DeeplinkParser.parse("https://www.kuwo.cn/"))
+        assertNull(DeeplinkParser.parse("https://music.163.com/"))
+    }
+
+    @Test
+    fun `http scheme also resolves for whitelisted hosts`() {
+        val command = songlist(DeeplinkParser.parse("http://www.kuwo.cn/playlist_detail/6597544"))
+        assertEquals("kw", command.source)
+        assertEquals("6597544", command.id)
+    }
+
     @Test
     fun `percent decoding keeps plus sign`() {
         // decodeURIComponent 不把 + 当空格，URLDecoder 默认会——解析器要对齐前者

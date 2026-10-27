@@ -10,7 +10,8 @@ import org.junit.Test
  * 首页长按菜单的可用性规则（对照 RN `MyList/ListMenu.tsx#handleSetMenu`）。
  *
  * RN 原文：`rename/remove` 只在非 default/love 时可用；`sync` 还要 `userList.source`
- * 且有 `songList` 能力；`local_file` 与 `sync` 都受 `fetchingListStatus` 影响。
+ * 且有 `songList` 能力（原生另要求 `sourceListId`，缺元数据的老歌单置灰）；
+ * `local_file` 与 `sync` 都受 `fetchingListStatus` 影响。
  */
 class ListMenuRulesTest {
     private fun entries(state: ListMenuState): Map<ListMenuAction, Boolean> =
@@ -85,10 +86,10 @@ class ListMenuRulesTest {
     }
 
     @Test
-    fun `sync needs user list source and implementation`() {
+    fun `sync needs user list source metadata and implementation`() {
         assertFalse(entries(ListMenuState(StorageKeys.ListIds.DEFAULT, isUserList = false)).getValue(ListMenuAction.SYNC))
         assertFalse(
-            entries(ListMenuState("userlist_1", isUserList = true, source = "kw"))
+            entries(ListMenuState("userlist_1", isUserList = true, source = "kw", sourceListId = "123"))
                 .getValue(ListMenuAction.SYNC),
         )
         assertFalse(
@@ -101,12 +102,37 @@ class ListMenuRulesTest {
                 ),
             ).getValue(ListMenuAction.SYNC),
         )
+        // 存量老歌单只有 source、没有 sourceListId：保持置灰（RN 同步执行也会早退）
+        assertFalse(
+            entries(
+                ListMenuState(
+                    "userlist_1",
+                    isUserList = true,
+                    source = "kw",
+                    sourceListId = null,
+                    syncSupported = true,
+                ),
+            ).getValue(ListMenuAction.SYNC),
+        )
+        // 源不支持在线歌单（如本地列表残留 source）
+        assertFalse(
+            entries(
+                ListMenuState(
+                    "userlist_1",
+                    isUserList = true,
+                    source = "local",
+                    sourceListId = "123",
+                    syncSupported = false,
+                ),
+            ).getValue(ListMenuAction.SYNC),
+        )
         assertTrue(
             entries(
                 ListMenuState(
                     "userlist_1",
                     isUserList = true,
                     source = "kw",
+                    sourceListId = "123",
                     syncSupported = true,
                 ),
             ).getValue(ListMenuAction.SYNC),
@@ -115,9 +141,11 @@ class ListMenuRulesTest {
 
     @Test
     fun `syncable source follows rn user list source check`() {
-        assertTrue(ListMenuRules.hasSyncableSource(isUserList = true, source = "kw"))
-        assertFalse(ListMenuRules.hasSyncableSource(isUserList = false, source = "kw"))
-        assertFalse(ListMenuRules.hasSyncableSource(isUserList = true, source = null))
-        assertFalse(ListMenuRules.hasSyncableSource(isUserList = true, source = ""))
+        assertTrue(ListMenuRules.hasSyncableSource(isUserList = true, source = "kw", sourceListId = "123"))
+        assertFalse(ListMenuRules.hasSyncableSource(isUserList = false, source = "kw", sourceListId = "123"))
+        assertFalse(ListMenuRules.hasSyncableSource(isUserList = true, source = null, sourceListId = "123"))
+        assertFalse(ListMenuRules.hasSyncableSource(isUserList = true, source = "", sourceListId = "123"))
+        assertFalse(ListMenuRules.hasSyncableSource(isUserList = true, source = "kw", sourceListId = null))
+        assertFalse(ListMenuRules.hasSyncableSource(isUserList = true, source = "kw", sourceListId = ""))
     }
 }

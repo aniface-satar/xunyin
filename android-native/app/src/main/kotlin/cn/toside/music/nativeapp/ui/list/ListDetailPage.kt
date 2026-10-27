@@ -1,6 +1,5 @@
 package cn.toside.music.nativeapp.ui.list
 
-import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,8 +53,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import cn.toside.music.core.backup.BackupManager
-import cn.toside.music.core.list.MusicSort
 import cn.toside.music.core.list.MusicSortId
+import cn.toside.music.core.player.TogglePlayMethod
 import cn.toside.music.core.storage.StorageKeys
 import cn.toside.music.nativeapp.data.LocalMusicRuntime
 import cn.toside.music.nativeapp.player.PlayerRuntime
@@ -64,13 +63,11 @@ import com.moriafly.salt.ui.Button
 import com.moriafly.salt.ui.ButtonAppearance
 import com.moriafly.salt.ui.Item
 import com.moriafly.salt.ui.ItemArrowType
-import com.moriafly.salt.ui.ItemCheck
 import com.moriafly.salt.ui.SaltTheme
 import com.moriafly.salt.ui.Text
 import com.moriafly.salt.ui.UnstableSaltUiApi
 import com.moriafly.salt.ui.dialog.BasicDialog
 import com.moriafly.salt.ui.dialog.DialogTitle
-import com.moriafly.salt.ui.dialog.InputDialog
 import com.moriafly.salt.ui.dialog.YesNoDialog
 import com.moriafly.salt.ui.screen.BasicScreen
 import kotlinx.coroutines.CompletableDeferred
@@ -78,27 +75,12 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import java.util.Locale
-
-/** 排序档位与文案（对照 RN MyList/ListMusicSort.tsx + zh-cn.json#list_sort_option_*）。 */
-private val SORT_OPTIONS =
-    listOf(
-        "name" to "标题",
-        "album" to "专辑（音轨）",
-        "duration_up" to "时长（短→长）",
-        "duration_down" to "时长（长→短）",
-        "add_time_up" to "添加时间",
-        "add_time_down" to "添加时间降序",
-        "singer" to "歌手",
-        "year" to "年份",
-        "play_count" to "播放次数",
-    )
 
 /**
  * 歌单详情页（B5 第一、三、五、七切片）—— 读取 ListStore 的列表歌曲、整表播放与编辑。
  *
  * 用户歌单支持重命名/清空/删除；任意列表支持单曲移除、多选批量删除/移动到其他列表、
- * 拖拽排序，以及 9 档规则排序（自定义排序与多选互斥）。
+ * 拖拽排序、随机播放、整单收藏到爱心，以及 9 档规则排序（自定义排序与多选互斥）。
  * 变更后同步随机队列（`PlayerCore.handleListMusicsUpdated`）。
  */
 @OptIn(UnstableSaltUiApi::class)
@@ -120,7 +102,6 @@ fun ListDetailPage(
     var items by remember(listId) { mutableStateOf<List<JsonObject>>(emptyList()) }
     var displayTitle by remember(listId) { mutableStateOf(title) }
     var renameVisible by remember { mutableStateOf(false) }
-    var renameName by remember { mutableStateOf("") }
     var clearVisible by remember { mutableStateOf(false) }
     var deleteVisible by remember { mutableStateOf(false) }
     var editMode by remember(listId) { mutableStateOf(false) }
@@ -137,7 +118,6 @@ fun ListDetailPage(
     var lastSortKey by remember { mutableStateOf<String?>(null) }
     var duplicateVisible by remember(listId) { mutableStateOf(false) }
     var exportHintVisible by remember { mutableStateOf(false) }
-    var importing by remember { mutableStateOf(false) }
     // 本地曲库导入（Wave5 Lane B）
     var localImportVisible by remember { mutableStateOf(false) }
     var localImportTitle by remember { mutableStateOf("") }
@@ -153,133 +133,46 @@ fun ListDetailPage(
     var pendingConfirm by remember {
         mutableStateOf<Pair<LocalMusicRuntime.FallbackConfirmRequest, CompletableDeferred<JsonObject?>>?>(null)
     }
-    var importConflict by remember { mutableStateOf<ImportPartConflict?>(null) }
-    var fullImportConfirm by remember { mutableStateOf<PendingImport?>(null) }
     val backup = remember { BackupManager(runtime.lists.store) }
 
     LaunchedEffect(listId) { items = runtime.lists.musics(listId) }
 
     fun toast(message: String) = Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 
-    /** 本地是否已有同 id 列表（含内置列表）；返回其展示名供冲突弹窗使用。 */
-    fun localListName(id: String): String? =
-        when (id) {
-            StorageKeys.ListIds.DEFAULT -> "试听列表"
-            StorageKeys.ListIds.LOVE -> "我的收藏"
-            else -> {
-                val store = runtime.lists.store.state.value
-                val found = store.userLists.firstOrNull { it.id == id }
-                found?.name
-            }
-        }
-
-    /** 执行导入：单列表按冲突策略落库，整表备份覆盖全部列表（RN importPlayList）。 */
-    fun runImport(
-        pending: PendingImport,
-        mode: BackupManager.PartConflictMode,
-    ) {
-        scope.launch {
-            importing = true
-            val result =
-                if (pending.plainJson) {
-                    backup.importJson(pending.bytes.toString(Charsets.UTF_8), mode)
-                } else {
-                    backup.import(pending.bytes, mode)
-                }
-            importing = false
-            when (result) {
-                is BackupManager.ImportResult.PartImported -> {
-                    toast("导入成功🎉")
-                    runtime.core.handleListMusicsUpdated(listOf(result.listInfo.id))
-                    if (result.listInfo.id == listId) items = runtime.lists.musics(listId)
-                }
-                BackupManager.ImportResult.FullImported -> {
-                    toast("导入成功🎉")
-                    val userLists = runtime.lists.store.state.value.userLists
-                    val affectedIds =
-                        buildList {
-                            add(StorageKeys.ListIds.DEFAULT)
-                            add(StorageKeys.ListIds.LOVE)
-                            userLists.forEach { add(it.id) }
-                            add(listId)
-                        }
-                    runtime.core.handleListMusicsUpdated(affectedIds)
-                    val stillExists =
-                        listId == StorageKeys.ListIds.DEFAULT ||
-                            listId == StorageKeys.ListIds.LOVE ||
-                            userLists.any { it.id == listId }
-                    if (stillExists) items = runtime.lists.musics(listId) else onBack()
-                }
-                is BackupManager.ImportResult.Unsupported -> toast("未知的文件类型，请尝试升级到最新版本后再试")
-                BackupManager.ImportResult.ParseError -> toast("列表导入失败😕")
-            }
-        }
-    }
-
-    /** 读入 SAF 选中文件：单列表文件先判冲突，其余按整表备份二次确认（RN importPlayList）。 */
-    fun startImport(uri: Uri) {
-        val displayName = SafDocuments.displayName(context, uri)
-        if (!SafDocuments.isSupportedImport(displayName)) {
-            toast("未知的文件类型，请尝试升级到最新版本后再试")
-            return
-        }
-        scope.launch {
-            importing = true
-            val bytes =
-                SafDocuments.readBytes(context, uri).getOrElse {
-                    importing = false
-                    toast("列表导入失败😕")
-                    return@launch
-                }
-            val pending = PendingImport(bytes, SafDocuments.isPlainJson(displayName))
-            val preview =
-                if (pending.plainJson) {
-                    backup.previewJson(bytes.toString(Charsets.UTF_8))
-                } else {
-                    backup.preview(bytes)
-                }
-            importing = false
-            if (preview == null) {
-                toast("列表导入失败😕")
-                return@launch
-            }
-            if (preview.type == "playListPart" || preview.type == "playListPart_v2") {
-                val partId = preview.partId
-                if (partId == null) {
-                    toast("列表导入失败😕")
-                    return@launch
-                }
-                val localName = localListName(partId)
-                if (localName != null) {
-                    importConflict = ImportPartConflict(pending, preview.partName.orEmpty(), localName)
-                } else {
-                    runImport(pending, BackupManager.PartConflictMode.RENAME_COPY)
-                }
-            } else {
-                fullImportConfirm = pending
-            }
-        }
-    }
-
-    val importLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) startImport(uri)
-        }
-    val exportLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-            if (uri == null) return@rememberLauncherForActivityResult
-            scope.launch {
-                val bytes =
-                    runCatching { backup.exportSingleList(listId, displayTitle) }.getOrElse {
-                        toast("歌单导出失败: ${it.message.orEmpty()}")
-                        return@launch
+    // 导入流程（W5-9 与首页长按菜单共用同一套读取/预览/冲突/落库实现）
+    val importFlow =
+        rememberListImportFlow(
+            runtime = runtime,
+            backup = backup,
+            toast = ::toast,
+            onImported = { result ->
+                when (result) {
+                    is BackupManager.ImportResult.PartImported -> {
+                        runtime.core.handleListMusicsUpdated(listOf(result.listInfo.id))
+                        if (result.listInfo.id == listId) items = runtime.lists.musics(listId)
                     }
-                SafDocuments
-                    .writeBytes(context, uri, bytes)
-                    .onSuccess { toast("导出成功") }
-                    .onFailure { toast("歌单导出失败: ${it.message.orEmpty()}") }
-            }
-        }
+                    BackupManager.ImportResult.FullImported -> {
+                        val userLists = runtime.lists.store.state.value.userLists
+                        val affectedIds =
+                            buildList {
+                                add(StorageKeys.ListIds.DEFAULT)
+                                add(StorageKeys.ListIds.LOVE)
+                                userLists.forEach { add(it.id) }
+                                add(listId)
+                            }
+                        runtime.core.handleListMusicsUpdated(affectedIds)
+                        val stillExists =
+                            listId == StorageKeys.ListIds.DEFAULT ||
+                                listId == StorageKeys.ListIds.LOVE ||
+                                userLists.any { it.id == listId }
+                        if (stillExists) items = runtime.lists.musics(listId) else onBack()
+                    }
+                    else -> Unit
+                }
+            },
+        )
+    val importAction = rememberListImportAction { importFlow.start(it) }
+    val exportAction = rememberListExportAction(backup, listId, displayTitle, ::toast)
 
     /**
      * 本地曲库：目录树选择器。拿到的授权必须立刻持久化，
@@ -351,31 +244,46 @@ fun ListDetailPage(
         }
     }
 
-    /**
-     * 排序语言：优先设置里的 common.langId（RN global.i18n.locale），
-     * 未设置时退回系统语言；下划线形式由 [MusicSort] 归一化。
-     */
-    fun sortLocaleId(): String =
-        runtime.settings.store
-            .string("common.langId")
-            .ifEmpty { Locale.getDefault().toLanguageTag() }
-
     /** 应用普通排序档位：整表按规则重排后走既有 listMusicUpdatePosition 落库。 */
     fun applySort(key: String) {
         val sortId = MusicSortId.fromKey(key) ?: return
         lastSortKey = key
         sortVisible = false
         scope.launch {
-            val current = runtime.lists.musics(listId)
-            // add_time / play_count 在原生侧暂无读写者，取值恒 0（见车道报告数据缺口）。
-            val sorted = MusicSort.sort(current, sortId, sortLocaleId())
-            runtime.lists.store.listMusicUpdatePosition(
-                listId,
-                0,
-                sorted.mapNotNull { it.text("id") },
-            )
-            runtime.core.handleListMusicsUpdated(listOf(listId))
+            applyListSort(runtime, listId, sortId, listSortLocaleId(runtime))
             items = runtime.lists.musics(listId)
+        }
+    }
+
+    /** 随机播放：先切随机模式，再从随机一首起播；随机队列由 PlayerCore 按当前歌单重建。 */
+    fun playRandom() {
+        val start = items.randomOrNull() ?: return
+        scope.launch {
+            runtime.core.setPlayMethod(TogglePlayMethod.RANDOM)
+            runtime.core.playListById(listId, start.text("id").orEmpty())
+            onOpenPlayer()
+        }
+    }
+
+    /** 收藏全部：整单加入爱心；跳过数量先按 listMusicAdd 的同口径去重预演。 */
+    fun collectAll() {
+        if (listId == StorageKeys.ListIds.LOVE || items.isEmpty()) return
+        val current = items
+        scope.launch {
+            val plan = ListBatch.planCollect(runtime.lists.musics(StorageKeys.ListIds.LOVE), current)
+            if (plan.toAdd.isEmpty()) {
+                toast("这些歌曲都已经在我的收藏里了")
+                return@launch
+            }
+            runtime.lists.store.listMusicAdd(StorageKeys.ListIds.LOVE, plan.toAdd, addLocation())
+            runtime.core.handleListMusicsUpdated(listOf(StorageKeys.ListIds.LOVE))
+            toast(
+                if (plan.skipped > 0) {
+                    "已收藏 ${plan.toAdd.size} 首，跳过 ${plan.skipped} 首重复"
+                } else {
+                    "已收藏 ${plan.toAdd.size} 首"
+                },
+            )
         }
     }
 
@@ -419,10 +327,7 @@ fun ListDetailPage(
                     }
                 } else {
                     if (userList != null) {
-                        ActionText("重命名") {
-                            renameName = userList.name
-                            renameVisible = true
-                        }
+                        ActionText("重命名") { renameVisible = true }
                     }
                     ActionText("清空") { clearVisible = true }
                     if (userList != null) {
@@ -437,8 +342,8 @@ fun ListDetailPage(
                         sortVisible = true
                     }
                     ActionText("去重") { duplicateVisible = true }
-                    ActionText("导入", enabled = !importing) {
-                        importLauncher.launch(arrayOf("*/*"))
+                    ActionText("导入", enabled = !importFlow.importing) {
+                        importAction()
                     }
                     ActionText("导出") { exportHintVisible = true }
                     ActionText("本地文件", enabled = localImportingListId == null) {
@@ -460,6 +365,27 @@ fun ListDetailPage(
                 enabled = playable,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = { playRandom() },
+                    text = "随机播放",
+                    enabled = playable,
+                    appearance = ButtonAppearance.Subtle,
+                    modifier = Modifier.weight(1f),
+                )
+                if (listId != StorageKeys.ListIds.LOVE) {
+                    Button(
+                        onClick = { collectAll() },
+                        text = "收藏全部",
+                        enabled = playable,
+                        appearance = ButtonAppearance.Subtle,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
             if (editMode) {
                 Text(
                     text = "已选 ${selectedIds.size} 首",
@@ -597,72 +523,38 @@ fun ListDetailPage(
             }
             if (sortVisible) {
                 // 对照 RN MyList/ListMusicSort.tsx：单选档位 + 自定义排序，确认后才生效。
-                BasicDialog(onDismissRequest = { sortVisible = false }) {
-                    DialogTitle(text = displayTitle)
-                    Column(
-                        Modifier
-                            .heightIn(max = 360.dp)
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        SORT_OPTIONS.forEach { (key, label) ->
-                            ItemCheck(
-                                state = sortSelection == key,
-                                onChange = { checked -> if (checked) sortSelection = key },
-                                text = label,
-                            )
+                ListSortDialog(
+                    title = displayTitle,
+                    selection = sortSelection,
+                    onSelect = { sortSelection = it },
+                    onDismiss = { sortVisible = false },
+                    onConfirm = {
+                        when (val key = sortSelection) {
+                            null -> Unit
+                            "custom" -> {
+                                sortVisible = false
+                                editMode = false
+                                selectedIds = emptySet()
+                                customSortMode = true
+                            }
+                            else -> applySort(key)
                         }
-                        ItemCheck(
-                            state = sortSelection == "custom",
-                            onChange = { checked -> if (checked) sortSelection = "custom" },
-                            text = "自定义排序",
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { sortVisible = false },
-                            text = "取消",
-                            appearance = ButtonAppearance.Subtle,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Button(
-                            onClick = {
-                                when (val key = sortSelection) {
-                                    null -> Unit
-                                    "custom" -> {
-                                        sortVisible = false
-                                        editMode = false
-                                        selectedIds = emptySet()
-                                        customSortMode = true
-                                    }
-                                    else -> applySort(key)
-                                }
-                            },
-                            text = "确定",
-                            enabled = sortSelection != null,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
+                    },
+                )
             }
             if (renameVisible) {
-                InputDialog(
-                    onDismissRequest = { renameVisible = false },
-                    onConfirm = {
-                        val normalized = runtime.lists.store.normalizeListName(renameName)
-                        if (normalized.isNotEmpty()) {
-                            renameVisible = false
-                            scope.launch {
-                                if (runtime.lists.store.renameUserList(listId, normalized)) {
-                                    displayTitle = normalized
-                                }
+                ListRenameDialog(
+                    initialName = userList?.name.orEmpty(),
+                    normalize = runtime.lists.store::normalizeListName,
+                    onDismiss = { renameVisible = false },
+                    onConfirm = { name ->
+                        renameVisible = false
+                        scope.launch {
+                            if (runtime.lists.store.renameUserList(listId, name)) {
+                                displayTitle = name
                             }
                         }
                     },
-                    onChange = { renameName = it },
-                    title = "重命名列表",
-                    text = renameName,
-                    cancelText = "取消",
-                    confirmText = "确定",
                 )
             }
             if (clearVisible) {
@@ -754,7 +646,7 @@ fun ListDetailPage(
                 DuplicateMusicDialog(
                     title = displayTitle,
                     items = items,
-                    localeId = sortLocaleId(),
+                    localeId = listSortLocaleId(runtime),
                     onDismiss = { duplicateVisible = false },
                     onPlay = { musicId ->
                         scope.launch {
@@ -773,48 +665,21 @@ fun ListDetailPage(
                 )
             }
             if (exportHintVisible) {
-                val fileName = SafDocuments.exportFileName(displayTitle)
-                YesNoDialog(
-                    onDismissRequest = { exportHintVisible = false },
-                    onConfirm = {
+                ListExportHintDialog(
+                    title = displayTitle,
+                    onDismiss = { exportHintVisible = false },
+                    onPickLocation = {
                         exportHintVisible = false
-                        exportLauncher.launch(fileName)
+                        exportAction(SafDocuments.exportFileName(displayTitle))
                     },
-                    title = "导出列表",
-                    content =
-                        "将把「$displayTitle」保存为 $fileName。\n" +
-                            "若所选位置已有同名文件，系统会自动改名并追加「(1)」，不会覆盖原文件。",
-                    cancelText = "取消",
-                    confirmText = "选择保存位置",
                 )
             }
-            importConflict?.let { conflict ->
-                BasicDialog(onDismissRequest = { importConflict = null }) {
-                    DialogTitle(text = "导入列表")
-                    Text(
-                        text = "导入的列表「${conflict.importName}」与本地列表「${conflict.localName}」的 ID 相同，是否覆盖本地列表？",
-                        color = SaltTheme.colors.text,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                importConflict = null
-                                runImport(conflict.pending, BackupManager.PartConflictMode.RENAME_COPY)
-                            },
-                            text = "不要啊",
-                            appearance = ButtonAppearance.Subtle,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Button(
-                            onClick = {
-                                importConflict = null
-                                runImport(conflict.pending, BackupManager.PartConflictMode.OVERWRITE)
-                            },
-                            text = "覆盖掉",
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
+            importFlow.conflict?.let { conflict ->
+                ListImportConflictDialog(
+                    conflict = conflict,
+                    onDismiss = importFlow.dismissConflict,
+                    onChoose = importFlow.resolveConflict,
+                )
             }
             pendingConfirm?.let { (request, deferred) ->
                 // 同名不同歌手 / 本地标签没歌手时让用户自己挑（RN 静默，这里是增强）
@@ -911,37 +776,15 @@ fun ListDetailPage(
                     onRelink = { LocalMusicRuntime.relink(context, listId) },
                 )
             }
-            fullImportConfirm?.let { pending ->
-                YesNoDialog(
-                    onDismissRequest = { fullImportConfirm = null },
-                    onConfirm = {
-                        fullImportConfirm = null
-                        runImport(pending, BackupManager.PartConflictMode.RENAME_COPY)
-                    },
-                    title = "导入列表",
-                    content =
-                        "备份文件中列表与现有列表 ID 相同时，现有列表内歌曲将被覆盖，是否继续？\n" +
-                            "若你不确定后果，建议先备份现有列表再来继续！",
-                    cancelText = "我不",
-                    confirmText = "是的",
+            importFlow.fullConfirm?.let {
+                ListFullImportConfirmDialog(
+                    onDismiss = importFlow.dismissFull,
+                    onConfirm = importFlow.confirmFull,
                 )
             }
         }
     }
 }
-
-/** SAF 读到的待导入文件；plainJson 决定走 `importJson` 还是 gzip 解包路径（RN 按扩展名分流）。 */
-private data class PendingImport(
-    val bytes: ByteArray,
-    val plainJson: Boolean,
-)
-
-/** 单列表导入冲突信息（对照 RN handleImportListPart 的覆盖确认）。 */
-private data class ImportPartConflict(
-    val pending: PendingImport,
-    val importName: String,
-    val localName: String,
-)
 
 @Composable
 private fun MusicTitle(

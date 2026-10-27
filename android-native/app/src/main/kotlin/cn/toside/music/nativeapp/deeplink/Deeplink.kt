@@ -1,6 +1,7 @@
 package cn.toside.music.nativeapp.deeplink
 
 import cn.toside.music.core.music.MusicInfoTools
+import cn.toside.music.core.songlist.SonglistLinkParser
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -9,6 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import java.net.URI
 import java.net.URLDecoder
 
 /** 播放器动作（对照 RN `deeplink/playerAction.ts` 的 `PlayerAction`）。 */
@@ -128,6 +130,29 @@ object DeeplinkParser {
     /** RN `deeplink/utils.js#sources`。 */
     private val ONLINE_SOURCES = setOf("kw", "kg", "tx", "wy", "mg")
 
+    /**
+     * 五源歌单网页的 host 白名单（W8-C 任务 6：外部 https 链接直达歌单详情）。
+     *
+     * 域名按 `SonglistLinkParser` 实际能解析的网页形态列（用户分享出来的页面链接，
+     * 不是内部 API 域名）：
+     * - kw：`www.kuwo.cn/playlist_detail/<id>`
+     * - kg：`www.kugou.com/yy/special/single/<id>.html`
+     * - tx：`y.qq.com/.../playlist/<id>` 或 `...?id=<digits>`
+     * - wy：`music.163.com/playlist?id=<digits>`（含 `#/playlist?id=` 形态）
+     * - mg：`music.migu.cn/.../playlist/<id>` 或 `...?playlistId=<digits>`
+     *
+     * 移动端的二级域（`y.music.163.com` 等）链接形态另有约定，不在本白名单，
+     * 拿到这类链接走系统浏览器，不在本应用拦截（记 lane 报告遗留）。
+     */
+    private val SONG_LIST_HOSTS =
+        mapOf(
+            "www.kuwo.cn" to "kw",
+            "www.kugou.com" to "kg",
+            "y.qq.com" to "tx",
+            "music.163.com" to "wy",
+            "music.migu.cn" to "mg",
+        )
+
     /** RN `handleFileAction` 认的七种扩展名（见 [FileKind]）。 */
     private val SUPPORTED_FILE_EXTENSIONS = setOf("json", "lxmc", "js", "ogg", "flac", "wav", "mp3")
 
@@ -151,8 +176,27 @@ object DeeplinkParser {
             link.isEmpty() -> null
             link.startsWith(FILE_SCHEME) || link.startsWith(CONTENT_SCHEME) -> parseFile(link)
             link.startsWith(SCHEME) -> parseDeepLink(link)
+            link.startsWith("http://") || link.startsWith("https://") -> parseHttpSonglist(link)
             else -> null
         }
+    }
+
+    /**
+     * 外部 http(s) 歌单链接 → [DeeplinkCommand.SonglistPlay]。
+     *
+     * 不在白名单的 host 返回 null（不是本应用的链接，manifest 侧同样拦不到）；
+     * host 命中但解析不出 id 也返回 null（比如源官网的非歌单页面，让用户留在浏览器）。
+     */
+    private fun parseHttpSonglist(link: String): DeeplinkCommand? {
+        val host =
+            runCatching {
+                URI(link)
+                    .host
+                    ?.lowercase()
+            }.getOrNull() ?: return null
+        val source = SONG_LIST_HOSTS[host] ?: return null
+        val parsed = SonglistLinkParser.parse(link, source) ?: return null
+        return DeeplinkCommand.SonglistPlay(source = parsed.source, id = parsed.id, url = null, index = null)
     }
 
     private fun parseFile(link: String): DeeplinkCommand {

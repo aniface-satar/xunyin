@@ -27,7 +27,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 /**
  * 桌面歌词浮窗服务 —— 对照 RN `mobile/lyric/Lyric*.java` 的窗口部分。
@@ -213,8 +212,8 @@ class DesktopLyricService : Service() {
                     maxHeightPx = maxHeight,
                     widthPx = params.width,
                     heightPx = params.height,
-                    percentX = next.positionX.toDouble(),
-                    percentY = next.positionY.toDouble(),
+                    percentX = next.positionX,
+                    percentY = next.positionY,
                 )
             params.x = position.x
             params.y = position.y
@@ -255,8 +254,8 @@ class DesktopLyricService : Service() {
                 maxHeightPx = maxHeight,
                 widthPx = widthPx,
                 heightPx = heightPx,
-                percentX = config.positionX.toDouble(),
-                percentY = config.positionY.toDouble(),
+                percentX = config.positionX,
+                percentY = config.positionY,
             )
         val params =
             WindowManager.LayoutParams(
@@ -312,14 +311,12 @@ class DesktopLyricService : Service() {
     /**
      * 松手后把百分比写回设置。
      *
-     * **W7 写侧**：RN 写的是 `x / maxWidth * 100` 的浮点数（会出现 `33.5` 这种值），
+     * W7 写侧：RN 写的是 `x / maxWidth * 100` 的浮点数（会出现 `33.5` 这种值），
      * 这里同样写浮点（保留两位小数），与 RN 落盘形状对齐。
      *
-     * **兼容读的已知落差**：`SettingsStore.merge` 按默认值类型强转，而
-     * `desktopLyric.position.x/y` 的默认值仍是 Int 0（W3 没动这个契约，本波
-     * DefaultSetting 只允许表尾追加），所以进程内是 33.5、**重启后读回来是 33**。
-     * 读侧已经在 W3 通了（小数会截断而不是掉成 0），完整互通要把默认值改成 Double，
-     * 见 lane 报告遗留。
+     * W8 读侧（W7-1 收口）：字段与内存快照都保留小数，不再 `roundToInt` 回读；
+     * 重启后不再截断还依赖 Lane A 把 `desktopLyric.position.x/y` 默认值改成 `0.0`
+     * （Int 默认会在 `SettingsStore.merge` 时把 33.5 收窄成 33）——并流后全链路等值往返。
      */
     private fun savePosition(params: WindowManager.LayoutParams) {
         val config = config ?: return
@@ -327,8 +324,8 @@ class DesktopLyricService : Service() {
         val rawY = DesktopLyricLine.percentOf(params.y, maxHeight).coerceIn(0.0, 100.0)
         val x = DesktopLyricScrollMath.roundPercent(rawX)
         val y = DesktopLyricScrollMath.roundPercent(rawY)
-        if (x == config.positionX.toDouble() && y == config.positionY.toDouble()) return
-        this.config = config.copy(positionX = x.roundToInt(), positionY = y.roundToInt())
+        if (x == config.positionX && y == config.positionY) return
+        this.config = config.copy(positionX = x, positionY = y)
         scope.launch {
             settings.ensureLoaded()
             settings.store.set(DesktopLyricKeys.POSITION_X, x)

@@ -46,8 +46,15 @@ internal data class DesktopLyricConfig(
     /** `desktopLyric.style.lyricUnplayColor`：扩展行（译文/罗马音）的文字色，见 W7 语义修正。 */
     val unplayColor: Int,
     val shadowColor: Int,
-    val positionX: Int,
-    val positionY: Int,
+    /**
+     * `desktopLyric.position.x/y`：滑杆写出的百分比是浮点（会出现 33.5）。
+     *
+     * W7-1 读侧收口：默认值键表侧由 Lane A 改成 `0.0`（Int 默认会把小数截成整数），
+     * 这里字段改 `Double` + `double()` 读取——A 的改动并入后，写→读→重启全链路
+     * 小数等值往返，不再每次重启漂移。
+     */
+    val positionX: Double,
+    val positionY: Double,
     val textPositionX: String,
     val textPositionY: String,
 )
@@ -68,8 +75,8 @@ internal fun SettingsStore.desktopLyricConfig(): DesktopLyricConfig =
         playedColor = DesktopLyricColor.parse(string(DesktopLyricKeys.PLAYED_COLOR)),
         unplayColor = DesktopLyricColor.parse(string(DesktopLyricKeys.UNPLAY_COLOR)),
         shadowColor = DesktopLyricColor.parse(string(DesktopLyricKeys.SHADOW_COLOR)),
-        positionX = int(DesktopLyricKeys.POSITION_X),
-        positionY = int(DesktopLyricKeys.POSITION_Y),
+        positionX = double(DesktopLyricKeys.POSITION_X),
+        positionY = double(DesktopLyricKeys.POSITION_Y),
         textPositionX = string(DesktopLyricKeys.TEXT_POSITION_X),
         textPositionY = string(DesktopLyricKeys.TEXT_POSITION_Y),
     )
