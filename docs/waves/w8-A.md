@@ -7,16 +7,20 @@
 
 ## 0. 起草时点复核（2026-10-27，全部实测；协调会话投用前逐条重跑）
 
+> **协调会话复核（2026-10-27，HEAD `20811f9`）**：基线实测 core 1105 + app 147 = **1252**
+> 全绿、APK 29,263,058 B / sha256 `f4ebfdc6…`，与进度文档一致。下表已按复核结果修订
+> （#2/#3/#6/#8 有漂移）。
+
 | # | 事实 | 实证位置 |
 |:--:|:--|:--|
-| 1 | 主题三件套已有但未装配：17 内置主题 + 颜色生成器已移植且有黄金单测 | `core/theme/DefaultThemes.kt`（注释对照 RN `createThemes.js`）、`ThemeColors.kt`、`ColorUtils.kt`；`grep -rln theme app/ui/settings/ → 只命中 DesktopLyricSettingsSection.kt` |
-| 2 | 主题设置键已在表里（与 RN 同名） | `DefaultSetting.kt:89-97`：`theme.id/lightId/darkId/hideBgDark/fontShadow/dynamicBg/dynamicBgAlgorithm`；`:110` 有 `theme.id=happy_new_year` 的日期覆盖逻辑 |
-| 3 | monet/动态取色原生零代码；键与预取步已留位 | `grep Monet\|monet core app` 无命中；`PreloadPlan.kt:32,97` 有 `dynamicBg` 标志与 `PALETTE` 步；RN 侧实现在 `src/.../CoverBackdrop`、`OnCoverThemeProvider`、`Setting/Theme/DynamicBg.tsx` |
-| 4 | release 未开 R8、未签名 | `app/build.gradle.kts:21,24` 两段 `isMinifyEnabled = false` |
+| 1 | 主题三件套已有但未装配：17 内置主题 + 颜色生成器已移植且有黄金单测 | `core/theme/DefaultThemes.kt`（注释对照 RN `createThemes.js`）、`ThemeColors.kt`、`ColorUtils.kt`；`MusicApp.kt:51-53` 仍只按 `isSystemInDarkTheme()` 用 `SaltConfigs.default`，无主题偏好装配；小写 `grep -rln theme app/ui/settings/` 只命中 `DesktopLyricSettingsSection.kt`（其 `theme` 是桌面歌词配色，不是 app 主题） |
+| 2 | 主题设置键已在表里（与 RN 同名） | `DefaultSetting.kt:89-95`：`theme.id/lightId/darkId/hideBgDark/fontShadow/dynamicBg/dynamicBgAlgorithm`（96-100 行是 Wave7 追加的桌面歌词两键）；`:110` 有 `theme.id=happy_new_year` 的日期覆盖逻辑；app 侧 grep `theme.id/lightId/darkId` 无消费方 |
+| 3 | monet/动态取色原生零代码；键与预取步已留位，但 **PreloadPlan 无 app 执行器** | `grep -ri monet core app` 无命中；`PreloadPlan.kt:18,32,97-98` 有 `dynamicBg` 标志与 `PALETTE` 步，但 `buildPreloadPlan` 在 app 侧**无调用方**（只有 core 定义 + 单测）——PALETTE 不是现成执行管线；RN 侧实现在 `src/.../CoverBackdrop`、`OnCoverThemeProvider`、`Setting/Theme/DynamicBg.tsx` |
+| 4 | release 未开 R8、未签名 | `app/build.gradle.kts:21,24` 两段 `isMinifyEnabled = false`；release 块无 `signingConfig` |
 | 5 | 无 benchmark/冷启动测量基建 | `settings.gradle.kts` 无 benchmark 模块 |
-| 6 | RN 数据迁移兼容层已存在（B1 决策预留） | `app/data/ShardedKvStore.kt`（B1 决策表：「B7 一次性迁移导入用 ShardedKvStore 兼容层读 RN 分片格式」） |
+| 6 | RN 数据迁移只有**格式**兼容层，物理存储不可直达（B1 决策预留） | `core/storage/ShardedKvStore.kt`：v1/v2 分片编解码 + 500k 分片，能解任意键名（`StorageKeys.kt` 40+ 键）；但它只是 `KvStore` 门面，**读不到 RN 的 AsyncStorage SQLite**。两版 applicationId 不同（native `cn.toside.music.mobile.native` / RN `cn.toside.music.mobile`）⇒ 沙箱隔离；DataStore 文件 `xunyin_kv` 与 RN 独立（`DataStoreKvStore.kt` 注释自证） |
 | 7 | `desktopLyric.position.x/y` 默认值仍是 Int 0（W7-1 的根因在键表） | `DefaultSetting.kt:66-67` |
-| 8 | `local.fallbackConfirm` 键不存在（W7-2 待表尾加键） | grep 无命中；注入点见 `w7-B.md` 报告 |
+| 8 | `local.fallbackConfirm` 键常量与读取钩子已存在，缺的是默认值 + 设置开关 | `core/local/LocalFallbackConfirm.kt:28` 有 `SETTING_KEY`；`app/data/LocalMusicRuntime.kt:249` 的 `fallbackConfirmEnabled` 默认 `{ true }`、`:347` 消费，**无人赋值**；`DefaultSetting` 表里仍无该键 |
 
 ## 1. 背景
 
@@ -32,8 +36,10 @@ monet 键留了位没有实现，release 还是 debug 签名，冷启动/包体�
    主题切换实时生效全 app；`happy_new_year` 日期覆盖逻辑核对 RN 等价条件（W7-10 的
    「皮肤」实质就是这套 + 个别样式覆盖，覆盖不到的记遗留）。
 2. **monet / 动态取色（dynamicBg）**：对照 RN 的 monet 管线（`CoverBackdrop`/
-   `OnCoverThemeProvider`，项目记忆有播放页动态背景的 RN 实测参数）。Android 12+
-   走系统 Monet、低版本走封面取色（`PreloadPlan` 的 PALETTE 步已有预留）。
+   `OnCoverThemeProvider`，项目记忆有播放页动态背景的 RN 实测参数）。注意
+   `PreloadPlan.PALETTE` **只是 core 侧规则表、无 app 执行器**（`buildPreloadPlan` 零调用方），
+   不要当成现成管线：直接在 `ui/play/` 做封面取色接线即可，顺手补执行器属可选加分项、
+   不作验收硬条件。Android 12+ 可走系统 Monet、低版本走封面取色。
    **取色器必须可注入确定性种子**（莫奈抖动教训），纯规则进 `core/theme/` + JVM 单测。
 3. **无障碍抽查与修复**：contentDescription、48dp 触达、TalkBack 主流程——按 RN 侧
    已有的 a11y 整改清单对照；发现的结构性问题只修本车道文件，其余记报告。
@@ -45,14 +51,24 @@ monet 键留了位没有实现，release 还是 debug 签名，冷启动/包体�
    缺口清单），**涉及 keystore 落地与 R8 打开的改动必须停下等用户确认**（RULES §越权边界）；
    确认后才动 `build.gradle.kts` 签名块与 `isMinifyEnabled`，并验证 release 包冒烟
    （QuickJS 取链 + 播放 + 分享卡保存三条链路 release 包过一遍）。
-6. **RN 数据一次性迁移**：首启检测 RN 侧 AsyncStorage 分片（`ShardedKvStore` 兼容层），
-   迁移范围清单（歌单/设置/历史爱心——逐键对照 RN storage 键表，明确迁什么、不迁什么、
-   为什么）；迁移逻辑纯规则进 `core/backup/` 或 `core/storage/` + JVM 单测（fixture 用
-   RN 真实分片格式）；一次性、幂等、可重跑。
+6. **RN 数据一次性迁移**：先**落范围清单**，再「能迁的迁」。复核结论：
+   - `ShardedKvStore` 只是分片**格式**编解码（v1/v2、500k 分片），不是 RN AsyncStorage
+     物理读取器；两版 applicationId 不同（`:native` vs RN）⇒ 沙箱隔离，**首启直接读
+     RN AsyncStorage SQLite 不可行**，不要按这个前提设计；
+   - 可达通道只认实测：App 自有 `.lxmc`/allData 备份（走 `BackupManager`，先验设置是否
+     含在内）、SAF 用户手动导出文件；
+   - 清单逐键对照 RN storage 键表，写明「迁什么/不迁什么/为什么」；起手范围＝歌单 +
+     爱心 + 设置键 + 播放历史，其余一律记遗留让用户过目；**范围终稿是拍板门**，清单
+     交出即停，不先写迁移实现。
+   - 纯规则（分片解码 → 目标键映射）进 `core/backup/` 或 `core/storage/` + JVM 单测，
+     fixture 用 RN 真实分片格式；一次性、幂等、可重跑。
 7. **三项收尾（从 C 挪来）**：
    - W7-1：`desktopLyric.position.x/y` 默认值 0→`0.0`（**本波唯一改既有键**），补
      `SettingsStoreTest` 的 `33.5` 往返用例；
-   - W7-2：`local.fallbackConfirm` 键表尾加默认值 + 本地曲库设置小节一个 Switch；
+   - W7-2：`local.fallbackConfirm` 常量与钩子已在（`LocalFallbackConfirm.SETTING_KEY`、
+     `LocalMusicRuntime.fallbackConfirmEnabled` 默认 `{ true }` 且 `:347` 消费、**无人赋值**）——
+     只差 `DefaultSetting` 表尾默认值、`LocalMusicRuntime` 里一行赋值接线、本地曲库设置
+     小节一个 Switch；不要重复建键/建钩子；
    - W7-11：歌词增强四项（逐字 lxlyric/繁简/换源/工具模式）**立项评估落纸**——只写
      评估进报告，一行实现代码都不许有。
 
@@ -68,7 +84,8 @@ monet 键留了位没有实现，release 还是 debug 签名，冷启动/包体�
   （**本波唯一可动 gradle 的车道**；签名/R8 行等拍板）
 - `AndroidManifest.xml`（仅权限/签名相关行；**screenOrientation 禁触**——AGENTS.md）
 - `ui/play/`（仅动态背景渲染接线；morph/LyricView 不动）
-- `core/player/PreloadPlan.kt`（仅 PALETTE 步消费接线）
+- `core/player/PreloadPlan.kt`（**可选**：仅当顺手补 PALETTE 执行器时）
+- `app/data/LocalMusicRuntime.kt`（**仅一行**：W7-2 的 `fallbackConfirmEnabled` 赋值）
 - 新增测试放对应包；可选 benchmark 模块放 `android-native/benchmark/`
 
 ## 4. 禁触
@@ -83,7 +100,9 @@ monet 键留了位没有实现，release 还是 debug 签名，冷启动/包体�
 ## 5. 验收
 
 - `cd android-native && gradlew.bat ktlintCheck test assembleDebug` 全绿（1252 只增不减）；
-- monet/迁移纯规则有 JVM 单测（取色可注入种子；迁移 fixture 用 RN 真实分片格式）；
+- monet/迁移纯规则有 JVM 单测（取色可注入种子；**只对实测可达的迁移通道**做 fixture，
+  不可达类别不硬造用例）；
+- **迁移范围清单**（逐键迁/不迁/原因）落报告，清单交完即停在拍板门；
 - `33.5` 往返、`fallbackConfirm` 默认值有用例；
 - 冷启动/包体数字落报告；真机清单（≥6 条：主题切换全 app、monet 观感、TalkBack 主流程、
   冷启动对照、迁移导入、release 包冒烟三条链路）写进报告。

@@ -1,43 +1,46 @@
-# Wave 8 · 并行会话提示词（预草稿 2026-10-27）
+# Wave 8 · 并行会话提示词（预草稿 2026-10-27，协调会话已复核）
 
-**前置状态核实（起草时点实测）**：Wave1–7 二十一条车道全部并入 main（HEAD `5a62acb`），
+**前置状态核实（协调会话实测，HEAD `20811f9`）**：Wave1–7 二十一条车道全部并入 main，
 基线 **core 1105 + app 147 = 1252** 全绿，APK **29,263,058 B** / sha256 `f4ebfdc6…`。
 真机清单累计 **169 条**未跑。Wave8 是收官波：B7 整批 + 推荐/列表两条线的终扫尾。
-任务书按该快照起草，投用前协调会话必须逐条复核（教训 2）。
 
-**起草时点实测的关键事实**（三车道直接依赖，协调会话重跑一遍）：
+**协调会话复核后的关键事实**（三车道直接依赖，原起草版有 5 处漂移已修正）：
 
 - 主题三件套 `core/theme/`（17 内置主题+生成器，黄金单测已有）但 **app 零装配**：
-  `grep -rln theme ui/settings/ → 只命中 DesktopLyricSettingsSection.kt`；
-  键已在表（`DefaultSetting.kt:89-97` theme.* 七键，与 RN 同名）。
-- monet 原生零代码（grep 无命中）；`theme.dynamicBg(Algorithm)` 键在、
-  `PreloadPlan.kt:32,97` 的 PALETTE 步留了位没消费方。
+  `MusicApp.kt:51-53` 仍只按 `isSystemInDarkTheme()` 用 `SaltConfigs.default`；
+  小写 `grep theme ui/settings/` 只命中 `DesktopLyricSettingsSection.kt`（那是桌面歌词配色）；
+  键已在表（`DefaultSetting.kt:89-95` theme.* 七键，与 RN 同名；96-100 是 Wave7 歌词键）。
+- monet 原生零代码（grep 无命中）；`PreloadPlan.kt:18,32,97-98` 有 PALETTE 步，
+  但 **`buildPreloadPlan` 无 app 调用方**——不是现成管线，别当执行器用。
 - `app/build.gradle.kts:21,24` 两段 `isMinifyEnabled = false`；无 benchmark 模块；
-  release 从未正式签名（本机 debug 签名覆盖装是既有实测路径）。
-- `ShardedKvStore.kt` 存在（B1 决策预留的 RN 分片兼容层）——迁移任务的落点。
+  release 无 `signingConfig`（本机 debug 签名覆盖装是既有实测路径）。
+- `ShardedKvStore.kt` 只是分片**格式**编解码；两版 applicationId 不同（`:native` vs RN）
+  ⇒ 沙箱隔离，**读不到 RN AsyncStorage SQLite**；迁移只能走备份文件/SAF 等实测通道。
 - `desktopLyric.position.x/y` 默认值仍是 Int 0（`DefaultSetting.kt:66-67`，W7-1 根因）；
-  `local.fallbackConfirm` 键不存在（W7-2）。
-- `ListMenuActions.kt` 595 行九项枚举、SYNC=「更新」是 toast 占位（`:390`）；
+  `local.fallbackConfirm` **常量与钩子已在**（`LocalFallbackConfirm.kt:28`、
+  `LocalMusicRuntime.kt:249/347`），缺默认值+Switch+一行赋值（原起草说「键不存在」是错的）。
+- `ListMenuActions.kt` 595 行、枚举在 `:64-78`、SYNC=「更新」toast 占位（`:390`）；
   `ListDetailPage.kt` 1046 行内联逻辑（W5-9 撞的两文件）。
 - Manifest 有 `lxmusic` scheme 与 json MIME filter，**无 http(s) filter**；
   `SonglistLinkParser.kt` 解析能力已在 `core/songlist/`。
 - `RadioRuntime.kt:574` `importedOrigins = emptyList()`（W7-4，w7-A 报告有三步最小清单）；
-  `ThemeFeedback.kt:9` 注释自证 applyThemeFeedback 未做；`PlayerCore.kt:852` 的 norm
-  做了 `@→#` 而 DislikeRulesParser 没做。
+  **`applyThemeFeedback` 已实现且电台侧已接线**（`RadioFeedback.kt:334`、
+  `RadioBehavior.kt:114,450`、`settleExplicitFeedback` `:373/:317`）；真实缺口是发现页
+  `SonglistRuntime.kt:232-239` 传 `emptyMap()` 主题权重；`PlayerCore.kt:852` 的 norm 做了
+  `@→#` 而 `DislikeRulesParser.parse`（`core/recommend/RecommendSignals.kt:26`）没做。
 - rankState blocked/hidden **app 侧已在传**（`SonglistRuntime.kt:259-260`）、
   隐藏歌单 UI 与 onboarding 已存在（`HiddenPlaylistCard.kt`/`OnboardingSheet.kt`）——
   w8-B 已把这三项从「实现」降级为「核对」。
 
-**待你拍板的四件（默认已按括号内起草）**：
+**四件已拍板（用户确认：全按默认，2026-10-27）**：
 
-1. **release 签名**（默认：Lane A 备好清单后**停下等你**——沿用现 keystore 还是新建、
-   口令怎么给，不猜）。
-2. **R8 开启**（默认：**本波只交混淆缺口清单，不打开** `isMinifyEnabled`；beta 库规则
-   验证成本高，出问题难归因）。
-3. **RN 数据迁移范围**（默认：歌单+爱心+设置键+播放历史四类起步，其余记遗留；
-   清单出来后你勾一遍再落码）。
-4. **真机清账时机**（默认：**波前不挡车道**，但 Wave8 并完即发版候选——169+新增条目的
-   清账必须排在任何发版动作前；如你想波前先清一批，只影响 A 的冷启动基线条目）。
+1. **release 签名**：Lane A 备好清单后**停下等你**——沿用现 keystore 还是新建、
+   口令怎么给，不猜。
+2. **R8 开启**：**本波只交混淆缺口清单，不打开** `isMinifyEnabled`。
+3. **RN 数据迁移范围**：歌单+爱心+设置键+播放历史四类起步，其余记遗留；
+   清单出来后你勾一遍再落码。
+4. **真机清账时机**：**波前不挡车道**，但 Wave8 并完即发版候选——169+新增条目的
+   清账必须排在任何发版动作前。
 
 ## Wave 8 冲突面（波前审计已做）
 
@@ -139,11 +142,15 @@ docs/waves/w8-prompts.md 顶部「待你拍板的四件」按默认还是有改�
 - 三处**拍板门**（签名密钥落地、R8 打开、迁移范围终稿）：备好清单即停下报告等我，
   不许替我决定。清单要写成「选项+代价+建议」，别堆术语。
 - monet 取色器必须可注入确定性种子（莫奈抖动教训）；纯规则进 core/theme/ + JVM 单测，
-  渲染接线只在 ui/play/ 的动态背景部分，别碰 LyricView/morph。
+  渲染接线只在 ui/play/ 的动态背景部分，别碰 LyricView/morph。`PreloadPlan.PALETTE`
+  无 app 执行器，别假定它是现成管线（补执行器可选、不作验收条件）。
 - 你是本波唯一改 DefaultSetting 既有键的人（position.x/y → 0.0）；除这两键外只许表尾追加。
+- `local.fallbackConfirm` 常量/钩子已在，别重建：只补 `DefaultSetting` 默认值 +
+  `LocalMusicRuntime` 一行赋值 + 设置 Switch。
 - gradle 你可以动，但 assembleDebug 路径必须保持全绿（Lane C 的构建要靠它）；
   benchmark 模块是可选，默认用 logcat TotalTime 出冷启动数。
-- RN 数据迁移是一次性、幂等、可重跑：fixture 用 RN 真实分片格式落盘，别手写假格式。
+- RN 数据迁移**先交范围清单、交完即停**：ShardedKvStore 只解格式、读不到 RN AsyncStorage
+  （沙箱隔离），只能走备份文件/SAF 等实测可达通道；清单逐键写「迁/不迁/为什么」。
 
 【收尾三步】闸门全绿 → commit（W8-laneA: 前缀）→ lane 报告追加进 docs/waves/w8-A.md
 并 commit。完成后停下等待集成，不要自行开始其他任务。
@@ -151,12 +158,12 @@ docs/waves/w8-prompts.md 顶部「待你拍板的四件」按默认还是有改�
 
 ---
 
-## 车道 B —— 推荐与电台终扫尾：归因闭环 + 反馈结算 + 踩雷归一 + 相似入口
+## 车道 B —— 推荐与电台终扫尾：归因闭环 + 主题权重 + 踩雷归一 + 相似入口
 
 ```text
-你是 Wave8 Lane B 执行会话，任务：importedOrigins 归因闭环（W7-4）、applyThemeFeedback
-结算、rankState/隐藏歌单/onboarding 三处核对、DislikeRulesParser @→# 归一、
-「相似歌曲」入口、音频特征时间盒（可选）。
+你是 Wave8 Lane B 执行会话，任务：importedOrigins 归因闭环（W7-4）、发现页分类挑选消费
+themeWeights（M1 收口）、rankState/隐藏歌单/onboarding 三处核对、DislikeRulesParser
+@→# 归一、「相似歌曲」入口、音频特征时间盒（可选）。
 
 你的工作区是独立 git worktree（协调会话给你的路径），分支 w8/laneB。
 纪律同 RULES：不离开目录、不切分支、禁 push/merge/rebase/stash/reset。
@@ -173,6 +180,11 @@ docs/waves/w8-prompts.md 顶部「待你拍板的四件」按默认还是有改�
   别顺手整理那个文件（W5-9 重构归 C）。
 - 任务 3 是「核对批」：先跑现状（blocked/hidden 已在传、隐藏歌单/onboarding 已存在），
   核对结论写报告，别按旧待办重写已有功能。
+- `applyThemeFeedback`/`settleExplicitFeedback` **已实现且电台侧已接线**，别重复实现；
+  你只补发现页 `SonglistRuntime.kt:232-239` 的 `emptyMap()` → 真实主题权重
+  （来源 `RadioStateStore.read()?.themeWeights` 或 RadioRuntime 只读暴露）。
+- 踩雷归一修**读侧** `DislikeRulesParser.parse`（`core/recommend/RecommendSignals.kt:26`），
+  写侧 `normalize()` 已有 `@→#`，别改第二遍。
 - 下载/分享菜单项不做；「更多」分页第六次延期，只写一条结论。
 - 音频特征：评测口径没落纸之前一个字不写。
 
@@ -204,6 +216,8 @@ https intent-filter 与歌单链接外部直达、歌词增强时间盒（可选
 - 任务 5 依赖 Lane A 的键默认值：开工时 DefaultSetting 的 position 还是 Int，
   该任务挂起，先把 1–4/6 做完，别自己改键表。
 - 收藏全部调用 `listMusicAdd` 现状签名即可（Lane B 在加 origin 形参，集成时补传）。
+- `@music_add_time`/`@music_play_count` 键常量已在 `core/storage/StorageKeys.kt:56-57`
+  但零读写者——补读写，别新建键名。
 - 下载、递归扫描/多目录（W7-5）、歌词工具模式——全不做。
 
 【收尾三步】同 RULES，前缀 W8-laneC:。停下等待集成。

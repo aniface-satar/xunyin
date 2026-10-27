@@ -7,14 +7,17 @@
 
 ## 0. 起草时点复核（2026-10-27，全部实测；协调会话投用前逐条重跑）
 
+> **协调会话复核（2026-10-27，HEAD `20811f9`）**：#2 结论已漂移（`applyThemeFeedback`
+> 其实已实现并接线），#6 文件位置写错。下表已按复核结果修订，任务 2/4 随之改写。
+
 | # | 事实 | 实证位置 |
 |:--:|:--|:--|
 | 1 | `importedOrigins` 仍恒空，w7-A 报告已给最小改动清单（三步） | `data/RadioRuntime.kt:574`（`= emptyList()`）；清单在 `docs/waves/w7-A.md` 遗留节 |
-| 2 | `applyThemeFeedback` 未做，core 只有 `themeNetWeight` 部分 | `core/recommend/ThemeFeedback.kt:9` 注释自证 |
+| 2 | `applyThemeFeedback` / `settleExplicitFeedback` **已实现且电台侧已接线**；真正的洞是**发现页主题权重传空表** | `core/recommend/radio/RadioFeedback.kt:334`（`applyThemeFeedback`）、`:373`（`settleExplicitFeedback`）；`RadioBehavior.kt:114,450` 调前、`:317` 调后；`RadioRuntime.kt:926` 传 `engine.state.themeWeights`，而 `SonglistRuntime.kt:232-239` 的 `pickPlaylistTag` 传的是 `emptyMap()` |
 | 3 | rankState 的 blocked/hidden **app 侧已有传参**（W5 说「无消费方」可能已过时） | `data/SonglistRuntime.kt:259-260`；core 消费在 `PlaylistRank.kt:117-131`——本任务降级为「核对真机可观测行为 + 补漏」 |
 | 4 | 隐藏歌单 UI 已有 `HiddenPlaylistCard` | `ui/radio/HiddenPlaylistCard.kt`——任务 3 第三项降级为对照 RN 查漏 |
 | 5 | onboarding 已移植（W5 必做项落了地） | `ui/radio/OnboardingSheet.kt`、`data/OnboardingStore.kt`——本任务降级为对照 RN `onboarding.ts` 核对重置/权重语义 |
-| 6 | 踩雷解析两侧不一致：`DislikeRulesParser.parse` 无 `@`→`#` 归一，`PlayerCore.DislikeInfo.key` 有 | `core/player/PlayerCore.kt:852`（norm）；grep `core/recommend/` 无 `@→#` |
+| 6 | 踩雷解析两侧不一致：`DislikeRulesParser.parse` 无 `@`→`#` 归一，`PlayerCore.DislikeInfo.key` 有 | **解析器在 `core/recommend/RecommendSignals.kt:26`（无独立文件）**；`core/player/PlayerCore.kt:852`（norm）；`parse()` 无归一 |
 | 7 | 电台页队列只展示 6 首预览，「更多」分页第五次挂账 | B5 待办原文；`ui/radio/RadioPage.kt` |
 | 8 | 歌单详情缺「相似歌曲」菜单项 | B5 待办（Wave4 Lane C 收口记录）：仍缺 下载/分享/相似歌曲 三项 |
 | 9 | 音频特征四件套原生零代码，W7-3 要求「评测口径先落纸」 | `w7-A.md` 任务 7 时间盒未用尽；grep monet/audioFeature 类名无命中 |
@@ -35,13 +38,24 @@ Wave7 把电台的相似/预算/诊断都接了，画像也滤了本地曲，但
    `ui/search/SearchPage.kt`）把来源歌单传进来；③ `RadioRuntime.importedOrigins` 建
    `trackKey → origins` 映射替换 `emptyList()`，`creditImportedOrigins` 生效。
    存量数据（无 origin 的老曲目）行为要保持，迁移不做、记报告。
-2. **`themeWeights` 与显式反馈结算**（applyThemeFeedback）：对照 RN `themeFeedback.ts`
-   补全净权重结算路径（喜欢/踩雷对主题词的双向作用），core 纯函数 + JVM 单测锁数值。
+2. **发现页分类挑选消费 `themeWeights`（M1 收口）**：`applyThemeFeedback` /
+   `settleExplicitFeedback` 已在 `RadioFeedback` 实现、电台侧（`RadioBehavior`）已接线，
+   **不要重复实现**。真正的断点：`SonglistRuntime.kt:232-239` 的主页歌单分类挑选传
+   `emptyMap()`，而电台侧 `RadioRuntime.kt:926` 传 `engine.state.themeWeights`。
+   - 把学到主题权重接进发现页挑选（**来源走既有持久化**：权重就在 `RadioState`
+     里、由 `RadioStateStore.read()` 落盘，读它或让 `RadioRuntime` 暴露只读都行；
+     不要新建存储、也不要塞进 `RecommendProfile` 新字段）；
+   - 顺带核对同处 `rankPlaylistsByProfile`（`:252`）与 `rankPlaylistTags` 是否也该吃权重，
+     该吃的补上、不该吃的在报告写理由；
+   - 单测锁「非空权重改变挑选/排序结果」的数值级行为（core 纯函数已有覆盖，
+     补 app 侧或 core 层挑选用例）。
 3. **核对批**（复核表 3/4/5 已把三项降级）：blocked/hidden 消费链是否有断点、
    隐藏歌单 UI 对照 RN 查漏、onboarding 对照 RN 核权重/重置语义——发现断点就修，
    修不了记遗留；核对结论一律写报告「语义修正」节。
-4. **踩雷解析归一统一**（W5 遗留）：`DislikeRulesParser.parse` 补 `@`→`#` 归一，
-   与 `PlayerCore.DislikeInfo.key` 对齐（RN 两侧都归一）；加含 `@` 歌名的双侧判重用例。
+4. **踩雷解析归一统一**（W5 遗留）：`core/recommend/RecommendSignals.kt:26` 的
+   `DislikeRulesParser.parse` 补 `@`→`#` 归一，与 `PlayerCore.DislikeInfo.key`（`:852`）
+   对齐（RN 两侧都归一）；加含 `@` 歌名的双侧判重用例。**注意**写侧 `normalize()` 已有
+   `@`→`#`，读侧 `parse()` 缺，修读侧即可、别把写侧再改一遍。
 5. **「相似歌曲」入口**：歌曲级相似（复用 `m3/Similarity` + `LibraryIndex`，**不含音频**）
    落一个入口（建议：歌单详情行菜单或播放页更多菜单，选择权在你，但 ListDetailPage
    有已知交界——见 §3）。队列「更多」分页与电台队列全量查看：**本波仍不做**，写一条
@@ -72,10 +86,13 @@ Wave7 把电台的相似/预算/诊断都接了，画像也滤了本地曲，但
 
 ## 5. 验收
 
-- 闸门全绿、1252 只增不减；origin 归因/反馈结算/@ 归一全有 JVM 单测（数值级）；
+- 闸门全绿、1252 只增不减；origin 归因/主题权重挑选/@ 归一全有 JVM 单测（数值级）；
 - 真机清单（≥5 条）：导入在线歌单进爱心后诊断卡 `reasons` 出现归因路径、含 `@` 歌名
-  踩雷双侧判重一致、相似歌曲入口出候选且不违反「同歌手连推」、themeWeights 随
-  喜欢/踩雷可观测变化、隐藏歌单行为对照 RN；写进 lane 报告。
+  踩雷双侧判重一致、相似歌曲入口出候选且不违反「同歌手连推」、**发现页分类随
+  喜欢/踩雷后的 `themeWeights` 变化可观测**（不是只在电台页）、隐藏歌单行为对照 RN；
+  写进 lane 报告。
+- 报告「语义修正」节必须写明：`applyThemeFeedback` 原判「未做」系误判、真实缺口是
+  发现页传空表；如判定 `rankPlaylistsByProfile` 不该吃权重，也在此给理由。
 
 ## Lane 报告（执行会话追加区）
 

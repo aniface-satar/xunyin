@@ -7,15 +7,18 @@
 
 ## 0. 起草时点复核（2026-10-27，全部实测；协调会话投用前逐条重跑）
 
+> **协调会话复核（2026-10-27，HEAD `20811f9`）**：#1/#2 行号写错、#3/#7 结论需补实测，
+> 下表已修订，任务 4/7 随之收窄。
+
 | # | 事实 | 实证位置 |
 |:--:|:--|:--|
-| 1 | W5-9 撞的两文件都健在：`ListMenuActions.kt` 595 行（九项枚举自建），`ListDetailPage.kt` 1046 行（内联逻辑） | `ui/list/`；枚举 `ListMenuAction`：CREATE/RENAME/SORT/DUPLICATE/LOCAL_FILE/SYNC/IMPORT/EXPORT/REMOVE |
-| 2 | 「同步」是占位：SYNC 标签=「更新」，点击 toast「在线列表同步暂未迁移到原生」 | `ListMenuActions.kt:113,390`；数据层 `getListDetailAll`/`listMusicOverwrite`/`locationUpdateTime`、`sourceListId` 字段均已存在 |
-| 3 | 排序两空档位：`add_time_up/down` 按 0 兜底（`play_count` 同源） | B5 待办原文；Wave3 Lane C 评估记录 |
+| 1 | W5-9 撞的两文件都健在：`ListMenuActions.kt` 595 行（九项枚举自建），`ListDetailPage.kt` 1046 行（内联逻辑） | `ui/list/`；枚举 `ListMenuAction` 在 **`ListMenuActions.kt:64-78`**：CREATE/RENAME/SORT/DUPLICATE/LOCAL_FILE/SYNC/IMPORT/EXPORT/REMOVE |
+| 2 | 「同步」是占位：SYNC 标签=「更新」，点击 toast「在线列表同步暂未迁移到原生」 | toast 在 `ListMenuActions.kt:390`；`syncSupported=false` `:92`、可用性判定 `:106`；**数据层在 core**：`core/list/ListStore.kt:365 listMusicOverwrite`、`sourceListId/locationUpdateTime` 字段 `:38-40,408-422`；`getListDetailAll` 在 `SonglistRuntime.kt:156`（榜单侧 `LeaderboardRuntime`/`BoardPager`，**不在 ListStore**） |
+| 3 | 排序两空档位：`add_time_up/down` 按 0 兜底（`play_count` 同源）；**键常量已存在但零读写者** | `ListDetailPage.kt:370` 注释自证 0 兜底；`core/storage/StorageKeys.kt:56-57` 已有 `@music_add_time`/`@music_play_count`——**别新建键名**，只补读写 |
 | 4 | `lxmusic://` scheme filter 已有；**http(s) 无 filter**；文件打开只认 json MIME（lxmc 无标准 MIME，注释指回「应用内导入」） | `AndroidManifest.xml:34-47`（注释自证）；解析能力在 `core/songlist/SonglistLinkParser.kt` |
-| 5 | 桌面歌词写侧两位小数已做、读侧被 Int 默认值截断（W7-1 键改归 Lane A） | `w7-C.md` 语义修正 4；`DefaultSetting.kt:66-67` |
-| 6 | W7-2 兜底确认注入点已留，仅缺键默认值+设置 Switch（键与设置小节归 Lane A） | `w7-B.md` 报告；`local.fallbackConfirm` grep 无命中 |
-| 7 | 逐字歌词 lxlyric：RN 有独立链路（`lxlyric` 解析），原生零代码 | `w7-C.md` W7-11 评估节 |
+| 5 | 桌面歌词写侧两位小数已做、读侧被 Int 默认值截断（W7-1 键改归 Lane A） | `w7-C.md` 语义修正 4；`DefaultSetting.kt:66-67`；读侧 `lyric/DesktopLyricConfig.kt:49-50`（`Int` 字段）、`:71-72`（`int(...)` 转换） |
+| 6 | W7-2 兜底确认**键常量与钩子已在**（起草时说 grep 无命中是错的），仅缺键默认值+设置 Switch+一行赋值（全归 Lane A） | `core/local/LocalFallbackConfirm.kt:28 SETTING_KEY`；`LocalMusicRuntime.kt:249` 钩子默认 `{ true }`、`:347` 消费、无人赋值 |
+| 7 | 逐字歌词 lxlyric **不是字面零代码**：本地曲内嵌 AWLRC 已被抽取成 `lxlyric` 字符串，但无帧解析、无渲染链路 | `core/local/LocalLyric.kt:17,46,59`（仅解 `[awlrc:]` 标签出字符串）；RN 独立链路见 `w7-C.md` W7-11 评估节 |
 
 ## 1. 背景
 
@@ -30,16 +33,17 @@
    收口到 `ListMenuActions`（或反向，先画两文件逻辑对照表再动手），行为逐项对齐、
    重构前后各锁一组单测（菜单可用性/禁用规则是纯数据层，已有先例）。不许顺手改语义。
 2. **「更新」同步实装**（W5-10）：对照 RN `list_sync_confirm_tip` 流程——
-   `listMusicOverwrite` + `getListDetailAll` 刷新、`locationUpdateTime` 更新、
-   `sourceListId` 第一次有消费方；确认弹层文案通俗（面向用户文案规矩）；
-   源不支持 songList 时保持现有 disabled 判定。加入路径（整单导入）已写 source/sourceListId，
-   存量老歌单没有元数据时的禁用行为要一致。
+   `core/list/ListStore.kt:365 listMusicOverwrite` + `SonglistRuntime.kt:156 getListDetailAll`
+   刷新、`locationUpdateTime` 更新、`sourceListId` 第一次有消费方；确认弹层文案通俗
+   （面向用户文案规矩）；源不支持 songList 时保持现有 disabled 判定（`syncSupported`）。
+   加入路径（整单导入）已写 source/sourceListId，存量老歌单没有元数据时的禁用行为要一致。
 3. **默认列表批量操作补齐**：随机播放（对照 RN `PlayerRandom`）与收藏全部
    （整单加入爱心，走 `listMusicAdd` 批量路径）；**与 Lane B 交界**：B 给 `listMusicAdd`
    加可选 `origin` 参数——你只调用现状签名，集成顺序 B 先并，装配由集成会话补一行。
 4. **`add_time` 定位元数据**：加歌路径写「添加时间」（对照 RN data.ts 的元数据形状，
-   先实证 RN 键名/位置再定 schema），排序空档位复活；存量曲目无元数据时维持 0 兜底
-   且排序稳定（用例锁住）。
+   先实证 RN 键名/位置再定 schema）。键常量**已在** `core/storage/StorageKeys.kt:56-57`
+   （`@music_add_time`/`@music_play_count`），零读写者——只补读写、别新建键名；
+   排序空档位复活；存量曲目无元数据时维持 0 兜底且排序稳定（用例锁住）。
 5. **W7-1 读侧收口**：Lane A 把 `desktopLyric.position.x/y` 默认值改 `0.0` 后，
    你在 `DesktopLyricSettingsSection`/服务读侧验证小数往返不再截断（补一条用例：
    `33.5` 写→读等值）；A 未并之前此任务挂起，不要自己改键表。
@@ -48,8 +52,9 @@
    接线 `DeeplinkRuntime`）；lxmc 外部 MIME 按注释决议仅做 `.lxmc` 扩展名 filter 增量，
    拿不到稳定 MIME 就记遗留（W7-9 同类）。
 7. **歌词增强可选任务（时间盒）**：主线 1–6 全收后才碰。判据先落纸：逐字 lxlyric 的
-   帧结构/显示精度对照 RN `Lyric` 组件与项目记忆的歌词页机制；有余力只做**解析纯函数 +
-   单测**，渲染接线不动（渲染归 Lane A 的 play 禁区之外，别越界）。
+   帧结构/显示精度对照 RN `Lyric` 组件与项目记忆的歌词页机制；注意原生**已有**内嵌
+   AWLRC 抽取（`core/local/LocalLyric.kt` 出 `lxlyric` 字符串），缺的是帧解析与渲染——
+   有余力只做**解析纯函数 + 单测**，渲染接线不动（渲染归 Lane A 的 play 禁区之外，别越界）。
 
 ## 3. 范围（只许改这里）
 
