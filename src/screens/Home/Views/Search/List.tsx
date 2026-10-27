@@ -2,15 +2,19 @@ import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import type { InitState as SearchState } from '@/store/search/state'
 import type { Source as MusicSource } from '@/store/search/music/state'
 import type { Source as SongListSource } from '@/store/search/songlist/state'
+import type { Source as AlbumSource } from '@/store/search/album/state'
+import type { Source as ArtistSource } from '@/store/search/artist/state'
 import MusicList, { type MusicListType } from './MusicList'
 import BlankView, { type BlankViewType } from './BlankView'
 import SonglistList from './SonglistList'
+import AlbumList from './AlbumList'
+import ArtistList from './ArtistList'
 
 interface ListProps {
   onSearch: (keyword: string) => void
 }
 export interface ListType {
-  loadList: (text: string, source: MusicSource | SongListSource, type: SearchState['searchType']) => void
+  loadList: (text: string, source: MusicSource | SongListSource | AlbumSource | ArtistSource, type: SearchState['searchType']) => void
 }
 
 export default forwardRef<ListType, ListProps>(({ onSearch }, ref) => {
@@ -42,6 +46,10 @@ export default forwardRef<ListType, ListProps>(({ onSearch }, ref) => {
       ? <BlankView ref={blankViewRef} onSearch={onSearch} />
       : listType == 'songlist'
         ? <SonglistList ref={listRef} />
-        : <MusicList ref={listRef} />
+        : listType == 'album'
+          ? <AlbumList ref={listRef} />
+          : listType == 'artist'
+            ? <ArtistList ref={listRef} />
+            : <MusicList ref={listRef} />
   )
 })

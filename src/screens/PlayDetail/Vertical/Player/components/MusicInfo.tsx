@@ -9,8 +9,11 @@ import { useIsLove } from '@/store/player/useIsLove'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import SynchronizedMarquee, { useSynchronizedMarquee } from '@/components/common/SynchronizedMarquee'
 import SheetThemeProvider from '@/components/player/SheetThemeProvider'
-import { createStyle } from '@/utils/tools'
+import { createStyle, toast } from '@/utils/tools'
 import { collectMusic, uncollectMusic } from '@/core/player/player'
+import { resolveArtistForMusic } from '@/core/artistResolve'
+import { getArtistSearchName } from '@/core/musicLinks'
+import { useOpenMusicDetail } from '@/utils/hooks/useOpenMusicDetail'
 import { useStatusbarHeight } from '@/store/common/hook'
 import { scaleSizeH, scaleSizeW } from '@/utils/pixelRatio'
 import { HEADER_HEIGHT } from '@/screens/PlayDetail/Vertical/components/Header'
@@ -59,6 +62,16 @@ export default ({
   const moreSheetRef = useRef<MusicMoreSheetType>(null)
   const marquee = useSynchronizedMarquee({ lineCount: 2 })
   const layoutRef = useRef<Partial<MusicInfoLayout>>({})
+  const resolvingArtistRef = useRef(false)
+  const openMusicDetail = useOpenMusicDetail()
+  const rawMusicInfo = playMusicInfo.musicInfo
+    ? 'progress' in playMusicInfo.musicInfo
+      ? playMusicInfo.musicInfo.metadata.musicInfo
+      : playMusicInfo.musicInfo
+    : null
+  const artistSearchName = rawMusicInfo && rawMusicInfo.source != 'local'
+    ? getArtistSearchName(rawMusicInfo.singer)
+    : null
 
   const emitLayout = useCallback(() => {
     const {
@@ -114,6 +127,16 @@ export default ({
     else collectMusic()
   }
 
+  const handleOpenArtist = useCallback(() => {
+    if (!rawMusicInfo || !artistSearchName || resolvingArtistRef.current) return
+    resolvingArtistRef.current = true
+    void resolveArtistForMusic(rawMusicInfo).then(item => {
+      resolvingArtistRef.current = false
+      if (item) openMusicDetail({ type: 'artist', info: item })
+      else toast(global.i18n.t('artist_not_found'))
+    })
+  }, [artistSearchName, openMusicDetail, rawMusicInfo])
+
   return (
     <View style={{ ...styles.container, marginTop: titleGap, width: textWidth }}>
       <View style={styles.titleRow}>
@@ -139,7 +162,15 @@ export default ({
               handleLayout('artistWidth', event)
             }}
           >
-            <Text color={glassColors.muted} style={textStyles.artist}>{musicInfo.singer}</Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              disabled={!artistSearchName}
+              onPress={handleOpenArtist}
+              accessibilityRole="button"
+              accessibilityLabel={musicInfo.singer}
+            >
+              <Text color={glassColors.muted} style={textStyles.artist}>{musicInfo.singer}</Text>
+            </TouchableOpacity>
           </SynchronizedMarquee>
         </View>
         <View style={[actionStyles.actionColumn, { width: actionLayout.width }]} onLayout={handleActionLayout}>

@@ -12,12 +12,15 @@ import DownloadQualitySheet, { type DownloadQualitySheetType } from '@/component
 import { dislikeMusic } from '@/core/player/player'
 import { addTempPlayList } from '@/core/player/tempPlayList'
 import { hasDislike } from '@/core/dislikeList'
+import { resolveArtistForMusic } from '@/core/artistResolve'
+import { getArtistSearchName, getMusicAlbumListInfo } from '@/core/musicLinks'
 import { LIST_IDS } from '@/config/constant'
 import musicSdk from '@/utils/musicSdk'
 import { usePlayerMusicInfo, usePlayMusicInfo } from '@/store/player/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
+import { useOpenMusicDetail } from '@/utils/hooks/useOpenMusicDetail'
 import { assertApiSupport, createStyle, toast } from '@/utils/tools'
 
 export interface MusicMoreSheetType {
@@ -61,9 +64,14 @@ const MusicMoreSheet = forwardRef<MusicMoreSheetType>((_, ref) => {
   const t = useI18n()
   const musicInfo = usePlayerMusicInfo()
   const playMusicInfo = usePlayMusicInfo()
+  const openMusicDetail = useOpenMusicDetail()
   const isDisliked = hasDislike(playMusicInfo.musicInfo)
   const rawMusicInfo = playMusicInfo.musicInfo ? getRawMusicInfo(playMusicInfo.musicInfo) : null
   const canDownload = rawMusicInfo != null && canDownloadMusicInfo(rawMusicInfo)
+  const albumLink = rawMusicInfo ? getMusicAlbumListInfo(rawMusicInfo) : null
+  const artistSearchName = rawMusicInfo && rawMusicInfo.source != 'local'
+    ? getArtistSearchName(rawMusicInfo.singer)
+    : null
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
   const [publishDate, setPublishDate] = useState<string | null>(null)
@@ -109,6 +117,23 @@ const MusicMoreSheet = forwardRef<MusicMoreSheetType>((_, ref) => {
     slide.hide(() => {
       setVisible(false)
       after?.()
+    })
+  }
+
+  const handleOpenArtist = () => {
+    if (!rawMusicInfo || !artistSearchName) return
+    const task = resolveArtistForMusic(rawMusicInfo)
+    hide()
+    void task.then(item => {
+      if (item) openMusicDetail({ type: 'artist', info: item })
+      else toast(t('artist_not_found'))
+    })
+  }
+
+  const handleOpenAlbum = () => {
+    if (!albumLink) return
+    hide(() => {
+      openMusicDetail({ type: 'songlist', info: albumLink })
     })
   }
 
@@ -198,8 +223,28 @@ const MusicMoreSheet = forwardRef<MusicMoreSheetType>((_, ref) => {
                   <Image cache={false} url={musicInfo.pic} style={styles.cover} />
                   <View style={styles.info}>
                     <Text numberOfLines={1} size={17} style={styles.name} color={theme['c-font']}>{musicInfo.name}</Text>
-                    <Text numberOfLines={1} size={13} color={theme['c-primary']}>{musicInfo.singer}</Text>
-                    <Text numberOfLines={1} size={13} color={theme['c-font-label']}>{formatInfoValue(musicInfo.album)}</Text>
+                    <TouchableOpacity
+                      style={styles.linkRow}
+                      activeOpacity={0.7}
+                      disabled={!artistSearchName}
+                      onPress={handleOpenArtist}
+                      accessibilityRole="button"
+                      accessibilityLabel={musicInfo.singer}
+                    >
+                      <Text numberOfLines={1} size={13} color={theme['c-primary']} style={styles.linkText}>{musicInfo.singer}</Text>
+                      {artistSearchName != null && <Icon name="chevron-right" size={12} color={theme['c-font-label']} style={styles.linkArrow} />}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.linkRow}
+                      activeOpacity={0.7}
+                      disabled={!albumLink}
+                      onPress={handleOpenAlbum}
+                      accessibilityRole="button"
+                      accessibilityLabel={musicInfo.album}
+                    >
+                      <Text numberOfLines={1} size={13} color={theme['c-font-label']} style={styles.linkText}>{formatInfoValue(musicInfo.album)}</Text>
+                      {albumLink != null && <Icon name="chevron-right" size={12} color={theme['c-font-label']} style={styles.linkArrow} />}
+                    </TouchableOpacity>
                     <Text numberOfLines={1} size={13} color={theme['c-font-label']}>{formatInfoValue(publishDate)}</Text>
                   </View>
                 </View>
@@ -277,6 +322,16 @@ const styles = createStyle({
   name: {
     fontWeight: 'bold',
     marginBottom: 3,
+  },
+  linkRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+  linkText: {
+    flexShrink: 1,
+  },
+  linkArrow: {
+    marginLeft: 2,
   },
   // 分隔线直接照歌单列表的行线：borderBottom + BorderWidths.normal 不经过 createStyle 的尺寸换算。
   // 别再写成 height: 1 —— scaleSizeH 会在高密度屏（如 1260×2800 @3.5）把它算成 0dp，线整条消失。

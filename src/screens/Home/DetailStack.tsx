@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 
 import SonglistDetail from '@/screens/SonglistDetail'
+import ArtistDetail from '@/screens/ArtistDetail'
 import LeaderboardDetail from '@/screens/LeaderboardDetail'
 import MylistDetail from '@/screens/MylistDetail'
 import RecommendNewSongs from '@/screens/RecommendDetail/NewSongs'
@@ -79,8 +80,10 @@ const DetailStack = ({ navId, active }: {
             ? null
             : route.type == 'songlist'
               ? <SonglistDetail componentId={route.id} info={route.info} embedded onBack={popDetail} />
-              : route.type == 'leaderboard'
-                ? (
+              : route.type == 'artist'
+                ? <ArtistDetail info={route.info} onBack={popDetail} />
+                : route.type == 'leaderboard'
+                  ? (
                     <LeaderboardDetail
                       componentId={route.id}
                       source={route.source}
@@ -88,18 +91,18 @@ const DetailStack = ({ navId, active }: {
                       embedded
                       onBack={popDetail}
                     />
-                  )
-                : route.type == 'recommendNewSongs'
-                  ? <RecommendNewSongs onBack={popDetail} />
-                  : route.type == 'recommendPlaylists'
-                    ? <RecommendPlaylists onBack={popDetail} />
-                    : route.type == 'download'
-                      ? <Download onBack={popDetail} />
-                      : route.type == 'musicRecognition'
-                        ? <MusicRecognition onBack={popDetail} />
-                        : route.type == 'musicRecognitionHistory'
-                          ? <MusicRecognitionHistory onBack={popDetail} />
-                          : <MylistDetail componentId={route.id} info={route.info} embedded onBack={popDetail} />
+                    )
+                  : route.type == 'recommendNewSongs'
+                    ? <RecommendNewSongs onBack={popDetail} />
+                    : route.type == 'recommendPlaylists'
+                      ? <RecommendPlaylists onBack={popDetail} />
+                      : route.type == 'download'
+                        ? <Download onBack={popDetail} />
+                        : route.type == 'musicRecognition'
+                          ? <MusicRecognition onBack={popDetail} />
+                          : route.type == 'musicRecognitionHistory'
+                            ? <MusicRecognitionHistory onBack={popDetail} />
+                            : <MylistDetail componentId={route.id} info={route.info} embedded onBack={popDetail} />
           }
         </View>
       </DetailPageActiveContext.Provider>

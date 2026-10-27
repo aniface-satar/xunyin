@@ -2,6 +2,7 @@ import songlistState, { type TagInfo, type ListDetailInfo, type ListInfo } from 
 import songlistActions from '@/store/songlist/action'
 import { deduplicationList, toNewMusicInfo } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
+import { getAlbumRawId, isAlbumListId } from '@/utils/musicSdk/albumNormalizers'
 
 
 interface DetailPageCache { data: ListDetailInfo, sourcePage: number }
@@ -106,7 +107,11 @@ const getListDetailLimit = async(source: LX.OnlineSource, id: string, page: numb
     if (prevPageData) sourcePage = prevPageData.sourcePage
   }
 
-  return musicSdk[source]?.songList.getListDetail(id, sourcePage + 1).then((result: ListDetailInfo) => {
+  const request = isAlbumListId(id)
+    ? musicSdk[source]?.album?.getAlbumDetail(getAlbumRawId(id), sourcePage + 1)
+    : musicSdk[source]?.songList.getListDetail(id, sourcePage + 1)
+
+  return (request ?? Promise.reject(new Error('source not found'))).then((result: ListDetailInfo) => {
     if (listCache !== cache.get(listKey)) return
     result.list = deduplicationList(result.list.map(m => toNewMusicInfo(m)) as LX.Music.MusicInfoOnline[])
     let p = page

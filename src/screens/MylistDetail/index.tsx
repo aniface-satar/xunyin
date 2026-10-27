@@ -18,6 +18,8 @@ import Header from './Header'
 import HistoryList from '@/screens/Home/Views/Mylist/HistoryList'
 import PlaylistHistoryList from '@/screens/Home/Views/Mylist/HistoryList/PlaylistHistoryList'
 import PlaylistList from './PlaylistList'
+import AlbumTab from './AlbumTab'
+import ArtistTab from './ArtistTab'
 import ListMusicSort, { type ListMusicSortType } from '@/screens/Home/Views/Mylist/MyList/ListMusicSort'
 import Text from '@/components/common/Text'
 import { useI18n } from '@/lang'
@@ -29,7 +31,13 @@ export interface MylistDetailInfo {
   mode?: 'music' | 'history'
 }
 
-type MylistDetailTab = 'music' | 'playlist'
+type MylistDetailTab = 'music' | 'playlist' | 'album' | 'artist'
+const TAB_LABELS = {
+  music: 'mylist_music_tab',
+  playlist: 'mylist_playlist_tab',
+  album: 'mylist_album_tab',
+  artist: 'mylist_artist_tab',
+} as const
 const activeTabCache = new Map<string, MylistDetailTab>()
 
 export default ({ componentId, info, embedded = false, onBack }: {
@@ -140,6 +148,16 @@ export default ({ componentId, info, embedded = false, onBack }: {
   }, [componentId, embedded, info.id, isHistory])
 
   const showTabs = isLove || isHistory
+  const tabs: MylistDetailTab[] = isLove ? ['music', 'playlist', 'album', 'artist'] : ['music', 'playlist']
+  const searchPlaceholder = t(
+    activeTab == 'album'
+      ? 'mylist_search_albums'
+      : activeTab == 'artist'
+        ? 'mylist_search_artists'
+        : activeTab == 'playlist'
+          ? 'mylist_search_playlists'
+          : 'mylist_search_music',
+  )
   const showDetailActions = showTabs && !isHistory && activeTab == 'music'
   const showPlaylistActions = !isHistory && !isLove
   const playlistActionBar = showPlaylistActions ? (
@@ -168,7 +186,7 @@ export default ({ componentId, info, embedded = false, onBack }: {
   const tabBar = showTabs ? (
     <View style={{ ...styles.tabBar, borderBottomColor: theme['c-border-background'] }}>
       <ScrollView style={styles.tabScroll} horizontal={true} showsHorizontalScrollIndicator={false}>
-        {(['music', 'playlist'] as const).map(tab => (
+        {tabs.map(tab => (
           <TouchableOpacity
             key={tab}
             style={[
@@ -182,7 +200,7 @@ export default ({ componentId, info, embedded = false, onBack }: {
               size={14}
               color={activeTab == tab ? theme['c-primary-font-active'] : theme['c-font']}
             >
-              {t(tab == 'music' ? 'mylist_music_tab' : 'mylist_playlist_tab')}
+              {t(TAB_LABELS[tab])}
             </Text>
           </TouchableOpacity>
         ))}
@@ -221,12 +239,16 @@ export default ({ componentId, info, embedded = false, onBack }: {
       : <HistoryList keyword={searchKeyword} />
     : isLove && activeTab == 'playlist'
       ? <PlaylistList keyword={searchKeyword} />
-      : <MusicList
-          ref={musicListRef}
-          onExitSearch={handleExitSearch}
-          onMultiSelectModeChange={handleMultiSelectModeChange}
-          onCustomSortModeChange={handleCustomSortModeChange}
-        />
+      : isLove && activeTab == 'album'
+        ? <AlbumTab keyword={searchKeyword} />
+        : isLove && activeTab == 'artist'
+          ? <ArtistTab keyword={searchKeyword} />
+          : <MusicList
+              ref={musicListRef}
+              onExitSearch={handleExitSearch}
+              onMultiSelectModeChange={handleMultiSelectModeChange}
+              onCustomSortModeChange={handleCustomSortModeChange}
+            />
 
   if (embedded) {
     return (
@@ -236,7 +258,7 @@ export default ({ componentId, info, embedded = false, onBack }: {
           name={info.name}
           showSearch
           searchMode={searchMode}
-          searchPlaceholder={t(activeTab == 'playlist' ? 'mylist_search_playlists' : 'mylist_search_music')}
+          searchPlaceholder={searchPlaceholder}
           onShowSearch={handleShowSearch}
           onSearch={handleSearch}
           onExitSearch={handleExitSearch}
@@ -260,7 +282,7 @@ export default ({ componentId, info, embedded = false, onBack }: {
             name={info.name}
             showSearch
             searchMode={searchMode}
-            searchPlaceholder={t(activeTab == 'playlist' ? 'mylist_search_playlists' : 'mylist_search_music')}
+            searchPlaceholder={searchPlaceholder}
             onShowSearch={handleShowSearch}
             onSearch={handleSearch}
             onExitSearch={handleExitSearch}

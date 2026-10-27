@@ -1,4 +1,5 @@
 import { httpFetch } from '../../request'
+import { ARTIST_SONG_SORT_PARAMS } from '../artistNormalizers'
 // import { decodeName, formatPlayTime, sizeFormate } from '../../index'
 // import { signatureParams } from './util'
 import { getMusicInfosByList } from './musicInfo'
@@ -30,9 +31,10 @@ export default {
       },
     }
   },
-  async getSingerSongList(singerid, page, limit) {
+  async getSingerSongList(singerid, page, limit, sort = 'hot') {
     if (singerid == 0) throw new Error('歌手不存在') // kg源某些歌曲在歌手没被kg收录时返回的歌手id为0
-    const requestObj = httpFetch(`http://mobiles.kugou.com/api/v5/singer/song?singerid=${singerid}&page=${page}&pagesize=${limit}`)
+    const sorttype = ARTIST_SONG_SORT_PARAMS.kg[sort] ?? ARTIST_SONG_SORT_PARAMS.kg.hot
+    const requestObj = httpFetch(`http://mobiles.kugou.com/api/v5/singer/song?singerid=${singerid}&page=${page}&pagesize=${limit}&sorttype=${sorttype}`)
     let { body, statusCode } = await requestObj.promise
     if (statusCode !== 200) throw new Error('获取歌手歌曲列表失败')
     let listData = await getMusicInfosByList(body.data.info)

@@ -1,5 +1,7 @@
+import { httpFetch } from '../../request'
 import { getMusicInfosByList } from './musicInfo'
 import { createHttpFetch } from './util'
+import { normalizeKgAlbumSearch } from '../albumNormalizers'
 
 export default {
   /**
@@ -21,16 +23,32 @@ export default {
         show_album_tag: 0,
       },
     })
-    if (!albumInfoRequest) return Promise.reject(new Error('get album info failed.'))
+    if (!albumInfoRequest?.[0]) return Promise.reject(new Error('get album info failed.'))
     const albumInfo = albumInfoRequest[0]
 
     return {
       name: albumInfo.album_name,
-      image: albumInfo.sizable_cover.replace('{size}', 240),
+      image: albumInfo.sizable_cover ? String(albumInfo.sizable_cover).replace('{size}', 500) : null,
       desc: albumInfo.intro,
       authorName: albumInfo.author_name,
       publishDate: albumInfo.publish_date ?? null,
       // play_count: this.formatPlayCount(info.count),
+    }
+  },
+  /**
+   * 搜索专辑
+   * @param {*} text
+   * @param {*} page
+   * @param {*} limit
+   */
+  async search(text, page, limit = 20, retryNum = 0) {
+    if (retryNum > 2) throw new Error('try max num')
+    const { statusCode, body } = await httpFetch(`https://mobilecdn.kugou.com/api/v3/search/album?format=json&keyword=${encodeURIComponent(text)}&page=${page}&pagesize=${limit}`).promise
+    if (statusCode !== 200 || body.status !== 1 || !body.data) return this.search(text, page, limit, ++retryNum)
+    return {
+      ...normalizeKgAlbumSearch(body),
+      limit,
+      source: 'kg',
     }
   },
   /**
@@ -39,18 +57,18 @@ export default {
    * @param {*} page
    */
   async getAlbumDetail(id, page = 1, limit = 200) {
-    const albumList = await createHttpFetch(`http://mobiles.kugou.com/api/v3/album/song?version=9108&albumid=${id}&plat=0&pagesize=${limit}&area_code=0&page=${page}&with_res_tag=0`)
-    if (!albumList.info) return Promise.reject(new Error('Get album list failed.'))
+    const albumList = await createHttpFetch(`http://mobiles.kugou.com/api/v5/album/song?version=9108&albumid=${id}&plat=0&pagesize=${limit}&area_code=0&page=${page}&with_res_tag=0`)
+    if (!albumList?.info) return Promise.reject(new Error('Get album list failed.'))
 
-    let result = await getMusicInfosByList(albumList.info)
+    const songs = await getMusicInfosByList(albumList.info)
 
     const info = await this.getAlbumInfo(id)
 
     return {
-      list: result || [],
+      list: songs || [],
       page,
       limit,
-      total: albumList.total,
+      total: Number(albumList.total) || songs.length,
       source: 'kg',
       info: {
         name: info.name,

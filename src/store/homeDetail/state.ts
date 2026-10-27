@@ -2,6 +2,7 @@ import { createContext } from 'react'
 import { type NAV_ID_Type } from '@/config/constant'
 import { type BoardItem } from '@/store/leaderboard/state'
 import { type ListInfoItem } from '@/store/songlist/state'
+import { type ArtistSearchItem } from '@/utils/musicSdk/artistNormalizers'
 
 export interface MylistDetailItem {
   id: string
@@ -15,6 +16,7 @@ export type HomeDetailPushRoute = HomeDetailRoute extends infer Route
 
 export type HomeDetailRoute =
   | { id: string, type: 'songlist', info: ListInfoItem }
+  | { id: string, type: 'artist', info: ArtistSearchItem }
   | { id: string, type: 'leaderboard', source: LX.OnlineSource, board: BoardItem }
   | { id: string, type: 'mylist', info: MylistDetailItem }
   | { id: string, type: 'recommendNewSongs' }

@@ -1,11 +1,32 @@
 import { httpFetch } from '../../request'
 import { decodeName } from '../../index'
 import { formatSinger, objStr2JSON } from './util'
+import { normalizeKwAlbumSearch } from '../albumNormalizers'
 
 // let requestObj_list
 export default {
   limit_list: 36,
   limit_song: 1000,
+  /**
+   * 搜索专辑
+   * @param {*} text
+   * @param {*} page
+   * @param {*} limit
+   */
+  search(text, page, limit = 20, retryNum = 0) {
+    if (retryNum > 2) return Promise.reject(new Error('try max num'))
+    const requestObj = httpFetch(`http://search.kuwo.cn/r.s?all=${encodeURIComponent(text)}&ft=album&itemset=web_2013&client=kt&pn=${page - 1}&rn=${limit}&uid=794762570&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newver=1&encoding=utf&rformat=json&mobi=1`)
+    return requestObj.promise.then(({ statusCode, body }) => {
+      if (statusCode !== 200) return this.search(text, page, limit, ++retryNum)
+      body = objStr2JSON(body)
+      if (!Array.isArray(body.albumlist)) return this.search(text, page, limit, ++retryNum)
+      return {
+        ...normalizeKwAlbumSearch(body),
+        limit,
+        source: 'kw',
+      }
+    })
+  },
   filterListDetail(rawList, albumName, albumId) {
     // console.log(rawList)
     // console.log(rawList.length, rawList2.length)
@@ -89,6 +110,9 @@ export default {
       }
     })
   },
+  getAlbumDetail(id, page) {
+    return this.getAlbumListDetail(id, page)
+  },
   getAlbumListDetail(id, page, retryNum = 0) {
     if (retryNum > 2) return Promise.reject(new Error('try max num'))
     const requestObj_listDetail = httpFetch(`http://search.kuwo.cn/r.s?pn=${page - 1}&rn=${this.limit_song}&stype=albuminfo&albumid=${id}&show_copyright_off=0&encoding=utf&vipver=MUSIC_9.1.0`)
@@ -99,7 +123,7 @@ export default {
       if (!body.musiclist) return this.getAlbumListDetail(id, page, ++retryNum)
       body.name = decodeName(body.name)
       return {
-        list: this.filterListDetail(body.musiclist, body.name, body.albumid),
+        list: this.filterListDetail(body.musiclist, body.name, id),
         page,
         limit: this.limit_song,
         total: parseInt(body.songnum),

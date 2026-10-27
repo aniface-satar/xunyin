@@ -9,6 +9,8 @@ import HeaderBar, { type HeaderBarProps, type HeaderBarType } from './HeaderBar'
 import searchState, { type SearchType } from '@/store/search/state'
 import searchMusicState from '@/store/search/music/state'
 import searchSonglistState from '@/store/search/songlist/state'
+import searchAlbumState from '@/store/search/album/state'
+import searchArtistState from '@/store/search/artist/state'
 import { getSearchSetting, saveSearchSetting } from '@/utils/data'
 import { createStyle } from '@/utils/tools'
 import TipList, { type TipListType } from './TipList'
@@ -21,7 +23,20 @@ import { shouldShowSearchType } from './searchTypeVisibility'
 interface SearchInfo {
   temp_source: LX.OnlineSource
   source: LX.OnlineSource | 'all'
-  searchType: 'music' | 'songlist'
+  searchType: SearchType
+}
+
+const getSearchSources = (type: SearchType) => {
+  switch (type) {
+    case 'songlist':
+      return searchSonglistState.sources
+    case 'album':
+      return searchAlbumState.sources
+    case 'artist':
+      return searchArtistState.sources
+    default:
+      return searchMusicState.sources
+  }
 }
 
 export default () => {
@@ -39,21 +54,20 @@ export default () => {
       searchInfo.current.temp_source = info.temp_source
       searchInfo.current.source = info.source
       searchInfo.current.searchType = info.type
-      switch (info.type) {
-        case 'music':
-          headerBarRef.current?.setSourceList(searchMusicState.sources, info.source)
-          break
-        case 'songlist':
-          headerBarRef.current?.setSourceList(searchSonglistState.sources, info.source)
-          break
-      }
+      headerBarRef.current?.setSourceList(getSearchSources(info.type), info.source)
       headerBarRef.current?.setText(searchState.searchText)
       listRef.current?.loadList(searchState.searchText, searchInfo.current.source, searchInfo.current.searchType)
     })
 
     const handleTypeChange = (type: SearchType) => {
       searchInfo.current.searchType = type
+      const sources = getSearchSources(type)
+      if (!sources.includes(searchInfo.current.source)) {
+        searchInfo.current.source = sources[0]
+        void saveSearchSetting({ source: searchInfo.current.source })
+      }
       void saveSearchSetting({ type })
+      headerBarRef.current?.setSourceList(sources, searchInfo.current.source)
       listRef.current?.loadList(searchState.searchText, searchInfo.current.source, type)
     }
     const handleHomeTabReset = () => {

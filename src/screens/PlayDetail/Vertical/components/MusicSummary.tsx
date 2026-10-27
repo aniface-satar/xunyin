@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef } from 'react'
+import { memo, useCallback, useMemo, useRef } from 'react'
 import { StyleSheet, TouchableOpacity, View } from 'react-native'
 
 import Text from '@/components/common/Text'
@@ -11,7 +11,10 @@ import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import SynchronizedMarquee, { useSynchronizedMarquee } from '@/components/common/SynchronizedMarquee'
 import SheetThemeProvider from '@/components/player/SheetThemeProvider'
 import { collectMusic, uncollectMusic } from '@/core/player/player'
-import { createStyle } from '@/utils/tools'
+import { resolveArtistForMusic } from '@/core/artistResolve'
+import { getArtistSearchName } from '@/core/musicLinks'
+import { useOpenMusicDetail } from '@/utils/hooks/useOpenMusicDetail'
+import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeH, scaleSizeW, setSpText } from '@/utils/pixelRatio'
 import { BTN_ICON_SIZE, BTN_WIDTH, DOTS_VERTICAL_ALIGNMENT_OFFSET } from '../Player/components/MoreBtn/Btn'
 import { FULL_COVER_RADIUS, getPlayDetailLayout } from '../layout'
@@ -33,6 +36,16 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
   const marquee = useSynchronizedMarquee({ lineCount: 2 })
   const { width: winWidth, height: winHeight } = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
+  const openMusicDetail = useOpenMusicDetail()
+  const resolvingArtistRef = useRef(false)
+  const rawMusicInfo = playMusicInfo.musicInfo
+    ? 'progress' in playMusicInfo.musicInfo
+      ? playMusicInfo.musicInfo.metadata.musicInfo
+      : playMusicInfo.musicInfo
+    : null
+  const artistSearchName = rawMusicInfo && rawMusicInfo.source != 'local'
+    ? getArtistSearchName(rawMusicInfo.singer)
+    : null
 
   const { contentWidth } = useMemo(() => getPlayDetailLayout(
     winWidth,
@@ -45,6 +58,15 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
     if (isLove) uncollectMusic()
     else collectMusic()
   }
+  const handleOpenArtist = useCallback(() => {
+    if (!rawMusicInfo || !artistSearchName || resolvingArtistRef.current) return
+    resolvingArtistRef.current = true
+    void resolveArtistForMusic(rawMusicInfo).then(item => {
+      resolvingArtistRef.current = false
+      if (item) openMusicDetail({ type: 'artist', info: item })
+      else toast(global.i18n.t('artist_not_found'))
+    })
+  }, [artistSearchName, openMusicDetail, rawMusicInfo])
   const moreSheetRef = useRef<MusicMoreSheetType>(null)
 
   return (
@@ -59,7 +81,15 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
           <Text color={glassColors.text} style={textStyles.title} numberOfLines={1}>{musicInfo.name}</Text>
         </SynchronizedMarquee>
         <SynchronizedMarquee id="artist" controller={marquee} style={textStyles.artistMask}>
-          <Text color={glassColors.muted} style={textStyles.artist}>{musicInfo.singer}</Text>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            disabled={!artistSearchName}
+            onPress={handleOpenArtist}
+            accessibilityRole="button"
+            accessibilityLabel={musicInfo.singer}
+          >
+            <Text color={glassColors.muted} style={textStyles.artist}>{musicInfo.singer}</Text>
+          </TouchableOpacity>
         </SynchronizedMarquee>
       </View>
       <View style={styles.actionRow}>
