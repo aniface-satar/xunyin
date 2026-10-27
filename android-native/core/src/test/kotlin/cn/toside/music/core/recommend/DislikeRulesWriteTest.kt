@@ -48,6 +48,24 @@ class DislikeRulesWriteTest {
     }
 
     @Test
+    fun parseEscapesSeparatorInsideFieldsLikeWriteSide() {
+        // 歌名里带 @：写侧存成 `a@b#歌手`，读侧必须产出一模一样的键
+        val written = DislikeRulesParser.normalize("a@b@歌手")
+        assertEquals("a@b#歌手", written)
+        assertTrue(DislikeRulesParser.parse("a@b@歌手").names.contains(written))
+
+        // 歌手名里带 @：只写歌手规则时同样转义
+        assertEquals(setOf("a#b"), DislikeRulesParser.parse("@a@b").singerNames)
+    }
+
+    @Test
+    fun parseNormalizesCaseAndWhitespace() {
+        val rules = DislikeRulesParser.parse("  晴天 @ 周杰伦  \n十年")
+        assertTrue(rules.names.contains("晴天@周杰伦"))
+        assertTrue(rules.musicNames.contains("十年"))
+    }
+
+    @Test
     fun emptyPartsDegradeToValidRules() {
         assertEquals("晴天", DislikeRulesParser.normalize(DislikeRulesParser.appendRule("", "晴天", null)))
         assertEquals("@周杰伦", DislikeRulesParser.normalize(DislikeRulesParser.appendRule("", null, "周杰伦")))

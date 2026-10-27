@@ -8,6 +8,7 @@ import cn.toside.music.core.recommend.DislikeRules
 import cn.toside.music.core.recommend.PlaylistRank
 import cn.toside.music.core.recommend.m3.Discovery
 import cn.toside.music.core.recommend.m3.LanguageQuota
+import cn.toside.music.core.recommend.m3.LibraryIndex
 import cn.toside.music.core.recommend.m3.Onboarding
 import cn.toside.music.core.recommend.m3.SimilarArtist
 import cn.toside.music.core.recommend.radio.ArtistLangLookup
@@ -89,7 +90,8 @@ data class RadioStatus(
  *   kg 搜歌补给（W5-3 方案 b，硬上限 2.5 s，缓存为空则零请求），首屏因此可能带 E；
  * - 语种四级链已接到候选与历史项；`kw`/`wy`/`mg` 没有逐曲语种字段，主要靠 L2 桶提示与
  *   L3 歌手表，L4 只判 zh/ja/ko/other（不判 en，RN 同）；
- * - 导入归因（[RadioPlatform.importedOrigins]）返回空，M1 未保存导入来源映射。
+ * - 导入归因（[RadioPlatform.importedOrigins]）按 RN 的库索引语义现算：从自建歌单的
+ *   `source/sourceListId` 建 `trackKey → 来源歌单键`，不做逐曲元数据（RN 也没有）。
  */
 class RadioRuntime(
     private val player: PlayerRuntime,
@@ -385,6 +387,23 @@ class RadioRuntime(
     }
 
     /**
+     * 推荐歌单「不感兴趣」的引擎侧记账（RN `dislikeCuratedPlaylist` 的后半段）。
+     *
+     * 隐藏名单本身由 `HiddenPlaylistStore` 落盘；这里补的是歌单负反馈 + 所属分类降权，
+     * 否则「隐藏了这张歌单」不会让同类歌单整体少出。分类为空或已观察过时引擎不改主题
+     * （与 RN 的 `applyPlaylistNotInterested` 同判据）。
+     */
+    suspend fun applyPlaylistNotInterested(
+        playlistId: String,
+        category: String?,
+    ) {
+        if (playlistId.isEmpty()) return
+        stateRestored.await()
+        engine.applyPlaylistNotInterested(playlistId, category)
+        publish()
+    }
+
+    /**
      * 「不感兴趣」闭环：持久化屏蔽（`@dislike_list`）+ 引擎显式负反馈 +
      * 从 pending/播放队列撤下；正在播这首歌时直接跳下一首。
      */
@@ -571,7 +590,37 @@ class RadioRuntime(
             scope.launch { removeCommittedFromPlayerQueue(trackKey) }
         }
 
-        override suspend fun importedOrigins(trackKey: String): List<String> = emptyList()
+        override suspend fun importedOrigins(trackKey: String): List<String> {
+            if (trackKey.isEmpty()) return emptyList()
+            return runCatching { buildOriginIndex()[trackKey].orEmpty() }.getOrElse { emptyList() }
+        }
+    }
+
+    /**
+     * 导入来源索引（RN `ensureLibraryIndex` 的 origins 子集）。
+     *
+     * 不缓存：ListStore 已把各列表曲目缓存在内存里，这里只是重新算一遍 `trackKey`，
+     * 而归因只在「喜欢 / 加入歌单」两个动作时取用。RN 靠 `myListMusicUpdate` 事件失效，
+     * 原生没有等价事件总线，现算等于永远不会读旧表。
+     */
+    private suspend fun buildOriginIndex(): Map<String, List<String>> {
+        lists.ensureLoaded()
+        val playlists =
+            lists.store.state.value.userLists
+                .filterNot { info ->
+                    info.id == StorageKeys.ListIds.LOVE ||
+                        info.id == StorageKeys.ListIds.DEFAULT ||
+                        info.id == StorageKeys.ListIds.TEMP ||
+                        info.id.startsWith("download")
+                }.map { info ->
+                    LibraryIndex.PlaylistOriginInput(
+                        id = info.id,
+                        source = info.source,
+                        sourceListId = info.sourceListId,
+                        trackKeys = lists.musics(info.id).map { RadioTrackKeys.buildTrackKey(it) },
+                    )
+                }
+        return LibraryIndex.buildOriginIndex(playlists)
     }
 
     /** 画像：M1 的歌手先验 + 「我喜欢的/播放历史」作为种子（M1 未存种子曲目表）。 */

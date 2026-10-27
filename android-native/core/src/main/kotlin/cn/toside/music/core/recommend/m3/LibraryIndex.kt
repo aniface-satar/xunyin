@@ -1,5 +1,6 @@
 package cn.toside.music.core.recommend.m3
 
+import cn.toside.music.core.recommend.PlaylistRank
 import cn.toside.music.core.recommend.radio.ObservedPlaylist
 import cn.toside.music.core.recommend.radio.PlayEndReason
 import cn.toside.music.core.recommend.radio.RadioConfig
@@ -58,6 +59,48 @@ object LibraryIndex {
                 }
                 if (index.size >= max(0, maxEntries)) continue
                 index[trackKey] = TrackPlaylistIndexEntry(listOf(playlist.id), now)
+            }
+        }
+        return index
+    }
+
+    /**
+     * 歌单级导入来源输入 —— RN `LibraryPlaylistInput` 里参与归因的字段子集。
+     *
+     * 曲目先由调用方转成 trackKey（`RadioTrackKeys.buildTrackKey`），core 不解析曲目结构。
+     */
+    data class PlaylistOriginInput(
+        val id: String,
+        val source: String? = null,
+        val sourceListId: String? = null,
+        val trackKeys: List<String> = emptyList(),
+    )
+
+    /**
+     * 网络导入来源键（RN `getPlaylistOriginKey`）：`source` 与 `sourceListId`
+     * 缺一即视为非导入歌单，返回 null —— 用户自建但没从网络歌单导入的列表不贡献归因。
+     */
+    fun playlistOriginKey(playlist: PlaylistOriginInput): String? {
+        val source = playlist.source?.takeIf { it.isNotEmpty() } ?: return null
+        val sourceListId = playlist.sourceListId?.takeIf { it.isNotEmpty() } ?: return null
+        return PlaylistRank.normalizePlaylistKey(source, sourceListId)
+    }
+
+    /**
+     * 曲目 → 导入来源歌单键（RN `buildLibraryIndexData` 的 `origins` 字段）。
+     *
+     * 一首歌可能同时被多张网络歌单导入（用户各导一份），来源去重且保留首次出现顺序；
+     * 无来源歌单直接跳过，空 trackKey 不入表。判断只看歌单级 `source/sourceListId`，
+     * RN 没有逐曲来源元数据，这里也不造。
+     */
+    fun buildOriginIndex(playlists: List<PlaylistOriginInput>): Map<String, List<String>> {
+        val index = linkedMapOf<String, MutableList<String>>()
+        for (playlist in playlists) {
+            val origin = playlistOriginKey(playlist) ?: continue
+            for (trackKey in playlist.trackKeys) {
+                if (trackKey.isEmpty()) continue
+                val origins = index.getOrPut(trackKey) { mutableListOf() }
+                if (!origins.contains(origin)) origins.add(origin)
             }
         }
         return index

@@ -29,6 +29,14 @@ object RecommendStores {
     /** 偏好问卷（`onboarding.weights`）。 */
     val onboarding: OnboardingStore by lazy { OnboardingStore(requireContext()) }
 
+    /**
+     * 电台落盘状态（只读出口）。
+     *
+     * 发现页的分类挑选要消费 `themeWeights`，而 [RadioRuntime] 不是单例；写侧仍只在
+     * 电台运行时里，这里只给 UI/发现页读同一份落盘状态。
+     */
+    val radioState: RadioStateStore by lazy { RadioStateStore(requireContext()) }
+
     /** 歌手语言表（L3）。 */
     val artistLang: ArtistLangStore by lazy { ArtistLangStore(requireContext()) }
 

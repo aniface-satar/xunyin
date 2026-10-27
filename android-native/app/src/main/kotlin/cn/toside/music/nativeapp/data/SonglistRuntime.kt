@@ -3,6 +3,7 @@ package cn.toside.music.nativeapp.data
 import cn.toside.music.core.music.search.SearchRequest
 import cn.toside.music.core.recommend.PlaylistRank
 import cn.toside.music.core.recommend.RecommendProfile
+import cn.toside.music.core.recommend.ThemePreference
 import cn.toside.music.core.songlist.KgSonglist
 import cn.toside.music.core.songlist.KwSonglist
 import cn.toside.music.core.songlist.MgSonglist
@@ -15,11 +16,27 @@ import cn.toside.music.core.songlist.SonglistPage
 import cn.toside.music.core.songlist.SonglistRequest
 import cn.toside.music.core.songlist.SonglistSort
 import cn.toside.music.core.songlist.SonglistSource
+import cn.toside.music.core.songlist.SonglistTag
 import cn.toside.music.core.songlist.SonglistTags
 import cn.toside.music.core.songlist.Songlists
 import cn.toside.music.core.songlist.TxSonglist
 import cn.toside.music.core.songlist.WySonglist
 import kotlinx.serialization.json.JsonObject
+
+/**
+ * 发现页分类挑选（RN `getCuratedPlaylistCategory`）：
+ * 分类排序吃主题权重，画像关键词只做并列裁决（RN `pickPlaylistTag` 同）。
+ *
+ * 冷启动（权重与关键词都为空）时排序退化成目录原序，等价于按轮次游走。
+ * 单独抽成纯函数只为可测：接线错误（传空权重）以前会静默丢掉问卷播种的主题权重。
+ */
+internal fun pickCuratedTag(
+    catalogue: List<SonglistTag>,
+    keywords: List<String>,
+    themeWeights: Map<String, ThemePreference>,
+    rotation: Int,
+    now: Long,
+): SonglistTag? = PlaylistRank.pickPlaylistTag(catalogue, { it.name }, themeWeights, keywords, rotation, now)
 
 /**
  * 在线歌单运行时（Wave2 Lane A）—— 发现页「歌单」面板与歌单详情页的内容接线。
@@ -219,6 +236,9 @@ object RecommendRuntime {
         // 画像重排（M1）：只调顺序，不换源也不改取数；读不到画像时保持原序。
         val now = System.currentTimeMillis()
         val profile = runCatching { RecommendProfileRuntime.load(now, refresh = isRefresh) }.getOrNull()
+        // 主题权重一直在 RadioState 里（用户喜欢/踩雷 + 问卷播种都会写），没有画像关键词时
+        // 同样要参与分类挑选（RN getCuratedPlaylistCategory 恒定传 state.themeWeights）。
+        val themeWeights = runCatching { RecommendStores.radioState.read()?.themeWeights }.getOrNull().orEmpty()
         val start = Math.floorMod(playlistRotation, sources.size)
         playlistRotation++
         for (offset in sources.indices) {
@@ -228,18 +248,13 @@ object RecommendRuntime {
                     val tags = SonglistRuntime.getTags(source, isRefresh)
                     val catalogue = RecommendSelection.flattenTags(tags)
                     val tag =
-                        if (profile != null && profile.keywords.isNotEmpty()) {
-                            PlaylistRank.pickPlaylistTag(
-                                catalogue,
-                                { it.name },
-                                emptyMap(),
-                                profile.keywords,
-                                playlistRotation + offset,
-                                now,
-                            )
-                        } else {
-                            RecommendSelection.pickTag(catalogue, playlistRotation + offset)
-                        } ?: return@runCatching null
+                        pickCuratedTag(
+                            catalogue,
+                            profile?.keywords.orEmpty(),
+                            themeWeights,
+                            playlistRotation + offset,
+                            now,
+                        ) ?: return@runCatching null
                     val sort = RecommendSelection.pickHotSort(SonglistRuntime.sorts(source)) ?: return@runCatching null
                     val page = SonglistRuntime.getList(source, sort.id, tag.id, 1, isRefresh)
                     if (page.list.isEmpty()) {
