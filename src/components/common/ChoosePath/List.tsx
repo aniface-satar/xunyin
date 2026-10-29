@@ -4,6 +4,7 @@ import { externalStorageDirectoryPath, readDir } from '@/utils/fs'
 import { createStyle, toast } from '@/utils/tools'
 // import { useTranslation } from '@/plugins/i18n'
 import Modal, { type ModalType } from '@/components/common/Modal'
+import GlassBackdrop from '@/components/common/GlassBackdrop'
 
 import Header from './components/Header'
 import Main from './components/Main'
@@ -175,6 +176,11 @@ export default forwardRef<ListType, ListProps>(({
   return (
     <Modal ref={modalRef} bgHide={false} statusBarPadding={false}>
       <View style={{ ...styles.container, backgroundColor: theme['c-content-background'] }}>
+        {
+          // 壁纸模式下这块实底是透明的：不铺糊底，整页目录就会摊在照片纹理上找字。
+          // 与 Dialog / Popup / 更新窗口同一个配方（本组件是全屏高度的面，糊图按窗口坐标铺满）。
+          theme['is-wallpaper'] ? <GlassBackdrop /> : null
+        }
         <Header
           onRefreshDir={async(path) => readDir(path, readOptions.current.dirOnly, readOptions.current.filter, true)}
           onOpenDir={async(path) => readDir(path, readOptions.current.dirOnly, readOptions.current.filter, false, true)}

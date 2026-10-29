@@ -11,6 +11,21 @@ import { primeBackdropForPanel } from '@/utils/backdropSnapshot'
 
 export const getStatusBarStyle = (isDark: boolean) => isDark ? 'light' : 'dark'
 
+/**
+ * 打开下面这几个窗口的统一入口（更新 / 公告 / 协议 / 同步模式）。
+ *
+ * 它们走的是 RNN 的 showOverlay，不是 RN Modal —— 跟页面同处一个 Activity 的 content。
+ * 挂上之后再 captureScreen，拍到的画面里已经带着它们自己（黑色遮罩 + 面板），
+ * 玻璃层糊出来就是"糊中糊"：面板底下透出自己那块暗轮廓，观感既不像毛玻璃，也像叠了两层。
+ * 壁纸模式下先拍背后那一帧再挂，窗口第一帧拿到的就是它背后真实的页面。
+ *
+ * 普通主题不花这一趟：那边面板本来就是实底，没有毛玻璃。
+ */
+const showOverlayWithBackdrop = async(options: Parameters<typeof Navigation.showOverlay>[0]) => {
+  if (themeState.theme['is-wallpaper']) await primeBackdropForPanel()
+  return Navigation.showOverlay(options)
+}
+
 export const dismissOverlay = async(compId: string) => Navigation.dismissOverlay(compId)
 
 export const pop = async(compId: string) => Navigation.pop(compId)
@@ -20,7 +35,7 @@ export const popTo = async(compId: string) => Navigation.popTo(compId)
 export const showPactModal = () => {
   const theme = themeState.theme
 
-  void Navigation.showOverlay({
+  void showOverlayWithBackdrop({
     component: {
       name: PACT_MODAL,
       options: {
@@ -69,12 +84,7 @@ export const showPactModal = () => {
 export const showVersionModal = async() => {
   const theme = themeState.theme
 
-  // 先拍一张「背后的画面」再挂 overlay：这张窗口走的是 RNN 的 showOverlay，跟页面同处
-  // 一个 Activity 的 content —— 挂上之后再 captureScreen，拍到的会包含它自己（黑色遮罩 + 窗口），
-  // 玻璃面糊的就是"糊中糊"。先拍再挂，首帧拿到的就是它背后那一帧。
-  if (theme['is-wallpaper']) await primeBackdropForPanel()
-
-  await Navigation.showOverlay({
+  await showOverlayWithBackdrop({
     component: {
       name: VERSION_MODAL,
       options: {
@@ -102,7 +112,7 @@ export const showVersionModal = async() => {
 export const showNoticeModal = (text: string) => {
   const theme = themeState.theme
 
-  void Navigation.showOverlay({
+  void showOverlayWithBackdrop({
     component: {
       name: NOTICE_MODAL,
       passProps: { text },
@@ -130,7 +140,7 @@ export const showNoticeModal = (text: string) => {
 export const showSyncModeModal = () => {
   const theme = themeState.theme
 
-  void Navigation.showOverlay({
+  void showOverlayWithBackdrop({
     component: {
       name: SYNC_MODE_MODAL,
       options: {

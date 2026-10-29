@@ -42,10 +42,19 @@ interface GlassBackdropProps {
    * 各处玻璃面才是"同一张图的磨砂版"。
    */
   scrimOpacity?: number
+  /**
+   * 挂在 RNN overlay（更新 / 公告 / 协议 / 同步模式）里时传 false。
+   *
+   * 那类窗口不是 RN Modal，跟页面同处一个 Activity 的 content —— 挂上之后再 captureScreen，
+   * 拍到的画面里带着它自己（黑色遮罩 + 面板），糊出来就是"糊中糊"。这些面一律由
+   * `showOverlayWithBackdrop` 在挂载前预拍；万一那次预拍超时，这里宁可空着（只留压暗层），
+   * 也不去补拍一张把自己拍进去的图。
+   */
+  selfCapture?: boolean
   style?: ViewProps['style']
 }
 
-const GlassBackdrop = ({ blurRadius = 16, overlayOpacity = 0.62, scrimOpacity = 0.3, flat = false, measureKey, restOffset, style }: GlassBackdropProps) => {
+const GlassBackdrop = ({ blurRadius = 16, overlayOpacity = 0.62, scrimOpacity = 0.3, flat = false, selfCapture = true, measureKey, restOffset, style }: GlassBackdropProps) => {
   const theme = useTheme()
   const windowSize = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
@@ -129,7 +138,9 @@ const GlassBackdrop = ({ blurRadius = 16, overlayOpacity = 0.62, scrimOpacity = 
       return
     }
     // 没赶上预拍（截图失败 / 从别的入口挂上来）才补一张。这一档会有一次"从空到糊"，
-    // 但至少不会两张图互跳 —— 补上之后就固定住。
+    // 但至少不会两张图互跳 —— 补上之后就固定住。overlay 那一类面不许补拍（会拍到它自己），
+    // 它们只认挂载前预拍的那一张。
+    if (!selfCapture) return
     let active = true
     void requestBackdropSnapshot().then((next) => {
       if (!active || next == null) return
@@ -138,7 +149,7 @@ const GlassBackdrop = ({ blurRadius = 16, overlayOpacity = 0.62, scrimOpacity = 
     return () => {
       active = false
     }
-  }, [wallpaper, flat, canUseBackdrop, customSource?.uri])
+  }, [wallpaper, flat, canUseBackdrop, selfCapture, customSource?.uri])
 
   // 外部换值 = "这个面刚刚挪过位置"（抽屉从屏幕外滑进来）。首帧就会 applyOffset，
   // 所以这里不必额外先测一次。挂载时也会跑一轮，与 onLayout 那一轮重叠，无害。

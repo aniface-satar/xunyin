@@ -15,6 +15,9 @@ const popupSource = readSrc('components/common/Popup.tsx')
 const dialogSource = readSrc('components/common/Dialog.tsx')
 const shareCardModalSource = readSrc('components/ShareCard/ShareCardModal.tsx')
 const modalContentSource = readSrc('navigation/components/ModalContent.tsx')
+const noticeModalSource = readSrc('navigation/components/NoticeModal.tsx')
+const pactModalSource = readSrc('navigation/components/PactModal.tsx')
+const syncModeModalSource = readSrc('navigation/components/SyncModeModal.tsx')
 const navigationUtilsSource = readSrc('navigation/utils.ts')
 const songListSource = readSrc('screens/Home/Views/SongList/index.tsx')
 const glassSource = readSrc('components/common/GlassBackdrop.tsx')
@@ -39,6 +42,8 @@ test('菜单浮窗（歌曲条 ⋮ / 歌单条 ⋮ / 音源选择）铺自己的
 test('「打开更新窗口」那个弹窗铺同一张糊底', () => {
   assert.match(modalContentSource, /import GlassBackdrop from '@\/components\/common\/GlassBackdrop'/)
   assert.match(modalContentSource, /theme\['is-wallpaper'\] \? <GlassBackdrop/)
+  // overlay 与页面同 window：补拍会把自己拍进去，底图只认挂载前预拍的那一张
+  assert.match(modalContentSource, /<GlassBackdrop selfCapture=\{false\}/)
 })
 
 test('糊底按各自的圆角裁掉溢出的那一圈', () => {
@@ -46,20 +51,35 @@ test('糊底按各自的圆角裁掉溢出的那一圈', () => {
   assert.match(modalContentSource, /overflow: 'hidden'/)
 })
 
-// 更新窗口走的是 RNN 的 showOverlay，跟页面同处一个 Activity 的 content。
-// 挂上之后再截图，拍到的画面里已经带着它自己（遮罩 + 窗口），玻璃面糊的就是"糊中糊"。
-// 先拍再挂，窗口第一帧拿到的就是它背后那一帧。
-test('更新窗口先拍背后画面再挂 overlay', () => {
-  const fnStart = navigationUtilsSource.indexOf('export const showVersionModal')
-  const fnEnd = navigationUtilsSource.indexOf('export const showNoticeModal', fnStart)
-  assert.ok(fnStart >= 0 && fnEnd > fnStart, 'showVersionModal not found')
-  const fnSource = navigationUtilsSource.slice(fnStart, fnEnd)
-  const primeAt = fnSource.indexOf('await primeBackdropForPanel()')
-  const showAt = fnSource.indexOf('await Navigation.showOverlay')
-  assert.ok(primeAt >= 0, 'version modal does not prime the backdrop snapshot')
-  assert.ok(showAt > primeAt, 'version modal mounts before the snapshot is captured')
-  // 只在壁纸模式下花这一趟：普通主题没有毛玻璃
-  assert.match(fnSource, /if \(theme\['is-wallpaper'\]\) await primeBackdropForPanel\(\)/)
+// 更新 / 公告 / 协议 / 同步模式这四个窗口走的是 RNN 的 showOverlay，不是 RN Modal ——
+// 它们跟页面同处一个 Activity 的 content。挂上之后再截图，画面里已经带着它们自己
+// （黑色遮罩 + 面板），玻璃面糊的就是"糊中糊"。统一从 showOverlayWithBackdrop 进：
+// 壁纸模式先拍背后那一帧再挂，窗口第一帧拿到的就是它背后真实的页面。
+test('更新 / 公告 / 协议 / 同步窗口都先拍背后画面再挂', () => {
+  assert.ok(navigationUtilsSource.includes('const showOverlayWithBackdrop'), 'overlay helper missing')
+  assert.match(navigationUtilsSource, /if \(themeState\.theme\['is-wallpaper'\]\) await primeBackdropForPanel\(\)/)
+  assert.match(navigationUtilsSource, /return Navigation\.showOverlay\(options\)/)
+  // 四个打开函数一律走 helper；不许再有直连 Navigation.showOverlay 的旁路
+  const helperCalls = navigationUtilsSource.match(/showOverlayWithBackdrop\(\{/g) ?? []
+  assert.equal(helperCalls.length, 4, 'every overlay opener must go through the helper')
+  assert.doesNotMatch(navigationUtilsSource, /^\s+(void|await) Navigation\.showOverlay\(/m)
+})
+
+// 公告 / 协议 / 同步模式与更新窗口是同一块面：都套 ModalContent，壁纸模式里
+// 那块透明面板由它铺糊底。只要有一个没套，那个窗口在自定义背景主题下就是一块纯黑/纯白。
+test('公告 / 协议 / 同步模式与更新窗口共用同一块糊底', () => {
+  for (const source of [noticeModalSource, pactModalSource, syncModeModalSource]) {
+    assert.match(source, /import ModalContent from '\.\/ModalContent'/)
+    assert.match(source, /<ModalContent>/)
+  }
+})
+
+// 选择文件夹是全屏高度的面，`c-content-background` 在壁纸模式里是透明的 ——
+// 不铺糊底，整页目录就摊在照片纹理上。
+test('选择文件夹弹窗也铺糊底', () => {
+  const choosePathSource = readSrc('components/common/ChoosePath/List.tsx')
+  assert.match(choosePathSource, /import GlassBackdrop from '@\/components\/common\/GlassBackdrop'/)
+  assert.match(choosePathSource, /theme\['is-wallpaper'\] \? <GlassBackdrop/)
 })
 
 // 歌单页那个「默认」标签抽屉（DrawerLayoutAndroid）跟弹窗是同一类面：壁纸模式下它的底板
