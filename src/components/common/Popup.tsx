@@ -178,7 +178,7 @@ export default forwardRef<PopupType, PopupProps>(({
             // 不糊的话一整块内容就直接压在照片纹理上。糊图铺满整屏、按窗口坐标对齐，
             // 面板里那一块的纹理与页面上的壁纸对得上。普通主题不插，那边仍是实白底。
             theme['is-wallpaper']
-              ? <GlassBackdrop blurRadius={24} style={position == 'bottom' ? { borderTopLeftRadius: 8, borderTopRightRadius: 8 } : undefined} />
+              ? <GlassBackdrop style={position == 'bottom' ? { borderTopLeftRadius: 8, borderTopRightRadius: 8 } : undefined} />
               : null
           }
           <View style={styles.header}>

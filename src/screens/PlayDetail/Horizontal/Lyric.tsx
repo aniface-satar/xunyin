@@ -6,6 +6,9 @@ import { createStyle } from '@/utils/tools'
 // import { useComponentIds } from '@/store/common/hook'
 import { useSettingValue } from '@/store/setting/hook'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
+import { useTheme } from '@/store/theme/hook'
+import { useCoverSurface } from '@/utils/monet/useCoverSurface'
+import { WALLPAPER_LYRIC_ACTIVE_SHADOW, WALLPAPER_LYRIC_INK, WALLPAPER_LYRIC_OPACITY, WALLPAPER_LYRIC_TRANSLATION_INK } from '@/utils/wallpaper/palette'
 import { AnimatedColorText } from '@/components/common/Text'
 import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
@@ -21,27 +24,36 @@ interface LineProps {
   line: Line
   lineNum: number
   activeLine: number
+  /** 壁纸模式（自定义背景）且没有封面场：非当前行换成 palette 里那支专用的白（见 Vertical/Lyric.tsx 同名参数） */
+  wallpaperLyric: boolean
   onLayout: (lineNum: number, height: number, width: number) => void
 }
-const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
+const LrcLine = memo(({ line, lineNum, activeLine, wallpaperLyric, onLayout }: LineProps) => {
   const glassColors = useGlassColors()
   const lrcFontSize = useSettingValue('playDetail.horizontal.style.lrcFontSize')
   const textAlign = useSettingValue('playDetail.style.align')
   const size = lrcFontSize / 10
   const lineHeight = setSpText(size) * 1.3
 
+  const active = activeLine == lineNum
   const colors = useMemo(() => {
-    const active = activeLine == lineNum
     return active ? [
       glassColors.lyricActive,
       glassColors.lyricActiveTranslation,
       1,
     ] as const : [
-      glassColors.lyric,
-      glassColors.lyricTranslation,
-      glassColors.lyricOpacity,
+      wallpaperLyric ? WALLPAPER_LYRIC_INK : glassColors.lyric,
+      wallpaperLyric ? WALLPAPER_LYRIC_TRANSLATION_INK : glassColors.lyricTranslation,
+      wallpaperLyric ? WALLPAPER_LYRIC_OPACITY : glassColors.lyricOpacity,
     ] as const
-  }, [activeLine, lineNum, glassColors])
+  }, [active, glassColors, wallpaperLyric])
+
+  // 与竖屏同一笔账：当前行是纯白、到顶了，只能靠外沿那圈实暗环把它托深（见 palette）。
+  const activeShadow = wallpaperLyric && active ? {
+    textShadowColor: WALLPAPER_LYRIC_ACTIVE_SHADOW.color,
+    textShadowOffset: WALLPAPER_LYRIC_ACTIVE_SHADOW.offset,
+    textShadowRadius: WALLPAPER_LYRIC_ACTIVE_SHADOW.radius,
+  } : null
 
   const handleLayout = ({ nativeEvent }: LayoutChangeEvent) => {
     onLayout(lineNum, nativeEvent.layout.height, nativeEvent.layout.width)
@@ -55,6 +67,7 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
         ...styles.lineText,
         textAlign,
         lineHeight,
+        ...(activeShadow ?? {}),
       }} textBreakStrategy="simple" color={colors[0]} opacity={colors[2]} size={size}>{line.text}</AnimatedColorText>
       {
         line.extendedLyrics.map((lrc, index) => {
@@ -69,6 +82,7 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
   )
 }, (prevProps, nextProps) => {
   return prevProps.line === nextProps.line &&
+    prevProps.wallpaperLyric === nextProps.wallpaperLyric &&
     prevProps.activeLine != nextProps.lineNum &&
     nextProps.activeLine != nextProps.lineNum
 })
@@ -77,6 +91,11 @@ const wait = async() => new Promise(resolve => setTimeout(resolve, 100))
 export default () => {
   const lyricLines = useLrcSet()
   const { line } = useLrcPlay()
+  const theme = useTheme()
+  const { surface } = useCoverSurface()
+  // 与竖屏歌词页同一判据：壁纸模式且没有封面场时，非当前行走 palette 那支专用的白。
+  // 横向这一页也有封面场（动态背景），所以不能只看 is-wallpaper。
+  const wallpaperLyric = surface == null && theme['is-wallpaper']
   const flatListRef = useRef<FlatList>(null)
   const playLineRef = useRef<PlayLineType>(null)
   const isPauseScrollRef = useRef(true)
@@ -254,7 +273,7 @@ export default () => {
 
   const renderItem: FlatListType['renderItem'] = ({ item, index }) => {
     return (
-      <LrcLine line={item} lineNum={index} activeLine={line} onLayout={handleLineLayout} />
+      <LrcLine line={item} lineNum={index} activeLine={line} wallpaperLyric={wallpaperLyric} onLayout={handleLineLayout} />
     )
   }
   const getkey: FlatListType['keyExtractor'] = (item, index) => `${index}${item.text}`

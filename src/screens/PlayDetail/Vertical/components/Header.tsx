@@ -28,12 +28,19 @@ interface HeaderProps {
   onBack?: () => void
   pageIndex?: number
   onPageSelected?: (page: number) => void
+  /**
+   * 是否自己挂一份 `<StatusBar>`。播控页（PlayerOverlay）里必须传 false：
+   * 那里的 Header 会同时挂两份（静态 + ghost），每份都会让 RN 重调
+   * `setTranslucent(true)` -> 原生 `requestApplyInsets(decorView)` -> 整窗重排，
+   * 正好砸在展开动画的第一帧上（详见 components/player/OverlayStatusBar.tsx 的说明）。
+   */
+  statusBar?: boolean
 }
 
 const PAGE_NAMES = ['play_detail_tab_song', 'play_detail_tab_lyric'] as const
 const LYRIC_PAGE = 1
 
-export default memo(({ onBack, pageIndex = 0, onPageSelected }: HeaderProps) => {
+export default memo(({ onBack, pageIndex = 0, onPageSelected, statusBar = true }: HeaderProps) => {
   const statusBarHeight = useStatusbarHeight()
   const theme = useTheme()
   const t = useI18n()
@@ -75,7 +82,7 @@ export default memo(({ onBack, pageIndex = 0, onPageSelected }: HeaderProps) => 
 
   return (
     <View style={{ height: HEADER_HEIGHT + statusBarHeight, paddingTop: statusBarHeight }} nativeID={NAV_SHEAR_NATIVE_IDS.playDetail_header}>
-      <StatusBar />
+      {statusBar ? <StatusBar /> : null}
       <View style={styles.container}>
         <View style={styles.tabs}>
           {

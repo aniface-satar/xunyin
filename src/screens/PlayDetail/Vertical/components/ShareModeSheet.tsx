@@ -7,6 +7,7 @@ import { FeatureIcon } from '@/components/common/Icon'
 import { useI18n } from '@/lang'
 import { useTheme } from '@/store/theme/hook'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
+import { primeBackdropForPanel } from '@/utils/backdropSnapshot'
 import { createStyle } from '@/utils/tools'
 
 export interface ShareModeSheetType {
@@ -39,10 +40,13 @@ const ShareModeSheet = forwardRef<ShareModeSheetType, ShareModeSheetProps>(({ on
   useImperativeHandle(ref, () => ({
     show() {
       exitingRef.current = false
-      setMounted(true)
-      slide.show()
-      requestAnimationFrame(() => {
-        setVisible(true)
+      // 先拍背后那一帧再挂面板，玻璃面首帧即最终形态
+      void primeBackdropForPanel().then(() => {
+        setMounted(true)
+        slide.show()
+        requestAnimationFrame(() => {
+          setVisible(true)
+        })
       })
     },
   }))
@@ -102,8 +106,8 @@ const ShareModeSheet = forwardRef<ShareModeSheetType, ShareModeSheetProps>(({ on
             onStartShouldSetResponder={() => true}
           >
             <GlassBackdrop
-              blurRadius={24}
               overlayOpacity={0.62}
+              restOffset={slide.sheetLayout}
               style={{ backgroundColor: theme['c-content-background'] }}
             />
             <View style={styles.content} onStartShouldSetResponder={() => true}>

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, memo } from 'react'
+import { useMemo, useState, useEffect, useCallback, memo } from 'react'
 import { View, ScrollView } from 'react-native'
 
 import { compareVer, sizeFormate } from '@/utils'
@@ -13,6 +13,31 @@ import { useI18n } from '@/lang'
 import { useVersionDownloadProgressUpdated, useVersionInfo, useVersionInfoIgnoreVersionUpdated } from '@/store/version/hook'
 import ModalContent from './ModalContent'
 import { checkUpdate, downloadUpdate, hideModal, setIgnoreVersion } from '@/core/version'
+import { useBackHandler } from '@/utils/hooks/useBackHandler'
+
+// 换包名分界版本：从低于此版本升级到不低于此版本时，会安装成不同包名的新应用，
+// 桌面同时出现两个图标、新旧数据不互通，需要用户手动迁移歌单。
+// 以"是否跨越该分界"为判据，可覆盖跳过中间版本直接升级的情况；升级到更高版本后不再提示。
+const PACKAGE_CHANGE_BASELINE = '1.3.0'
+
+const MigrateNotice = memo(({ newVersion }: { newVersion?: string }) => {
+  const t = useI18n()
+  const theme = useTheme()
+  const crossingChange = !!newVersion &&
+    compareVer(currentVer, PACKAGE_CHANGE_BASELINE) < 0 &&
+    compareVer(newVersion, PACKAGE_CHANGE_BASELINE) >= 0
+  if (!crossingChange) return null
+  return (
+    <View style={[styles.migrateBox, { borderColor: theme['c-primary'], backgroundColor: theme['c-primary-alpha-900'] }]}>
+      <Text style={styles.migrateTitle} color={theme['c-primary']}>{t('version_migrate_title')}</Text>
+      <Text style={styles.migrateHighlight}>{t('version_migrate_highlight')}</Text>
+      <Text style={styles.migrateStep}>{t('version_migrate_step1')}</Text>
+      <Text style={styles.migrateStep}>{t('version_migrate_step2')}</Text>
+      <Text style={styles.migrateStep}>{t('version_migrate_step3')}</Text>
+      <Text style={styles.migrateNote}>{t('version_migrate_note')}</Text>
+    </View>
+  )
+})
 
 const VersionItem = ({ version, desc }: VersionInfo) => {
   return (
@@ -41,6 +66,7 @@ const Content = memo(({ title, newVersionInfo }: {
   return (
     <View style={styles.main}>
       <Text style={styles.title}>{title}</Text>
+      <MigrateNotice newVersion={newVersionInfo?.version} />
       <ScrollView style={styles.content} keyboardShouldPersistTaps={'always'}>
         <Text style={styles.label}>{t('version_label_latest_ver')}{newVersionInfo?.version}</Text>
         <Text style={styles.label}>{t('version_label_current_ver')}{currentVer}</Text>
@@ -158,6 +184,19 @@ const VersionModal = ({ componentId }: { componentId: string }) => {
   const handleCancel = () => {
     hideModal(componentId)
   }
+
+  // 系统返回：先关这张窗口，不让事件落到下面那页。
+  //
+  // 这是 overlay，不是 RN Modal —— 它盖在设置页上，但设置页的 useBackHandler 仍然注册着
+  // （Setting/index.tsx 在 nav_setting 且 detailId 非空时，会把"软件更新"子页退回设置主列表
+  // 并 return true）。RN 的 hardwareBackPress 是后注册先执行，本窗口挂载晚于设置页，
+  // 在这里消费掉，返回键就不会穿透改掉底下的导航状态、把窗口孤零零留在原地。
+  const handleBack = useCallback(() => {
+    hideModal(componentId)
+    return true
+  }, [componentId])
+  useBackHandler(handleBack)
+
   const handleIgnore = () => {
     setIgnoreVersion(ignoreVersion != versionInfo.newVersion!.version ? versionInfo.newVersion!.version : null)
     // handleCancel()
@@ -230,6 +269,37 @@ const styles = createStyle({
   },
   content: {
     flexGrow: 0,
+  },
+  migrateBox: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingTop: 12,
+    paddingBottom: 12,
+    paddingLeft: 12,
+    paddingRight: 12,
+    marginBottom: 15,
+  },
+  migrateTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  migrateHighlight: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  migrateStep: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 4,
+  },
+  migrateNote: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
   },
   title: {
     fontSize: 18,

@@ -70,6 +70,8 @@ export interface HeaderProps {
   hideDesc?: boolean
   // 专辑页不提供「加入自建歌单」
   hideActionBar?: boolean
+  // 上报首行（返回 / 分享 / 收藏）的高度，歌单页据此决定吸顶标题栏何时出现
+  onTopRowLayout?: (height: number) => void
 }
 
 export interface DetailInfo {
@@ -80,7 +82,7 @@ export interface DetailInfo {
   imgUrl?: string
 }
 
-export default memo(({ componentId, embedded, onBack, isMultiSelectMode = false, onToggleMultiSelect, detailInfo, hideDesc = false, hideActionBar = false }: HeaderProps) => {
+export default memo(({ componentId, embedded, onBack, isMultiSelectMode = false, onToggleMultiSelect, detailInfo, hideDesc = false, hideActionBar = false, onTopRowLayout }: HeaderProps) => {
   const fullStatusBarHeight = useStatusbarHeight()
   const theme = useTheme()
   const t = useI18n()
@@ -115,7 +117,12 @@ export default memo(({ componentId, embedded, onBack, isMultiSelectMode = false,
 
   return (
     <View style={{ ...styles.container, paddingTop: statusBarHeight, borderBottomColor: theme['c-border-background'] }}>
-      <View style={styles.topRow}>
+      <View
+        style={styles.topRow}
+        onLayout={onTopRowLayout
+          ? e => { onTopRowLayout(e.nativeEvent.layout.height) }
+          : undefined}
+      >
         <TouchableOpacity
           style={styles.backBtn}
           hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}

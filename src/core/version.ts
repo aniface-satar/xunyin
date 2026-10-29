@@ -10,7 +10,9 @@ import { toast } from '@/utils/tools'
 export const showModal = () => {
   if (versionState.showModal) return
   versionActions.setVisibleModal(true)
-  showVersionModal()
+  // 壁纸模式下 showVersionModal 会先拍一张背后画面再挂 overlay（见 navigation/utils.ts），
+  // 这里不等它：窗口的显隐由 versionState.showModal 兜住，重复触发已经在上一行挡掉了
+  void showVersionModal()
 }
 
 export const hideModal = (componentId: string) => {

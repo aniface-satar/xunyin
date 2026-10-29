@@ -77,6 +77,10 @@ android/app/src/main/assets/index.android.bundle
 .vscode/
 android/.gradle-home/
 *.bak
+
+# 真机逐帧截图（动效排查用，体积大且非源码）
+.tmp-frames/
+.tmp-frames2/
 /_*
 /*.apk
 /*.db

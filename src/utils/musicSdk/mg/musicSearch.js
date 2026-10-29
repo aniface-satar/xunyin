@@ -1,6 +1,7 @@
 import { httpFetch } from '../../request'
 import { sizeFormate, formatPlayTime } from '../../index'
 import { toMD5, formatSingerName } from '../utils'
+import { pickMgSongImg } from './img'
 
 export const createSignature = (time, str) => {
   const deviceId = '963B7AA0D21511ED807EE5846EC87D20'
@@ -170,8 +171,7 @@ export default {
           }
         })
 
-        let img = data.img3 || data.img2 || data.img1 || null
-        if (img && !/https?:/.test(img)) img = 'http://d.musicapp.migu.cn' + img
+        const img = pickMgSongImg(data)
 
         list.push({
           singer: formatSingerName(data.singerList),

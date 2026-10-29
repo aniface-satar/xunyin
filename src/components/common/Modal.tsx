@@ -1,7 +1,8 @@
 // import { createStyle } from '@/utils/tools'
-import { useImperativeHandle, forwardRef, useState, useMemo } from 'react'
+import { useImperativeHandle, forwardRef, useRef, useState, useMemo } from 'react'
 import { Modal, TouchableWithoutFeedback, View, type ModalProps as _ModalProps } from 'react-native'
 import { useStatusbarHeight } from '@/store/common/hook'
+import { primeBackdropForPanel } from '@/utils/backdropSnapshot'
 // import { useWindowSize } from '@/utils/hooks'
 
 // const styles = createStyle({
@@ -54,16 +55,20 @@ export default forwardRef<ModalType, ModalProps>(({
   ...props
 }: ModalProps, ref) => {
   const [visible, setVisible] = useState(false)
+  // 打开是异步的（壁纸模式要等背后那一帧拍好），用批次号让"还没开完就点了关"的请求作废
+  const openTokenRef = useRef(0)
   // const { window: windowSize } = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
   const handleRequestClose = () => {
     if (keyHide) {
+      openTokenRef.current += 1
       setVisible(false)
       onHide()
     }
   }
   const handleBgClose = () => {
     if (bgHide) {
+      openTokenRef.current += 1
       setVisible(false)
       onHide()
     }
@@ -72,8 +77,19 @@ export default forwardRef<ModalType, ModalProps>(({
   useImperativeHandle(ref, () => ({
     setVisible(_visible) {
       if (visible == _visible) return
-      setVisible(_visible)
-      if (!_visible) onHide()
+      if (!_visible) {
+        openTokenRef.current += 1
+        setVisible(false)
+        onHide()
+        return
+      }
+      // 窗一开，里面的玻璃面就得有"背后那一帧"可糊。先开窗再拍的话，第一帧只能空着，
+      // 等快照回来才糊上 —— 观感就是背景从清晰突然变模糊。普通主题这里直接返回，不等待。
+      const token = ++openTokenRef.current
+      void primeBackdropForPanel().then(() => {
+        if (openTokenRef.current != token) return
+        setVisible(true)
+      })
     },
   }))
 

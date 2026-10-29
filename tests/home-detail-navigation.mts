@@ -31,8 +31,9 @@ test('切走再切回来：详情栈与页面都不重置', () => {
   // 旧的单栈实现会在 navActiveId 变化时整体 reset，这正是“切回来就没了”的根因
   assert.doesNotMatch(stackSource, /navActiveIdUpdated/)
   assert.doesNotMatch(stackSource, /homeDetailActions\.reset/)
-  // 三个栈始终挂载，只靠 display 切换可见性；页面实例不卸载，栈里的路由也一直留着
-  assert.match(stackSource, /<View style=\{\{ \.\.\.styles\.container, display: active \? 'flex' : 'none' \}\}>/)
+  // 三个栈始终挂载，只靠 opacity 切换可见性；页面实例不卸载，栈里的路由也一直留着
+  assert.match(stackSource, /style=\{\[styles\.container, active \? styles\.stackActive : styles\.stackHidden\]\}/)
+  assert.match(stackSource, /pointerEvents=\{active \? 'auto' : 'none'\}/)
   assert.match(stackSource, /HOME_DETAIL_TAB_IDS\.map\(id => \(/)
   assert.match(stackSource, /<DetailStack key=\{id\} navId=\{id\} active=\{activeId == id\} \/>/)
 })
@@ -78,6 +79,30 @@ test('详情页只做覆盖层，不能把分页器摘下', () => {
   assert.match(detailStyle, /bottom: 0/)
   assert.doesNotMatch(mainSource, /hasDetail/, '分页器常驻布局，定位只跟着 activeId')
   assert.match(mainSource, /setPageWithoutAnimation\(index\)/)
+})
+
+test('详情栈内的下层页面也不能被摘出布局', () => {
+  // 同一根因再往下一层：我喜欢页的标签也是 PagerView。push 子页时把它 display:none，
+  // 返回后 ViewPager2 重挂画出第 0 页（歌曲）并回调 onPageSelected(0)，
+  // 「歌曲/专辑/歌单/创作者」的标签状态会被一起改回「歌曲」
+  assert.doesNotMatch(stackSource, /display: isTop \? 'flex' : 'none'/, '下层详情页只能隐掉绘制，不能退出布局')
+  const pageStyle = slice(stackSource, 'page: {', '},')
+  assert.match(pageStyle, /position: 'absolute'/, '详情页按绝对定位叠放，不再靠 display 切换')
+  assert.match(pageStyle, /top: 0/)
+  assert.match(pageStyle, /bottom: 0/)
+  const behindStyle = slice(stackSource, 'pageBehind: {', '},')
+  assert.match(behindStyle, /opacity: 0/)
+  assert.match(stackSource, /style=\{\[styles\.page, isTop \? null : styles\.pageBehind/)
+  assert.match(stackSource, /pointerEvents=\{isTop \? 'auto' : 'none'\}/)
+  // pop 回来时目标页已经在 revealed 集合里，必须直接渲染，不能再经历一帧卸载重建
+  assert.match(stackSource, /revealedRouteIdsRef\.current\.has\(route\.id\)/)
+})
+
+test('我喜欢页隐藏期间收到的页码回调不改标签', () => {
+  const detailSource = src('src/screens/MylistDetail/index.tsx')
+  const body = slice(detailSource, 'const handlePageSelected = useCallback(', 'const index = tabs.indexOf(activeTab)')
+  assert.match(body, /if \(embedded && !detailPageActive\) return/, '遮住时的页码回调必须忽略')
+  assert.match(body, /const tab = tabs\[nativeEvent\.position\]/)
 })
 
 test('新推入的详情页归到当前 tab，设置页里的推入归到进入设置前的 tab', () => {

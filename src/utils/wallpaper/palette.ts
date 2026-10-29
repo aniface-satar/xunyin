@@ -26,6 +26,47 @@ export const WALLPAPER_SCRIM = 'rgb(10, 10, 12)'
 export const WALLPAPER_INK = 'rgb(255, 255, 255)'
 
 /**
+ * 歌词页「非当前行」那一档（壁纸模式专用）。
+ *
+ * 为什么不能沿用主题的灰阶：壁纸模式把 c-000~c-1000 整条换成"白 @0.20~1.00"，
+ * 非当前行读的 `c-350` 落在 0.48、译文 `c-300` 落在 0.44，再乘页面上那层 0.6，
+ * 屏上只剩 0.29 / 0.26 —— 对着默认柔光 0.55 的场（L*46）是 **1.87 / 1.61**，用户的原话是"看不清"。
+ *
+ * 为什么也不直接抬 `c-350` / `c-300`：那是全局灰阶，列表副标题、说明文字、时间戳都在用；
+ * 为歌词把整条阶梯提亮，全 App 的层次会一起塌。所以这一档由歌词页自己带（见 Vertical/Lyric.tsx），
+ * 只在那棵子树里换颜料，不碰主题键。
+ *
+ * 取值：颜料 × 页面 opacity 0.72。
+ *   - 正文 0.98 → 屏上 0.706，最坏场 3.11:1（过大字号 3.0 那条线），L*86
+ *   - 译文 0.74 → 屏上 0.533，2.45:1，L*77.5
+ * 同场对照：当前行 1.00 → 4.48:1 / L*100，当前行译文 0.80 → 3.51:1 / L*90.5。
+ * 也就是"看清了 65%，但比当前行仍暗 14 个 L*"，两个要求同时成立。
+ * 要再拉开差距就压 `WALLPAPER_LYRIC_OPACITY`（0.66 起会跌破 3.0，账记在这里）。
+ */
+export const WALLPAPER_LYRIC_INK = 'rgba(255, 255, 255, 0.98)'
+export const WALLPAPER_LYRIC_TRANSLATION_INK = 'rgba(255, 255, 255, 0.74)'
+export const WALLPAPER_LYRIC_OPACITY = 0.72
+
+/**
+ * 歌词页「当前行」的描边（壁纸模式专用）。
+ *
+ * 当前行读 `c-primary`，壁纸模式下它就是 `WALLPAPER_INK` —— **rgb(255,255,255)，色值到顶了**，
+ * 再想让它"更亮/更浓"在数学上已经不存在那个方向。还能加深的只剩笔画外面那一圈暗部：
+ *
+ * 主题默认那条文字阴影是 0.65 / 半径 2 / 偏移 0.2，压在照片的局部高光上几乎看不出；
+ * 这里换成 0.90 / 半径 3.5 / 偏移 0.5~0.6，笔画外沿会多出一圈实暗环。
+ * 视觉上这一行就从"一层薄白"变成"带黑边的一笔"，高光被托住、也才压得住亮照片。
+ *
+ * 只给当前行用。非当前行一个像素都没动（它走上面 `WALLPAPER_LYRIC_INK` 那一档）。
+ * 刻意不读 `useTextShadow()`：那是给普通主题的全局开关，壁纸模式当前的这一行需要恒定托底。
+ */
+export const WALLPAPER_LYRIC_ACTIVE_SHADOW = {
+  color: 'rgba(0, 0, 0, 0.90)',
+  offset: { width: 0.5, height: 0.6 },
+  radius: 3.5,
+}
+
+/**
  * 柔光强度的默认值与上限。
  *
  * 0.55 是照"最坏那张图"定的：纯白照片压 0.55 之后场约 L*46，白字压在上面 4.6:1，
@@ -117,13 +158,14 @@ const buildPrimaryFamilies = (primary: unknown) => {
 /**
  * 强调色抽成白的那一族。
  *
- * 只有"自定义图铺到播控页"（applyToPlayer）时才启用，由 theme/themes/index.ts 传进来。
- * 为什么是播控页那支才抽：主界面那份是 PageContent 自己铺的柔光，压得足够深，强调色还剩
- * 得住；播控页为了让封面/专辑还有观感，柔光更薄、图更亮，同一支强调色在这里最容易漂。
+ * 只要壁纸模式在生效，这一族就恒为白 —— 与"图有没有铺到播控页"（applyToPlayer / 播控页背景）
+ * 无关。这个"无关"是刻意的：applyToPlayer 是播控页的一个可选项，它一变就整棵树重拼主题，
+ * 若强调色还挂在它身上，用户每切一次播控页背景，整个 App（首页、设置页、列表选中态、图标）
+ * 的强调色就跟着翻一次 —— 一个播放页的选项去改主界面的配色，读起来像 bug。
  *
- * 更根本的一条：**照片是不可预测的，而强调色是主题自带的一支彩色**。绿主题压上一张草地、
- * 橙主题压上一张落日，撞成同色系就是一整片看不出对比的颜色；白永远不会跟图撞成那样，
- * 而且它跟这里其它字色是同一支（WALLPAPER_INK），一眼看过去是一家人。
+ * 除了这条一致性，白本身还有两条理由：**照片是不可预测的，而强调色是主题自带的一支彩色**。
+ * 绿主题压上一张草地、橙主题压上一张落日，撞成同色系就是一整片看不出对比的颜色；白永远不会
+ * 跟图撞成那样，而且它跟这里其它字色是同一支（WALLPAPER_INK），一眼看过去是一家人。
  *
  * 只抽"强调色自己"这三支：c-primary、它的 alpha 族、以及 dark 族（壁纸模式下 dark = 往白走，
  * 本来就该是亮的那支）。light 族不动 —— 它在这套反转里是"暗面"，诸如弹窗头部那条
@@ -176,6 +218,20 @@ const buildOverrides = () => {
     // 压在照片上会糊成一大块黑；这里单独改成薄白玻璃，碟片轮廓才立得住
     'c-primary-light-900-alpha-200': ink(0.10),
 
+    // 进度条：主题把这几支放在**浅**族里（主色往暗面走 10~40%），在白底上是一条淡彩槽。
+    // 壁纸模式的浅族是"深色面"（见 buildPrimaryFamilies），拿它画进度条就是在照片上压一条
+    // 暗色彩槽 —— 控制栏那条进度条被读成"还是之前的主题色"正是这个来路。
+    // 这里只换颜料、不动阶梯：alpha 全部沿用主题自己的取值，"槽 < 缓冲 < 已播 < 圆点"一字未改。
+    'c-primary-light-300-alpha-800': ink(0.20), // 槽（ProgressBar.DefaultBar）
+    'c-primary-light-400-alpha-700': ink(0.30), // 缓冲
+    'c-primary-light-100-alpha-400': ink(0.60), // 已播
+    'c-primary-light-100-alpha-600': ink(0.40), // 拖拽时的目标段
+    'c-primary-light-100-alpha-700': ink(0.30), // 拖拽时的已播段 / 竖屏分页指示器
+    'c-primary-light-100-alpha-800': ink(0.20), // 横屏播放页（Progress.tsx）的拖拽目标段
+    'c-primary-light-200-alpha-900': ink(0.10), // 横屏播放页的拖拽已播段
+    'c-primary-light-600-alpha-900': ink(0.10), // 横屏播放页的缓冲
+    'c-primary-light-100': WALLPAPER_INK, // 拖拽圆点
+
     // 文字阴影：Text / Icon 共用的那一条。主题给的是 0.20 的彩色阴影，压在照片上等于没有；
     // 壁纸模式必须是一支实黑，才能在局部高光上把笔画边缘托出来
     'c-primary-dark-300-alpha-800': 'rgba(0, 0, 0, 0.65)',
@@ -193,24 +249,24 @@ const WALLPAPER_COLORS = buildOverrides()
 /**
  * 把主题换成壁纸模式那一套。
  *
- * 顺序：先整族反转 primary 色阶（它要覆盖 110 个键，只能算），再盖上面那批手工挑的键
- * （手工那批是"逐处核过的"，包括碟片垫与阴影色，必须赢）。
+ * 顺序：先整族反转 primary 色阶（它要覆盖 110 个键，只能算），再盖上强调色那族白，
+ * 最后是手工挑的那批（逐处核过的，包括碟片垫与阴影色，必须赢）。
  *
- * 没列出来的键原样穿过 —— 主题自己的强调色 `c-primary` 还留着，图标、进度条、选中态要它。
- * 例外是第二个参数 `inkAccent`：为真时那支强调色连它两族一并换成白（见 buildInkAccentFamilies）。
+ * 强调色一律抽白（见 buildInkAccentFamilies）—— 主题自己那支彩色在这里没有立足之地：
+ * 壁纸模式下底是一张不可预测的照片，而强调色要跟它共存于每一屏。
+ * light 族例外：它在这套反转里是"暗面"，仍按主题自己那支主色算；
+ * `isDark` / `bg-image` 这类非颜色键则原样穿过。
  *
  * `isDark` 一并翻真：components/common/StatusBar.tsx 读 context 里这个布尔决定状态栏图标亮暗，
  * 翻它一个就把图标带对了 —— 场上恒为深色，白字恒亮。
  */
-export const buildWallpaperTheme = <T extends object>(base: T, inkAccent = false): T => {
+export const buildWallpaperTheme = <T extends object>(base: T): T => {
   // ActiveTheme 上的键既有 string 也有 boolean（isDark / is-wallpaper），按 unknown 读写、只动字符串键
   const next: Record<string, unknown> = { ...(base as Record<string, unknown>) }
   next.isDark = true
   next['is-wallpaper'] = true
 
-  const primaryFamilies = buildPrimaryFamilies(next['c-primary'])
-  const primaryFamiliesWithAccent = inkAccent ? { ...primaryFamilies, ...buildInkAccentFamilies() } : primaryFamilies
-  const overrides = { ...primaryFamiliesWithAccent, ...WALLPAPER_COLORS }
+  const overrides = { ...buildPrimaryFamilies(next['c-primary']), ...buildInkAccentFamilies(), ...WALLPAPER_COLORS }
   for (const [key, value] of Object.entries(overrides)) {
     // 主题里没有这个键就跳过，不凭空造键：造出来的键没人读，只会让 theme 对象越来越像垃圾场
     if (typeof next[key] !== 'string') continue

@@ -10,6 +10,7 @@ import { useTheme } from '@/store/theme/hook'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { BLUR_LYRIC_COMPONENT_OPACITY, LYRIC_COMPONENT_OPACITY } from '@/utils/monet/onCoverTheme'
 import { useCoverSurface } from '@/utils/monet/useCoverSurface'
+import { WALLPAPER_LYRIC_ACTIVE_SHADOW, WALLPAPER_LYRIC_INK, WALLPAPER_LYRIC_OPACITY, WALLPAPER_LYRIC_TRANSLATION_INK } from '@/utils/wallpaper/palette'
 import { useLyricToolMode } from '@/utils/hooks/useLyricToolMode'
 import { buildLyricCopyText, hasLyricText, invertLyricSelection, pickLyricLineIndexes, pickLyricLinesForCopy, selectAllLyricLines, setLyricToolMode } from '@/core/lyricCopy'
 import { useI18n } from '@/lang'
@@ -89,13 +90,16 @@ interface LineProps {
   /** 非当前行（含它的译文）那一档透明度。由页面按"封面场是哪一档"决定，逐行不自己判断 ——
    *  判一次要订阅一次背景状态，摊到几百行上就是白订阅。 */
   lyricOpacity: number
+  /** 壁纸模式（自定义背景）且播控页没有封面场：非当前行改走 utils/wallpaper/palette 那一档白。
+   *  同样由页面判一次再传进来，理由同上 —— 这个布尔要跟 `useCoverSurface()` 一起判断。 */
+  wallpaperLyric: boolean
   onLayout: (lineNum: number, height: number, width: number) => void
   /** 这一句在歌词页上实际折成几行（onTextLayout 量出来的）：海报要跟这里保持一致 */
   onRowCount: (lineNum: number, rows: number) => void
   onPress: (lineNum: number) => void
   onLongPress: (lineNum: number) => void
 }
-const LrcLine = memo(({ line, lineNum, activeLine, selected, selectable, lyricOpacity, onLayout, onRowCount, onPress, onLongPress }: LineProps) => {
+const LrcLine = memo(({ line, lineNum, activeLine, selected, selectable, lyricOpacity, wallpaperLyric, onLayout, onRowCount, onPress, onLongPress }: LineProps) => {
   const glassColors = useGlassColors(lyricOpacity)
   const theme = useTheme()
   const lrcFontSize = useSettingValue('playDetail.vertical.style.lrcFontSize')
@@ -103,19 +107,29 @@ const LrcLine = memo(({ line, lineNum, activeLine, selected, selectable, lyricOp
   const size = lrcFontSize / 10
   const lineHeight = setSpText(size) * 1.3
 
+  // 工具模式里播放进度不再染色，高亮只跟着选中走
+  const active = selectable ? selected : activeLine == lineNum
   const colors = useMemo(() => {
-    // 工具模式里播放进度不再染色，高亮只跟着选中走
-    const active = selectable ? selected : activeLine == lineNum
     return active ? [
       glassColors.lyricActive,
       glassColors.lyricActiveTranslation,
       1,
     ] as const : [
-      glassColors.lyric,
-      glassColors.lyricTranslation,
+      // 壁纸模式：主题的 `c-350 / c-300` 在照片上只剩 0.29 / 0.26（见 palette 里那段账），
+      // 换成专用那一档 —— 颜料自己带 alpha，页面那层 0.72 再乘一次
+      wallpaperLyric ? WALLPAPER_LYRIC_INK : glassColors.lyric,
+      wallpaperLyric ? WALLPAPER_LYRIC_TRANSLATION_INK : glassColors.lyricTranslation,
       glassColors.lyricOpacity,
     ] as const
-  }, [activeLine, lineNum, selectable, selected, glassColors])
+  }, [active, glassColors, wallpaperLyric])
+
+  // 当前行在壁纸模式下是纯白（c-primary = WALLPAPER_INK），色值到顶、没有更亮的空间；
+  // 要"再加深"只能压它外沿的暗部，把这一笔从"薄白"托成"带黑边的一笔"（见 palette）。
+  const activeShadow = wallpaperLyric && active ? {
+    textShadowColor: WALLPAPER_LYRIC_ACTIVE_SHADOW.color,
+    textShadowOffset: WALLPAPER_LYRIC_ACTIVE_SHADOW.offset,
+    textShadowRadius: WALLPAPER_LYRIC_ACTIVE_SHADOW.radius,
+  } : null
 
   const handleLayout = ({ nativeEvent }: LayoutChangeEvent) => {
     onLayout(lineNum, nativeEvent.layout.height, nativeEvent.layout.width)
@@ -141,6 +155,7 @@ const LrcLine = memo(({ line, lineNum, activeLine, selected, selectable, lyricOp
         ...styles.lineText,
         textAlign,
         lineHeight,
+        ...(activeShadow ?? {}),
       }} textBreakStrategy="simple" onTextLayout={handleTextLayout} color={colors[0]} opacity={colors[2]} size={size}>{line.text}</AnimatedColorText>
       {
         line.extendedLyrics.map((lrc, index) => {
@@ -158,6 +173,7 @@ const LrcLine = memo(({ line, lineNum, activeLine, selected, selectable, lyricOp
     prevProps.selected === nextProps.selected &&
     prevProps.selectable === nextProps.selectable &&
     prevProps.lyricOpacity === nextProps.lyricOpacity &&
+    prevProps.wallpaperLyric === nextProps.wallpaperLyric &&
     prevProps.activeLine != nextProps.lineNum &&
     nextProps.activeLine != nextProps.lineNum
 })
@@ -175,7 +191,6 @@ export default ({
   // 所以 ② 这一档换成那一档自己的值（2026-10-19 用户要"当前行与非当前行拉开"，又压深了一格）——
   // 墨色与这条乘法是**成对**核过的，见 onCoverTheme.BLUR_LYRIC_COMPONENT_OPACITY。
   const { surface } = useCoverSurface()
-  const lyricOpacity = surface?.mode === 'blur' ? BLUR_LYRIC_COMPONENT_OPACITY : LYRIC_COMPONENT_OPACITY
   const flatListRef = useRef<FlatList>(null)
   const playLineRef = useRef<PlayLineType>(null)
   const isPauseScrollRef = useRef(true)
@@ -206,6 +221,11 @@ export default ({
   const lyricFontSizeSetting = useSettingValue('playDetail.vertical.style.lrcFontSize')
   const posterLyricFontSize = lyricFontSizeSetting / 10
   const theme = useTheme()
+  // 壁纸模式（自定义背景）下，歌词页的底是一张照片：主题灰阶 c-350 / c-300 压在上面只剩 1.87 / 1.61，
+  // 所以那两档换成 palette 里专门算过的一支（见 WALLPAPER_LYRIC_*）。
+  // 前提是**没有封面场** —— 开了动态背景时播放页整棵子树换的是封面墨色，那一档不能被这个覆盖。
+  const wallpaperLyric = surface == null && theme['is-wallpaper']
+  const lyricOpacity = surface?.mode === 'blur' ? BLUR_LYRIC_COMPONENT_OPACITY : wallpaperLyric ? WALLPAPER_LYRIC_OPACITY : LYRIC_COMPONENT_OPACITY
   const t = useI18n()
   const { width: winWidth, height: winHeight } = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
@@ -517,7 +537,7 @@ export default ({
 
   const renderItem: FlatListType['renderItem'] = ({ item, index }) => {
     return (
-      <LrcLine line={item} lineNum={index} activeLine={line} selected={selectedLines.has(index)} selectable={lyricToolMode} lyricOpacity={lyricOpacity} onLayout={handleLineLayout} onRowCount={handleLineRowCount} onPress={handleLinePress} onLongPress={handleLineLongPress} />
+      <LrcLine line={item} lineNum={index} activeLine={line} selected={selectedLines.has(index)} selectable={lyricToolMode} lyricOpacity={lyricOpacity} wallpaperLyric={wallpaperLyric} onLayout={handleLineLayout} onRowCount={handleLineRowCount} onPress={handleLinePress} onLongPress={handleLineLongPress} />
     )
   }
   const getkey: FlatListType['keyExtractor'] = (item, index) => `${index}${item.text}`

@@ -7,7 +7,7 @@ const MUSIC_TREE = 'content://com.android.externalstorage.documents/tree/primary
 const LX_SUB = `${MUSIC_TREE}/document/primary%3AMusic%2FLxMusic`
 
 test('a plain app directory needs no SAF grant', () => {
-  assert.equal(isDirGranted([], '/data/user/0/cn.toside.music.mobile/files'), true)
+  assert.equal(isDirGranted([], '/data/user/0/cn.xunyin.music/files'), true)
 })
 
 test('the same tree covers itself', () => {
@@ -52,5 +52,5 @@ test('removable volume maps to /storage/<volume>', () => {
 })
 
 test('a private app path cannot be restored, so the media scan is skipped', () => {
-  assert.equal(childRealPath('/data/user/0/cn.toside.music.mobile/files', 'poster.png'), null)
+  assert.equal(childRealPath('/data/user/0/cn.xunyin.music/files', 'poster.png'), null)
 })

@@ -26,6 +26,7 @@ import { scaleSizeH } from '@/utils/pixelRatio'
 import { createStyle } from '@/utils/tools'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
+import { primeBackdropForPanel } from '@/utils/backdropSnapshot'
 import { overlayModalGesture } from '@/components/player/PlayerOverlay/overlayModalGesture'
 import { getRadioMode, getRadioTrackHint, isRadioActive, isRadioQueuedMusicInfo } from '@/core/recommend/radio'
 import { buildPlaylistQueue, getDragTargetSourceIndex, type PlaylistQueueItem } from './playlistQueue'
@@ -313,11 +314,15 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
   useImperativeHandle(ref, () => ({
     show() {
       scrollOffsetRef.current = 0
-      setMounted(true)
-      slide.show()
-      requestAnimationFrame(() => {
-        setVisible(true)
-        measureViewport()
+      // 同「更多」：先把背后那一帧拍好再挂面板，玻璃面首帧就是最终形态，
+      // 不会出现"先透明、过一会儿才糊起来"。
+      void primeBackdropForPanel().then(() => {
+        setMounted(true)
+        slide.show()
+        requestAnimationFrame(() => {
+          setVisible(true)
+          measureViewport()
+        })
       })
     },
   }))
@@ -409,8 +414,8 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
             onLayout={slide.onSheetLayout}
           >
             <GlassBackdrop
-              blurRadius={24}
               overlayOpacity={0.66}
+              restOffset={slide.sheetLayout}
               style={{ backgroundColor: theme['c-content-background'] }}
             />
             <View style={styles.content}>

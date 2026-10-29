@@ -6,7 +6,7 @@ import {
   getPicUrl as getOnlinePicUrl,
   getLyricInfo as getOnlineLyricInfo,
 } from './online'
-import { buildLyricInfo, getCachedLyricInfo } from './utils'
+import { buildLyricInfo, getCachedLyricInfo, isPicUrlUsable } from './utils'
 
 export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
   musicInfo: LX.Download.ListItem
@@ -36,7 +36,7 @@ export const getPicUrl = async({ musicInfo, isRefresh, listId, onToggleSource = 
     // }
 
     const onlineMusicInfo = musicInfo.metadata.musicInfo
-    if (onlineMusicInfo.meta.picUrl) return onlineMusicInfo.meta.picUrl
+    if (isPicUrlUsable(onlineMusicInfo.meta.picUrl)) return onlineMusicInfo.meta.picUrl
   }
 
   return getOnlinePicUrl({ musicInfo: musicInfo.metadata.musicInfo, isRefresh, onToggleSource }).then((url) => {

@@ -1,11 +1,12 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ComponentRef } from 'react'
-import { TouchableOpacity, View } from 'react-native'
+import { TouchableOpacity, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
 import PagerView, { type PagerViewOnPageSelectedEvent } from 'react-native-pager-view'
 import OnlineList, { type OnlineListType, type OnlineListProps } from '@/components/OnlineList'
 import { clearListDetail, getListDetail, setListDetail, setListDetailInfo } from '@/core/songlist'
 import songlistState from '@/store/songlist/state'
 import { handlePlay } from './listAction'
 import Header, { type DetailInfo } from './Header'
+import StickyBar from './StickyBar'
 import IntroTab from './IntroTab'
 import { useListInfo } from './state'
 import { isAlbumListId } from '@/utils/musicSdk/albumNormalizers'
@@ -45,6 +46,21 @@ export default forwardRef<MusicListType, MusicListProps>(({ componentId, embedde
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false)
   const [activeTab, setActiveTab] = useState<AlbumTab>('songs')
   const [detailInfo, setDetailInfo] = useState<DetailInfo>({ name: '', author: isAlbum ? info.author : '', desc: '', playCount: '', imgUrl: info.img })
+  // 大头部的首行高度（返回 / 分享 / 收藏），首行滚出去时换成吸顶标题栏
+  const topRowHeightRef = useRef(28)
+  const [stickyVisible, setStickyVisible] = useState(false)
+
+  const handleTopRowLayout = useCallback((height: number) => {
+    topRowHeightRef.current = height
+  }, [])
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (isAlbum) return
+    const y = e.nativeEvent.contentOffset.y
+    const trigger = topRowHeightRef.current
+    // 8dp 回滞：在临界点附近来回抖时不反复淡入淡出
+    setStickyVisible(visible => y > trigger || (visible && y > trigger - 8))
+  }, [isAlbum])
 
   const handleMultiSelectModeChange = useCallback((value: boolean) => {
     setIsMultiSelectMode(value)
@@ -76,6 +92,8 @@ export default forwardRef<MusicListType, MusicListProps>(({ componentId, embedde
   useImperativeHandle(ref, () => ({
     async loadList(source, id) {
       clearListDetail()
+      // 换歌单时列表会回到顶部，吸顶栏跟着收起（程序化滚动不一定回传 onScroll）
+      setStickyVisible(false)
       const listDetailInfo = songlistState.listDetailInfo
       listRef.current?.setList([])
       if (listDetailInfo.id == id && listDetailInfo.source == source && listDetailInfo.list.length) {
@@ -192,9 +210,11 @@ export default forwardRef<MusicListType, MusicListProps>(({ componentId, embedde
               isMultiSelectMode={isMultiSelectMode}
               onToggleMultiSelect={handleToggleMultiSelect}
               detailInfo={detailInfo}
+              onTopRowLayout={handleTopRowLayout}
             />
             )
       }
+      onScroll={handleScroll}
       multiSelectStyle="mylist"
       multiSelectBarPosition="header"
       onMultiSelectModeChange={handleMultiSelectModeChange}
@@ -264,7 +284,18 @@ export default forwardRef<MusicListType, MusicListProps>(({ componentId, embedde
     )
   }
 
-  return onlineList
+  return (
+    <View style={styles.container}>
+      {onlineList}
+      <StickyBar
+        componentId={componentId}
+        embedded={embedded}
+        name={detailInfo.name}
+        visible={stickyVisible}
+        onBack={onBack}
+      />
+    </View>
+  )
 })
 
 const styles = createStyle({

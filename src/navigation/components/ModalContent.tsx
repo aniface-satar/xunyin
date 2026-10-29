@@ -21,7 +21,7 @@ export default ({ children }: Props) => {
           // 更新窗口整篇是更新日志的小字，不糊就等于把那些行摊在照片纹理上找。
           // 糊图铺满整屏、按窗口坐标对齐，所以窗口里那一块的纹理和背后的壁纸接得上 ——
           // 与 Dialog / Popup 那一手同一个配方。普通主题不插：那边本来就是实底。
-          theme['is-wallpaper'] ? <GlassBackdrop blurRadius={24} style={{ borderRadius: 4 }} /> : null
+          theme['is-wallpaper'] ? <GlassBackdrop style={{ borderRadius: 4 }} /> : null
         }
         <View style={{ ...styles.header, backgroundColor: theme['c-primary-light-100-alpha-100'] }}></View>
         {children}

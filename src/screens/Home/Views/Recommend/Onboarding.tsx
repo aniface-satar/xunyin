@@ -69,7 +69,9 @@ const Onboarding = ({ initialWeights, onCompleted }: Props) => {
         >
           <Text size={14} color={theme['c-button-font']}>{t('recommend_onboarding_submit')}</Text>
         </Button>
-        <Button style={styles.skip} onPress={() => { void submit({}) }}>
+        {/* 跳过只负责"这次不填"，不能把历史答案一起清掉：submit({}) 会撤销旧种子，
+            老用户点一次跳过就把问卷带来的全部偏好抹平，推荐会立刻退化成目录顺序 */}
+        <Button style={styles.skip} onPress={() => { void submit(initialWeights) }}>
           <Text size={13} color={theme['c-font-label']}>{t('recommend_onboarding_skip')}</Text>
         </Button>
       </ScrollView>

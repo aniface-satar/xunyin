@@ -89,6 +89,24 @@ export const migrateRecommendationState = (raw: Partial<RecommendationState> | n
     applySeedWeights(themeWeights, seeds)
     onboarding.seededThemeWeights = seeds
   }
+  // 版本问卷（曾写到 v10/v11）已整体下线，回到两问版。只回退代码不够：那一版往状态里塞了三样东西，
+  // 不在读档时擦掉，推荐会比两问版更窄，用户看到的还是"回不去"。
+  // ① weights 里的 no_* 勾选（两问版没有这些选项，留着永远清不掉）；
+  // ② 拆出去的 remix 风格滑条——两问版原本由 dj 一条覆盖，值并回 dj 才不丢偏好；
+  // ③ seededTokenWeights 那份负初值已经累加进 tokenWeights（dj/remix/live/翻唱…），
+  //    不退掉会继续压这些歌名词的排序权重，属于"代码回去了、分数没回去"。
+  const weights: Record<string, number> = { ...onboarding.weights }
+  for (const key of Object.keys(weights)) {
+    if (key.startsWith('no_')) delete weights[key]
+  }
+  if (weights.remix != null) {
+    if (weights.dj == null) weights.dj = weights.remix
+    delete weights.remix
+  }
+  onboarding.weights = weights
+  const tokenWeights: Record<string, ThemePreference> = { ...(raw.tokenWeights ?? {}) }
+  const legacySeededTokens = (raw.onboarding as (OnboardingState & { seededTokenWeights?: Record<string, number> }) | undefined)?.seededTokenWeights
+  if (legacySeededTokens) revokeSeedWeights(tokenWeights, legacySeededTokens)
   return {
     ...base,
     ...raw,
@@ -109,7 +127,7 @@ export const migrateRecommendationState = (raw: Partial<RecommendationState> | n
     candidateCacheFetchedAt: dropLegacyCandidates ? 0 : raw.candidateCacheFetchedAt ?? 0,
     sourceCooldowns: raw.sourceCooldowns ?? {},
     exposureCounts: raw.exposureCounts ?? {},
-    tokenWeights: raw.tokenWeights ?? {},
+    tokenWeights,
     channelBandit: raw.channelBandit ?? {},
     artistStats: raw.artistStats ?? {},
     audioEmbeddings: raw.audioEmbeddings ?? {},

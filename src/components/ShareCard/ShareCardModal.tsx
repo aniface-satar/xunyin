@@ -9,6 +9,7 @@ import SheetThemeProvider from '@/components/player/SheetThemeProvider'
 import GlassBackdrop from '@/components/common/GlassBackdrop'
 import ShareCard, { type ShareCardData } from '@/components/ShareCard'
 import { RATIO_OPTIONS, type RatioKey, shotRect as shotRectFor } from './cardScale'
+import { type CardTone } from './cardTheme'
 import { useI18n } from '@/lang'
 import { useStatusbarHeight } from '@/store/common/hook'
 import { useTheme } from '@/store/theme/hook'
@@ -34,6 +35,9 @@ export interface ShareCardModalProps {
 // 控件层的几何常数：底部动作行 = 全局「歌词工具条」那一套（flex:1 双钮、gap 12、左右 20、底 15）的同一坐标系。
 const ACTION_HEIGHT = 44
 const BAR_PADDING_BOTTOM = 15
+// 选项行（比例行 / 底色行）同一套几何：高 32、行内间距与行间距都是 8。
+const OPTION_HEIGHT = 32
+const ROW_GAP = 8
 // 进场：Modal 自己的 fade 先走一步，控件层随后淡入 + 上浮 12dp。只动控件层，
 // 一帧都不碰被拍的 ShareCard —— 进场动效若落在被拍视图上，半透明的中间帧会烘进成品图。
 const ENTER_DELAY = 90
@@ -49,9 +53,19 @@ const NOTICE_DELAY = 600
 // 卡片不按矩形重排：全屏档那张是"基准整体"，其余比例把这一个整体等比缩进矩形并居中
 // （缩放因子在 ShareCard 里算，同样在 cardScale.ts），所以卡内内容的大小比例各档一致。
 const DEFAULT_RATIO: RatioKey = 'fullscreen'
-// 比例行与提示语布局
-const RATIO_HEIGHT = 32
-const RATIO_GAP = 8
+// 底色档（用户 2026-10-29 指定）：白底 / 黑底，默认白底。
+// 从此卡色由这一枚开关决定，**不再随应用深浅色变化** —— 分享图是产物，不是界面（spec §3），
+// 深色模式的用户想发一张白卡时不该被迫去切主题。
+// 每次打开都回到白底：两个入口都是 `shareCardData ? <ShareCardModal/> : null` 条件挂载，
+// 关掉即卸载，这一层的 state 自然复位，不需要额外的"重置"逻辑。
+const TONE_OPTIONS = [
+  { key: 'light', label: 'share_card_tone_light' },
+  { key: 'dark', label: 'share_card_tone_dark' },
+] as const
+const DEFAULT_TONE: CardTone = 'light'
+// 状态条绝对定位在**最高那一排选项之上**：它出现/消失不带动下面的按钮布局（热缓存下这里永远不出现）。
+// bottom = 底边距 + 动作行 + 两排选项行 + 三条行间隙 —— 加行/改高都从这几个常数推，别再手写一串加法。
+const NOTICE_BOTTOM = BAR_PADDING_BOTTOM + ACTION_HEIGHT + OPTION_HEIGHT * 2 + ROW_GAP * 3
 
 type BusyAction = 'save' | 'share'
 
@@ -70,6 +84,7 @@ const ShareCardModal = ({ visible, mode, musicInfo, lyricFontSize, lyricLines, o
   const chrome = useRef(new Animated.Value(0)).current
   const noticeAnim = useRef(new Animated.Value(0)).current
   const [ratio, setRatio] = useState<RatioKey>(DEFAULT_RATIO)
+  const [tone, setTone] = useState<CardTone>(DEFAULT_TONE)
 
   // 就绪只有这一个布尔：卡封面、整屏糊底两路各自落在 ShareCard 那一层，由它聚合成一次上报。
   // 这一层不另存自己的 ready —— 各存一份就会有人漏掉某一路（漏掉配色就是白封面拍成黑卡）。
@@ -177,20 +192,22 @@ const ShareCardModal = ({ visible, mode, musicInfo, lyricFontSize, lyricLines, o
         {/* 这个弹窗自己的底：壁纸模式下把原本那块纯黑换成「糊掉的壁纸 + 深色压暗」。
             铺在拍摄子树之外 —— 被拍的只有 shotWrap 里那张卡（spec §5），糊图不会进成品图。
             普通主题不插：那边这块底就该是纯黑 */}
-        {theme['is-wallpaper'] ? <GlassBackdrop blurRadius={36} playerScope /> : null}
+        {theme['is-wallpaper'] ? <GlassBackdrop /> : null}
         {/* 被拍的只有这一层：控件层挂在它外面，所以不会进图（spec §5）。
             非全屏比例下矩形比屏幕小，挂一层居中包装让它悬在屏幕正中。 */}
         <View style={styles.shotWrap}>
-          {/* 被拍这一层必须读**应用**主题：卡色的判据就是"浅色模式白卡 / 深色模式黑卡"（cardTheme.ts）。
-              分享卡是从播放页里开出来的，而 PlayDetail 那棵竖屏子树挂着 OnCoverThemeProvider，
-              它会把 isDark 硬翻成 true（src/utils/monet/onCoverTheme.ts:236，那是给状态栏图标用的），
-              不挂回来就是"应用浅色也给你黑卡"（2026-10-17 真机）。SheetThemeProvider 订阅 themeUpdated
-              把用户那份主题重新发下来，context 穿得过 Modal —— 同一类弹层早就用过这条路。
-              只包被拍的卡：下面那排按钮与提示语是界面 chrome，继续吃场上主题。 */}
+          {/* 卡色已改由下面那排「白底 / 黑底」决定（tone），这一层不再读主题取色 —— 2026-10-29 用户指定。
+              SheetThemeProvider 仍然留着，理由只剩一条：被拍子树里还有 common/Text，它的 base style 会取
+              theme 的 c-font / fontShadow（卡内每一枚 Text 都用显式 color + noShadow 压掉了，目前一行都不生效）。
+              分享卡是从播放页里开出来的，而 PlayDetail 那棵竖屏子树挂着 OnCoverThemeProvider，它会把 isDark
+              硬翻成 true（src/utils/monet/onCoverTheme.ts:236，那是给状态栏图标用的）；挂着这层 provider，
+              以后卡里新增的子组件也不会悄悄吃到封面墨色。只包被拍的卡：下面的选项与按钮是界面 chrome，继续吃场上主题。 */}
           <SheetThemeProvider>
             <ShareCard
               ref={shotRef}
               mode={mode}
+              /* 这一枚就是卡色唯一的来路：白色 / 黑色，由用户在下面那排选，不读主题 */
+              tone={tone}
               musicInfo={musicInfo}
               lyricFontSize={lyricFontSize}
               lyricLines={lyricLines}
@@ -217,19 +234,47 @@ const ShareCardModal = ({ visible, mode, musicInfo, lyricFontSize, lyricLines, o
         {/* 两枚动作：全局填充按钮（common/Button + c-button-background/c-button-font），
             形状与「歌词工具条」的复制/海报同源；禁用态就是全局的 0.3 透明度（Button 自带），
             进行中的那枚换成 common/Loading 转圈并压过禁用透明度。
-            上面那排是比例选择（2:3 / 3:4 / 9:16 / 全屏），形状与歌词工具条的多选小按钮同族。 */}
+            上面两排是选项：最上一排定卡底（白底 / 黑底），下面一排定比例（2:3 / 5:7 / 3:4 / 9:16 / 全屏），
+            形状与歌词工具条的多选小按钮同族。顺序是"先定样子、再定裁切" —— 底色是这张图的一部分，
+            比例只是画布，所以底色离被拍的卡更近。 */}
         <Animated.View style={[styles.actions, chromeStyle]}>
           <Animated.View style={[styles.noticeLayer, { opacity: noticeAnim }]} pointerEvents="none">
             <Text size={12} color={glassColors.muted}>{t('share_card_creating')}</Text>
           </Animated.View>
-          <View style={styles.ratioRow}>
+          <View style={styles.optionRow}>
+            {
+              TONE_OPTIONS.map(({ key, label }) => {
+                const selected = tone === key
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={[
+                      styles.optionBtn,
+                      selected ? { backgroundColor: theme['c-primary-background'] } : { backgroundColor: theme['c-button-background'] },
+                      // 拍摄/落盘进行中不让改：这一刻被拍视图正在被 draw，换色会拍到半新半旧的卡
+                      busy != null && styles.dimmed,
+                    ]}
+                    activeOpacity={0.7}
+                    disabled={busy != null}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={t(label)}
+                    onPress={() => { setTone(key) }}
+                  >
+                    <Text size={12} color={selected ? theme['c-primary-font'] : theme['c-button-font']}>{t(label)}</Text>
+                  </TouchableOpacity>
+                )
+              })
+            }
+          </View>
+          <View style={styles.optionRow}>
             {
               RATIO_OPTIONS.map(({ key }) => {
                 const selected = ratio === key
                 return (
                   <TouchableOpacity
                     key={key}
-                    style={[styles.ratioBtn, selected ? { backgroundColor: theme['c-primary-background'] } : { backgroundColor: theme['c-button-background'] }]}
+                    style={[styles.optionBtn, selected ? { backgroundColor: theme['c-primary-background'] } : { backgroundColor: theme['c-button-background'] }]}
                     activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel={key === 'fullscreen' ? t('share_card_ratio_fullscreen') : key}
@@ -274,7 +319,7 @@ const ShareCardModal = ({ visible, mode, musicInfo, lyricFontSize, lyricLines, o
 }
 
 // 这一层与全局按钮同一套坐标：**走 createStyle**（随 App 字号设置缩放，和全站按钮行为一致），
-// 颜色全部吃主题（动作 = c-button-background/c-button-font，头部与提示语 = glassColors，选中比例 =
+// 颜色全部吃主题（动作 = c-button-background/c-button-font，头部与提示语 = glassColors，选中的选项 =
 // c-primary-background/c-primary-font）。
 // 与 §11.12 第一版"原始 dp + 中性深玻璃"的取舍相反 —— 用户要求按钮与全局统一，全局就是这一套；
 // 被拍层（ShareCard/两张卡）不受影响，那里仍是原始 dp + 固定色（它是产物图，不跟 UI 设置走）。
@@ -291,25 +336,26 @@ const styles = createStyle({
     right: 0,
     bottom: 0,
     flexDirection: 'column',
-    gap: RATIO_GAP,
+    gap: ROW_GAP,
     paddingHorizontal: 20,
     paddingBottom: BAR_PADDING_BOTTOM,
   },
-  // 状态条绝对定位在比例行上方：它出现/消失不带动下面的按钮布局（热缓存下这里永远不出现）
+  // 状态条绝对定位在选项行上方：它出现/消失不带动下面的按钮布局（热缓存下这里永远不出现）
   noticeLayer: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: BAR_PADDING_BOTTOM + ACTION_HEIGHT + RATIO_HEIGHT + RATIO_GAP * 2,
+    bottom: NOTICE_BOTTOM,
     alignItems: 'center',
   },
-  ratioRow: {
+  // 底色行与比例行同一套：两枚选项 → 比例那一排五枚，行内 gap 一致
+  optionRow: {
     flexDirection: 'row',
-    gap: RATIO_GAP,
+    gap: ROW_GAP,
   },
-  ratioBtn: {
+  optionBtn: {
     flex: 1,
-    height: RATIO_HEIGHT,
+    height: OPTION_HEIGHT,
     borderRadius: BorderRadius.normal,
     alignItems: 'center',
     justifyContent: 'center',

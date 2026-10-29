@@ -17,6 +17,13 @@ const getOtherSourcePromises = new Map()
 export const existTimeExp = /\[\d{1,2}:.*\d{1,4}\]/
 const otherSourceCache = new Map<LX.Music.MusicInfo | LX.Download.ListItem, LX.Music.MusicInfoOnline[]>()
 
+/**
+ * 判断缓存的封面地址是否真的能加载。
+ * 历史数据里可能存了音源返回的相对路径（如咪咕的 /data/oss/xxx.webp），
+ * 这类地址 Image 组件加载不了，需要重新走接口取一次
+ */
+export const isPicUrlUsable = (url?: string | null): url is string => typeof url == 'string' && /^(?:https?:|file:|content:|data:)/i.test(url.trim())
+
 export const getOtherSource = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false): Promise<LX.Music.MusicInfoOnline[]> => {
   // if (!isRefresh) {
   //   const cachedInfo = await getOtherSourceFromStore(musicInfo.id)

@@ -221,3 +221,32 @@ test('停在 50% 的选项不贡献关键词池条目（存量脏 50 不算偏�
   assert.deepEqual(computePreferenceKeywords({ zh: 50 }), [])
   assert.deepEqual(computePreferenceKeywords({ zh: 50, ko: 80 }), ['韩语'])
 })
+
+test('版本问卷下线后的存量：no_* 勾选与 token 负初值在读档时擦掉', () => {
+  // v10/v11 的版本问卷已整体回退，但设备上还留着那版写进状态的三样东西；
+  // 不擦干净就是"代码回到两问版、分数没回"，推荐会比上一版更窄。
+  const stored: any = {
+    version: 11,
+    onboarding: {
+      completed: true,
+      weights: { zh: 80, no_dj: 100, no_remix: 100, remix: 70 },
+      seededThemeWeights: { 华语: 2.4 },
+      seededTokenWeights: { dj: -3, remix: -3 },
+    },
+    tokenWeights: {
+      dj: { themeId: 'dj', positiveWeight: 0, negativeWeight: 3, lastDecayTime: 1, lastUsedTime: 1 },
+      remix: { themeId: 'remix', positiveWeight: 0, negativeWeight: 3, lastDecayTime: 1, lastUsedTime: 1 },
+      华语: { themeId: '华语', positiveWeight: 1, negativeWeight: 0, lastDecayTime: 1, lastUsedTime: 1 },
+    },
+  }
+  const migrated = migrateRecommendationState(stored)
+  assert.deepEqual(migrated.onboarding.weights, { zh: 80, dj: 70 }, 'no_* 清掉，拆出去的 remix 并回 dj')
+  assert.equal('seededTokenWeights' in migrated.onboarding, false, '中间态字段不再落盘')
+  assert.equal(migrated.tokenWeights.dj, undefined, '负初值退干净后不留空条目')
+  assert.equal(migrated.tokenWeights.remix, undefined)
+  assert.equal(migrated.tokenWeights['华语'].positiveWeight, 1, '真实学习净权不受影响')
+  assert.equal(migrated.version, createDefaultState().version)
+  const replayed = migrateRecommendationState(migrated)
+  assert.deepEqual(replayed.onboarding, migrated.onboarding, '再读一次不改动')
+  assert.deepEqual(replayed.tokenWeights, migrated.tokenWeights)
+})

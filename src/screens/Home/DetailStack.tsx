@@ -64,17 +64,15 @@ const DetailStack = ({ navId, active }: {
 
   const pages = stack.map((route, index) => {
     const isTop = index == stack.length - 1
-    const isPendingTop = isTop && revealedRouteId != route.id
+    // 已经露过面的页面不再走 pending：pop 回来时不能先卸载再挂回，
+    // 否则页面里的 PagerView 重建会落回第 0 页
+    const revealed = revealedRouteId == route.id || revealedRouteIdsRef.current.has(route.id)
+    const isPendingTop = isTop && !revealed
     return (
-      <DetailPageActiveContext.Provider key={route.id} value={active && isTop && revealedRouteId == route.id}>
+      <DetailPageActiveContext.Provider key={route.id} value={active && isTop && revealed}>
         <View
-          style={{
-            ...styles.page,
-            display: isTop ? 'flex' : 'none',
-            backgroundColor: isPendingTop
-              ? theme['c-content-background']
-              : theme['c-content-background'],
-          }}
+          style={[styles.page, isTop ? null : styles.pageBehind, { backgroundColor: theme['c-content-background'] }]}
+          pointerEvents={isTop ? 'auto' : 'none'}
         >
           {isPendingTop
             ? null
@@ -110,7 +108,10 @@ const DetailStack = ({ navId, active }: {
   })
 
   return (
-    <View style={{ ...styles.container, display: active ? 'flex' : 'none' }}>
+    <View
+      style={[styles.container, active ? styles.stackActive : styles.stackHidden]}
+      pointerEvents={active ? 'auto' : 'none'}
+    >
       {pages}
     </View>
   )
@@ -138,8 +139,26 @@ const styles = createStyle({
     top: 0,
     bottom: 0,
   },
+  // 隐藏只能用 opacity，不能 display:'none'：
+  // 详情页里可能挂着 PagerView（如「我喜欢」的歌曲/专辑/歌单/创作者标签），
+  // 一旦退出布局再回来，ViewPager2 会画出第 0 页并回调 onPageSelected(0)，
+  // 把标签状态一起改回「歌曲」
+  stackActive: {
+    zIndex: 1,
+  },
+  stackHidden: {
+    opacity: 0,
+  },
   page: {
-    flex: 1,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     overflow: 'hidden',
+  },
+  // 被上层详情页遮住的页面保留布局：摘掉会让页面内的 PagerView 复位
+  pageBehind: {
+    opacity: 0,
   },
 })

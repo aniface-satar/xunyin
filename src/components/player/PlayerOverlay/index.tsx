@@ -27,6 +27,7 @@ var _LyricPreview = _interopRequireDefault(require("../../../screens/PlayDetail/
 var _lyricCopy = require("../../../core/lyricCopy");
 var _useLyricToolMode = require("../../../utils/hooks/useLyricToolMode");
 var _OnCoverThemeProvider = _interopRequireDefault(require("../OnCoverThemeProvider"));
+var _OverlayStatusBar = _interopRequireDefault(require("../OverlayStatusBar"));
 var _CoverBackdrop = _interopRequireDefault(require("../CoverBackdrop"));
 var _CoverStageProvider = _interopRequireDefault(require("../CoverStageProvider"));
 var _jsxRuntime = require("react/jsx-runtime");
@@ -290,6 +291,9 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var statusBarHeight = (0, require("../../../store/common/hook").useStatusbarHeight)();
   var animationRef = (0, _react.useRef)(null);
   var rootRef = (0, _react.useRef)(null);
+  // 点开播放栏后，补间不立刻起步：先让 overlay 以 progress=1 真正画出去一帧（见 queueOpen）
+  var pendingOpenRef = (0, _react.useRef)(false);
+  var pendingOpenGenRef = (0, _react.useRef)(0);
   var sourceRef = (0, _react.useRef)(null);
   var _useState = (0, _react.useState)(null),
     _useState2 = (0, _slicedToArray2.default)(_useState, 2),
@@ -641,6 +645,9 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     var _animationRef$current;
     var velocity = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
     if (!sourceRef.current) return;
+    // 任何显式转场（收起、手势收尾、重开）都作废还没起步的"自动展开"
+    pendingOpenGenRef.current++;
+    pendingOpenRef.current = false;
     (_animationRef$current = animationRef.current) == null ? void 0 : _animationRef$current.stop();
     setGestureEnabled(false);
     gestureEnabledRef.current = false;
@@ -720,6 +727,26 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     });
     progressRef.current = toValue;
   }, [invalidateTargetMeasurements, onBarSettledChange, onSourceVisibilityChange, progress, syncTransitionOriginFromPage]);
+  // 自动展开的起跑点：open() 只把 overlay 立到 progress=1，真正的补间在两帧之后才起步。
+  // 为什么不在 open() 里直接起步：同一个 commit 要挂载整棵播控页（pager、封面、静态播控区、
+  // 57 条 interpolate 的 Animated 图），JS 线程会被占几十到上百毫秒；而 Animated.timing
+  // （useNativeDriver:false）的进度按墙上时间算，卡住的帧不会补偿 —— 第一帧画出来时卡片
+  // 已经飞掉一大截，观感就是"点开后导航栏和控制栏先跳一下"。
+  // 两帧：effect/事件结束后的第一帧把 progress=1 交出去，第二帧时主线程已经画过它，
+  // 从这一刻开始计时，补间的第一帧才和静止态逐像素接得上。
+  // 手势接管或显式转场会自增 gen，在途的这条链自己退出。
+  var queueOpen = (0, _react.useCallback)(function () {
+    var gen = ++pendingOpenGenRef.current;
+    pendingOpenRef.current = true;
+    requestAnimationFrame(function () {
+      if (pendingOpenGenRef.current != gen) return;
+      requestAnimationFrame(function () {
+        if (pendingOpenGenRef.current != gen || !pendingOpenRef.current) return;
+        pendingOpenRef.current = false;
+        animateTo(0);
+      });
+    });
+  }, [animateTo]);
   var open = (0, _react.useCallback)(function () {
     if (!sourceRef.current) return;
     var restoredPage = (0, require("./transition").getLastOverlayPage)();
@@ -734,11 +761,14 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     applyTransitionOrigin((0, require("./transition").getTransitionOrigin)(restoredPage, LYRIC_PAGE));
     progress.setValue(1);
     progressRef.current = 1;
-    animateTo(0);
-  }, [animateTo, applyTransitionOrigin, musicInfo.pic, onSourceVisibilityChange, progress]);
+    queueOpen();
+  }, [applyTransitionOrigin, musicInfo.pic, onSourceVisibilityChange, progress, queueOpen]);
   var startGesture = (0, _react.useCallback)(function () {
     var _animationRef$current2;
     if (!sourceRef.current) return;
+    // 手指接管：还没起步的自动展开作废，位置由手势直接写 progress
+    pendingOpenGenRef.current++;
+    pendingOpenRef.current = false;
     var restoredPage = (0, require("./transition").getLastOverlayPage)();
     if (__DEV__) {
       console.log('[PAGE_DEBUG] startGesture', restoredPage);
@@ -892,12 +922,6 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var cardRadius = progress.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 12]
-  });
-  // 卡片终态不透明并完全盖住真实播放栏，所以这条线在 progress=1 必须保持可见，
-  // 它此时就是播放栏的 borderTopWidth；只在贴近全屏时淡出
-  var separatorOpacity = progress.interpolate({
-    inputRange: [0, 0.08, 1],
-    outputRange: [0, 1, 1]
   });
   // ghost 元素只在接近全屏时淡入、离开全屏时立刻淡出，避免手势刚开始时闪现
   var ghostFadeConfig = (0, require("./transition").getGhostFadeConfig)();
@@ -1192,13 +1216,19 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
       })
     }]
   };
+  // 顶部细线就是卡片的上边缘：progress=1 时它正好压在静态播放栏的 borderTopWidth 上，
+  // 之后一路跟着边缘飞到屏幕最上沿（progress=0）。整段行程都不淡出 —— 旧的窗口
+  // [0, 0.08, 1] → [0, 1, 1] 会把行程最后 8%（≈55dp，真机上就是收尾前那几帧）淡掉，
+  // 观感是"线还没到顶就凭空没了"，所以改成常量 1。
+  // 落定态另算：那时细线停在 y=0，是屏幕最上沿的一条边，静态全屏页没有对应元素，
+  // 所以按 showStaticContent 整条收掉 —— 切换点在屏外，看不出来。
   var separatorStyle = {
     // 直线段两端各内缩一个圆角半径，与静态播放栏 borderTopWidth 的可见直线段对齐；
     // 元素中心仍是 winWidth/2，所以下面的 translateX/scaleX 落点不变
     left: BAR_TOP_CORNER_RADIUS,
     top: 0,
     width: winWidth - BAR_TOP_CORNER_RADIUS * 2,
-    opacity: separatorOpacity,
+    opacity: showStaticContent ? 0 : 1,
     transform: [{
       translateX: progress.interpolate({
         inputRange: [0, 1],
@@ -1294,7 +1324,7 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   };
   var progressPercent = `${toProgressNumber(playProgress) * 100}%`;
   var bufferedPercent = `${toProgressNumber(playBuffered) * 100}%`;
-  return <_reactNative.View ref={rootRef} pointerEvents={(0, require("./transition").getOverlayRootPointerEvents)(mounted)} style={styles.root}>{mounted && source && <>{(<_reactNative.Animated.View pointerEvents="box-none" style={[styles.clip, clipStyle]}>{wallpaperBackdropSource != null ? <WallpaperBackdrop
+  return <_reactNative.View ref={rootRef} pointerEvents={(0, require("./transition").getOverlayRootPointerEvents)(mounted)} style={styles.root}>{mounted && source && <>{(0, _jsxRuntime.jsx)(_OverlayStatusBar.default, {})}{(<_reactNative.Animated.View pointerEvents="box-none" style={[styles.clip, clipStyle]}>{wallpaperBackdropSource != null ? <WallpaperBackdrop
         winWidth={winWidth}
         winHeight={winHeight}
         progress={progress}
@@ -1323,7 +1353,7 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
           })
         }), (fullscreenMounted || showLyricPager) && <_reactNative.View pointerEvents={showStaticContent ? 'auto' : 'none'} style={styles.content}>{(0, _jsxRuntime.jsx)(_reactNative.Animated.View, Object.assign({}, lyricClosePanResponder.panHandlers, {
             style: staticOpacityStyle,
-            children: <_Header.default onBack={handleBack} pageIndex={pageIndex} onPageSelected={function onPageSelected(page) {
+            children: <_Header.default onBack={handleBack} pageIndex={pageIndex} statusBar={false} onPageSelected={function onPageSelected(page) {
               var _pagerRef$current2;
               return (_pagerRef$current2 = pagerRef.current) == null ? void 0 : _pagerRef$current2.setPage(page);
             }} />
@@ -1420,7 +1450,7 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
           style: [styles.ghostHeader, {
             opacity: heartOpacity
           }],
-          children: <_Header.default pageIndex={pageIndex} onPageSelected={function onPageSelected(page) {
+          children: <_Header.default pageIndex={pageIndex} statusBar={false} onPageSelected={function onPageSelected(page) {
             var _pagerRef$current3;
             return (_pagerRef$current3 = pagerRef.current) == null ? void 0 : _pagerRef$current3.setPage(page);
           }} />

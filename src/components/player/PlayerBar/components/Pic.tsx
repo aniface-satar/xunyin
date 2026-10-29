@@ -1,5 +1,5 @@
-import { StyleSheet, TouchableOpacity, View } from 'react-native'
-import { useCallback, useRef } from 'react'
+import { Animated, StyleSheet, TouchableOpacity, View } from 'react-native'
+import { useCallback, useMemo, useRef } from 'react'
 import { navigations } from '@/navigation'
 import { usePlayerMusicInfo } from '@/store/player/hook'
 import { scaleSizeH } from '@/utils/pixelRatio'
@@ -8,6 +8,7 @@ import playerState from '@/store/player/state'
 import { LIST_IDS, NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
 import Image from '@/components/common/Image'
 import { usePlayerOverlay } from '@/components/player/PlayerOverlay'
+import { getBarCoverFadeConfig } from '@/components/player/PlayerOverlay/transition'
 import { setLoadErrorPicUrl, setMusicInfo } from '@/core/player/playInfo'
 import { BAR_COVER_RADIUS } from '@/screens/PlayDetail/Vertical/layout'
 import { BorderWidths } from '@/theme'
@@ -33,6 +34,12 @@ export default ({ isHome, onLayout }: PicProps) => {
   const musicInfo = usePlayerMusicInfo()
   const theme = useTheme()
   const playerOverlay = usePlayerOverlay()
+  // 转场开始后 morph 层会在同一位置升起一份封面，这一份必须立刻让位 —— 否则两份封面同时可见
+  // （整栏的淡出窗口是 progress ∈ [0.9, 1]，比封面的位移窗口慢得多；详见 transition.ts 的说明）
+  const overlayProgress = playerOverlay?.progress
+  const coverVisibility = useMemo(() => (
+    overlayProgress?.interpolate(getBarCoverFadeConfig()) ?? 1
+  ), [overlayProgress])
   const picRef = useRef<View>(null)
   const handleLayout = useCallback(() => {
     picRef.current?.measureInWindow((x, y, width, height) => {
@@ -69,21 +76,23 @@ export default ({ isHome, onLayout }: PicProps) => {
   return (
     <View ref={picRef} onLayout={handleLayout}>
       <TouchableOpacity onLongPress={handleLongPress} onPress={handlePress} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={global.i18n.t('open_play_detail')}>
-        <Image
-          url={musicInfo.pic}
-          nativeID={NAV_SHEAR_NATIVE_IDS.playDetail_pic}
-          style={{
-            ...styles.image,
-            backgroundColor: theme['c-content-background'],
-            shadowColor: '#000',
-            shadowOpacity: 0.34,
-            shadowOffset: { width: 0, height: 8 },
-            shadowRadius: 18,
-            borderWidth: BorderWidths.normal,
-            borderColor: theme['c-border-background'],
-          }}
-          onError={handleError}
-        />
+        <Animated.View style={{ opacity: coverVisibility }}>
+          <Image
+            url={musicInfo.pic}
+            nativeID={NAV_SHEAR_NATIVE_IDS.playDetail_pic}
+            style={{
+              ...styles.image,
+              backgroundColor: theme['c-content-background'],
+              shadowColor: '#000',
+              shadowOpacity: 0.34,
+              shadowOffset: { width: 0, height: 8 },
+              shadowRadius: 18,
+              borderWidth: BorderWidths.normal,
+              borderColor: theme['c-border-background'],
+            }}
+            onError={handleError}
+          />
+        </Animated.View>
       </TouchableOpacity>
     </View>
   )

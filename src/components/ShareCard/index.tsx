@@ -2,11 +2,10 @@ import { forwardRef, useEffect, useRef, useState } from 'react'
 import { ImageBackground, StyleSheet, View, type ViewStyle } from 'react-native'
 
 import { defaultHeaders } from '@/components/common/Image'
-import { useTheme } from '@/store/theme/hook'
 import LyricCard from './LyricCard'
 import MusicCard from './MusicCard'
 import { normalizeCoverUri } from './CoverImage'
-import { pickCardTheme, type CardTheme } from './cardTheme'
+import { pickCardTheme, type CardTheme, type CardTone } from './cardTheme'
 import { CARD_MAX_HEIGHT_RATIO, CARD_WIDTH_RATIO, cardScale } from './cardScale'
 import { type LyricBlockLine } from './fitLyricBlock'
 
@@ -38,6 +37,11 @@ export interface ShareCardData {
 export interface ShareCardProps {
   mode: 'music' | 'lyric'
   musicInfo: ShareCardData
+  /**
+   * 卡底的黑白档：**由预览页底部那排「白底 / 黑底」给**，默认白底（2026-10-29 用户指定）。
+   * 卡片这一层不读应用主题 —— 分享图是产物，不是界面（spec §3），深色模式的用户想发白卡不该去切主题。
+   */
+  tone: CardTone
   lyricLines?: readonly LyricBlockLine[]
   /**
    * 歌词卡正文字号(dp)。给了（歌词页用户选的字号 ÷10）就以它为**起始**档：
@@ -59,12 +63,11 @@ export interface ShareCardProps {
    *  就绪只有这一个出口：卡封面、整屏糊底两路各自的状态都在**这一层**合起来再报出去，
    *  别的层（ShareCardModal）只吃这一个布尔值、不另存自己的 ready —— 各存一份就会有人漏掉某一路。
    *  没有封面（本地歌）时两路都会当场落定，导出不会永远卡住。
-   *  （原来的第三路"封面取色定卡色"已随卡色跟随应用主题一起退役，见 pickCardTheme。） */
+   *  （原来的第三路"封面取色定卡色"已随卡色改由用户选一起退役，见 pickCardTheme。） */
   onReadyChange?: (ready: boolean) => void
 }
 
-const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLines, lyricFontSize, width, height, masterWidth, masterHeight, onReadyChange }, ref) => {
-  const appTheme = useTheme()
+const ShareCard = forwardRef<View, ShareCardProps>(({ mode, tone, musicInfo, lyricLines, lyricFontSize, width, height, masterWidth, masterHeight, onReadyChange }, ref) => {
   const [coverReady, setCoverReady] = useState(false)
   const uri = normalizeCoverUri(musicInfo.pic)
 
@@ -85,10 +88,9 @@ const ShareCard = forwardRef<View, ShareCardProps>(({ mode, musicInfo, lyricLine
   reportReadyRef.current = onReadyChange
   useEffect(() => { reportReadyRef.current?.(ready) }, [ready])
 
-  // 卡色跟应用主题走（cardTheme.ts 顶部注释）：深色模式黑卡、浅色模式白卡，音乐卡与歌词卡同一套。
-  // 两张卡共用一个选择器 —— 分卡就是旧 spec §3 那对过时的取舍（歌词卡固定深色 / 音乐卡看封面脸色），
-  // 用户 2026-10-17 指定的是"统一跟着应用深浅模式"，一并改掉。
-  const theme: CardTheme = pickCardTheme(appTheme.isDark)
+  // 卡色由预览页那枚开关给（cardTheme.ts 顶部注释）：白底 / 黑底，默认白底，音乐卡与歌词卡同一套。
+  // 两张卡共用一个选择器 —— 分卡就是旧 spec §3 那对过时的取舍（歌词卡固定深色 / 音乐卡看封面脸色）。
+  const theme: CardTheme = pickCardTheme(tone)
   // 卡盒按基准整体算（= 全屏那一档的画面），画布只管"这张卡放在多大的糊底上、等比缩到多大"。
   // 之前这里是 width/height，于是切比例时卡盒跟着画布两个轴各自变形、封面与文字的相对大小一起重排。
   const cardWidth = masterWidth * CARD_WIDTH_RATIO

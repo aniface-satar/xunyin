@@ -310,22 +310,29 @@ export function pushCommentScreen(componentId: string) {
           layout: {
             componentBackgroundColor: theme['c-content-background'],
           },
+          // 与 Home 内的二级页（如「我喜欢」）保持一致：不做滑入，一帧到位。
+          // RNN(Android) 不显式覆盖就一定会走默认的"从下往上 + 淡入"；
+          // 注意 content 下必须写成 enter / exit，直接写 translationX 那种写法会被解析层丢掉。
           animations: {
             push: {
               content: {
-                translationX: {
-                  from: windowSizeTools.getSize().width,
-                  to: 0,
-                  duration: 300,
+                enter: {
+                  alpha: {
+                    from: 1,
+                    to: 1,
+                    duration: 0,
+                  },
                 },
               },
             },
             pop: {
               content: {
-                translationX: {
-                  from: 0,
-                  to: windowSizeTools.getSize().width,
-                  duration: 300,
+                exit: {
+                  alpha: {
+                    from: 1,
+                    to: 1,
+                    duration: 0,
+                  },
                 },
               },
             },

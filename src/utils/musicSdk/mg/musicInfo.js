@@ -1,6 +1,7 @@
 import { sizeFormate, formatPlayTime } from '../../index'
 import { createHttpFetch } from './utils'
 import { formatSingerName } from '../utils'
+import { pickMgSongImg } from './img'
 
 const createGetMusicInfosTask = (ids) => {
   let list = ids
@@ -19,7 +20,7 @@ const createGetMusicInfosTask = (ids) => {
   }).then(data => data.resource)))
 }
 
-export const filterMusicInfoList = (rawList) => {
+export const filterMusicInfoList = (rawList, imgMode = 'medium') => {
   // console.log(rawList)
   let ids = new Set()
   const list = []
@@ -73,7 +74,7 @@ export const filterMusicInfoList = (rawList) => {
       copyrightId: item.copyrightId,
       source: 'mg',
       interval: intervalTest ? RegExp.$1 : null,
-      img: item.albumImgs?.length ? item.albumImgs[0].img : null,
+      img: pickMgSongImg(item, imgMode),
       lrc: null,
       lrcUrl: item.lrcUrl,
       mrcUrl: item.mrcUrl,
@@ -87,7 +88,7 @@ export const filterMusicInfoList = (rawList) => {
   return list
 }
 
-export const filterMusicInfoListV5 = (rawList) => {
+export const filterMusicInfoListV5 = (rawList, imgMode = 'medium') => {
   // console.log(rawList)
   let ids = new Set()
   const list = []
@@ -139,7 +140,7 @@ export const filterMusicInfoListV5 = (rawList) => {
       copyrightId: item.copyrightId,
       source: 'mg',
       interval: formatPlayTime(item.duration),
-      img: item.img3 || item.img2 || item.img1 || null,
+      img: pickMgSongImg(item, imgMode),
       lrc: null,
       lrcUrl: item.lrcUrl,
       mrcUrl: item.mrcUrl,
@@ -154,10 +155,14 @@ export const filterMusicInfoListV5 = (rawList) => {
 }
 
 
-export const getMusicInfo = async(copyrightId) => {
-  return getMusicInfos([copyrightId]).then(data => data[0])
+/**
+ * 注意：咪咕的 resourceinfo 接口只认 songId / contentId，
+ * 传 copyrightId 会返回空的 resource 数组
+ */
+export const getMusicInfo = async(id, imgMode = 'medium') => {
+  return getMusicInfos([id], imgMode).then(data => data[0])
 }
 
-export const getMusicInfos = async(copyrightIds) => {
-  return filterMusicInfoList(await Promise.all(createGetMusicInfosTask(copyrightIds)).then(data => data.flat()))
+export const getMusicInfos = async(ids, imgMode = 'medium') => {
+  return filterMusicInfoList(await Promise.all(createGetMusicInfosTask(ids)).then(data => data.flat()), imgMode)
 }

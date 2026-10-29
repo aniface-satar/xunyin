@@ -9,6 +9,7 @@ import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
+import { primeBackdropForPanel } from '@/utils/backdropSnapshot'
 
 import SettingLyricProgress from '@/screens/PlayDetail/components/SettingPopup/settings/SettingLyricProgress'
 import SettingVolume from '@/screens/PlayDetail/components/SettingPopup/settings/SettingVolume'
@@ -30,10 +31,13 @@ const LyricSettingSheet = forwardRef<LyricSettingSheetType>((_, ref) => {
 
   useImperativeHandle(ref, () => ({
     show() {
-      setMounted(true)
-      slide.show()
-      requestAnimationFrame(() => {
-        setVisible(true)
+      // 先拍背后那一帧再挂面板，玻璃面首帧即最终形态
+      void primeBackdropForPanel().then(() => {
+        setMounted(true)
+        slide.show()
+        requestAnimationFrame(() => {
+          setVisible(true)
+        })
       })
     },
   }))
@@ -77,8 +81,8 @@ const LyricSettingSheet = forwardRef<LyricSettingSheetType>((_, ref) => {
             onStartShouldSetResponder={() => true}
           >
             <GlassBackdrop
-              blurRadius={24}
               overlayOpacity={0.62}
+              restOffset={slide.sheetLayout}
               style={{ backgroundColor: theme['c-content-background'] }}
             />
             <View style={styles.content}>

@@ -667,3 +667,39 @@ Task 11 的回写（`f586df3`）之后对本分支做了一次**整分支终审*
 8. **提交/构建**：仍与 §11.12-5/6 同一状态 —— 工作区未提交。构建（用户："构建"）：`assembleRelease` **BUILD SUCCESSFUL in 5m 43s**（exit 0，五支 ABI 落在 17:33，
    日志 `.superpowers/sdd/2026-10-16-share-card-image/build-ui2.log`）。进包探针（读 arm64 的 `assets/index.android.bundle`）：
    `busyBtn`/`actionBtn`/`noticeLayer`/`share_card_creating` 各 1 次命中，**第一版的 `noticeChip` 0 命中**（证明包里是这一版而不是 17:11 那支），`c-button-background` 3 次命中。
+
+### 11.14 卡色改由用户选：底部「白底 / 黑底」，默认白底（2026-10-29）
+
+用户原话：**"在歌词卡片和歌曲卡片分享界面的下方选项中加入'白底/黑底'的选项，默认白色，不再随应用内深浅色变化"**。
+
+1. **判据第三版**：卡色从"跟随应用深浅模式"（2026-10-17 那一版，`pickCardTheme(appTheme.isDark)`）改成**用户这一次的选择**。
+   理由与 §3 同源：分享图是产物，不是界面 —— 深色模式的用户想发一张白卡，不该先去把 App 主题切成浅色。
+   卡片层因此**不再读任何主题 hook**（`src/components/ShareCard/index.tsx` 里的 `useTheme` 与 `appTheme` 一并删除），
+   §11.8 记的那类事故（播放页 `OnCoverThemeProvider` 把 `isDark` 硬翻成 true ⇒ 浅色模式也出黑卡）从此在结构上不可能复发：
+   卡色唯一的来路是 `ShareCard` 的 `tone` 入参。
+2. **选择器**：`cardTheme.ts` 新增 `export type CardTone = 'light' | 'dark'`，`pickCardTheme(tone)` 只认它（零导入的纯常量模块照旧，
+   `tests/share-card-theme.mts` 的六条断言随之改成按 tone 取值，并新增一条"两档 scrim 相同"—— scrim 只铺糊底，不该跟着卡色变）。
+3. **控件层**：`ShareCardModal` 底部从"比例行 + 动作行"变成"**底色行 + 比例行 + 动作行**"。
+   底色排在最上（离被拍的卡最近）：底色是这张图的一部分，比例只是画布。
+   两排共用同一套几何（`OPTION_HEIGHT = 32`、`ROW_GAP = 8`、`optionRow`/`optionBtn` 一份样式），
+   选中态仍是 `c-primary-background/c-primary-font`、未选中仍是 `c-button-background/c-button-font`，与 §11.13 的全局按钮语言一致。
+   状态条的 `bottom` 从手写加法改成由常数推的 `NOTICE_BOTTOM`（底边距 + 动作行 + 两排选项行 + 三条行间隙）—— 加行时最容易漏的就是它。
+4. **默认白底，每次打开复位**：`DEFAULT_TONE: CardTone = 'light'`；两个入口（`Vertical/components/Header.tsx`、`Vertical/Lyric.tsx`）
+   都是 `shareCardData ? <ShareCardModal/> : null` 条件挂载，关掉即卸载，state 自然回白底，不需要额外的重置逻辑。
+   拍摄/落盘进行中底色按钮禁用（0.3）：那一刻被拍视图正在被 `view.draw`，换色有拍到半新半旧卡的风险（比例行没加这道闸，属既有缺口，未扩面）。
+5. **`SheetThemeProvider` 保留**：卡色已不读主题，但这层 wrapper 不撤 —— 被拍子树里的 `common/Text` base style 仍取 `c-font`/`fontShadow`
+   （目前被卡内显式 `color` + `noShadow` 全部压掉，等于一行不生效），撤掉就等着"某天新增的子组件悄悄吃到封面墨色"。
+   `tests/share-card-theme-source.mts` 保留"必须挂在 provider 里"那条，另加三条：卡片层 `pickCardTheme(tone)` 且不含 `useTheme`、
+   默认值是 `'light'`、`tone={tone}` 确实传到被拍的卡。`<ShareCard` 的定位改用正则 —— `indexOf` 会被注释里的 `<ShareCardModal/>` 先命中。
+6. **i18n**：`share_card_tone_light` / `share_card_tone_dark` 三语言同笔（简体/繁體"白底 / 黑底"，英文 "White background" / "Black background"），
+   三份 lang 文件键数仍是 867 对齐。
+7. **闸门（现跑）**：`npx tsc --noEmit` **139 = 基线**、命中 `ShareCard` **0** 条；`npx eslint`（三个改动文件）exit 0、零行输出；
+   分享卡六个用例文件 **69/69**；`npm test` **1111 pass / 2 fail / 1 cancelled**，与基线同两条（`monet-texture` 正文区 tone、`music-recognition-afp-glue` 不 resolve）+ 同一条 cancelled。
+8. **构建（用户："构建"）**：`cd android && ./gradlew.bat assembleRelease --console=plain` **BUILD SUCCESSFUL in 2m 29s**（exit 0，716 tasks：28 executed / 688 up-to-date），
+   五支 release ABI 落在 22:34 —— arm64 21,149,863 B / armeabi-v7a 20,013,503 B / x86 21,847,351 B / x86_64 21,906,971 B / universal 41,266,918 B。
+   进包探针（读 arm64 的 `assets/index.android.bundle`，9,371,184 B）：`share_card_tone_light` / `share_card_tone_dark` / `optionRow` / `optionBtn` 各 **1 次**命中
+   —— 与本轮之前的 `share_card_ratio_fullscreen` / `noticeLayer` 同一条计数口径（这份 bundle 里每个 i18n 键只出现 1 次，所以"1 次"是正常值，不是漏语言）；
+   中文文案以 UTF-16-LE 存储：`白底` 4 次、`黑底` 3 次。`DEFAULT_TONE` / `CardTone` **0 命中**属正常 —— 前者是被 terser 内联的局部常量，后者是类型（编译期擦除）。
+9. **未做的**：真机只在代码层 + 产物层验证（本轮未装机），浅色卡在黑色预览底上的观感、`white background` 在窄屏（360dp 两枚各 152dp）是否截断，
+   都要上机看。工作区未提交 —— 提交与前几节同一状态。
+

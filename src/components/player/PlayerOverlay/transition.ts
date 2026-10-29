@@ -439,6 +439,31 @@ export const getMorphCoverShadowFadeConfig = (isLyricOrigin: boolean, coverTrave
   }
 }
 
+// ===================== 静态控制栏封面：一离开 1 就让位 =====================
+//
+// 转场里有两份封面：播放栏里那一份（PlayerBar/components/Pic.tsx）和 morph 层那一份（从播放栏位置起飞）。
+// 整栏的淡出排在 progress 的 [0.9, 1]：拖动时那是行程的前 10%（≈70dp 手指位移）、
+// 补间时是收起方向的最后 ~440ms，都很慢；而封面的位移窗口是 [textMoveThreshold, 1]（≈[0.85, 1]），
+// 一离开 1 就往上走。于是"飞行中的封面已经挪了十几 dp"与"静态封面还端端正正在原地"会同时成立 ——
+// 观感是两个封面。自定义背景下卡片只是一层透明的膜（底由 PlayerBar 的壁纸/播报页背景另铺），
+// 遮不住下面那一份，所以只有壁纸模式看得见。
+//
+// 这一小段里封面是唯一有位移的元素：标题/歌手/进度/按钮的插值在 [textMoveThreshold, 1] 两端同值，
+// morph 那份原地不动、与静态那份逐像素重合，重影看不出来。所以只给封面一条更窄的闸门 ——
+// 与 PlayerBar 判断"栏自己才是当前可见层"的 progressVisible 同一条线（p > 0.99），
+// 展开方向第一帧就让位给 morph 层的封面，收起方向则在最后 1% 里与已经落到位的 morph 封面重合着淡回来。
+export const BAR_COVER_VISIBLE_PROGRESS = 0.99
+// 满值点提前到 0.998 收口，不钉在 1 上：收起方向走 spring 时 restDisplacementThreshold 是 0.002，
+// 补间可能停在 0.998x 而不是精确的 1 —— 闸门若把"满"钉在 1，封面会永久停在九成不透明。
+// 0.998 与 1 之间封面只差 1.6dp 的位移，收口点看不出来。
+export const BAR_COVER_FULL_PROGRESS = 0.998
+
+export const getBarCoverFadeConfig = (): MorphFadeConfig => ({
+  inputRange: [BAR_COVER_VISIBLE_PROGRESS, BAR_COVER_FULL_PROGRESS],
+  outputRange: [0, 1],
+  extrapolate: 'clamp',
+})
+
 export interface MorphTextAnchor {
   y: number
   height: number

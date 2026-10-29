@@ -13,6 +13,7 @@ import {
   handleGetOnlineMusicUrl,
   handleGetOnlinePicUrl,
   getCachedLyricInfo,
+  isPicUrlUsable,
 } from './utils'
 
 /* export const setMusicUrl = ({ musicInfo, type, url }: {
@@ -70,7 +71,7 @@ export const getPicUrl = async({ musicInfo, listId, isRefresh, allowToggleSource
   allowToggleSource?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<string> => {
-  if (musicInfo.meta.picUrl && !isRefresh) return musicInfo.meta.picUrl
+  if (!isRefresh && isPicUrlUsable(musicInfo.meta.picUrl)) return musicInfo.meta.picUrl
   return handleGetOnlinePicUrl({ musicInfo, onToggleSource, isRefresh, allowToggleSource }).then(({ url, musicInfo: targetMusicInfo, isFromCache }) => {
     // picRequest = null
     if (listId) {

@@ -134,8 +134,8 @@ const DownloadQualitySheet = forwardRef<DownloadQualitySheetType>((_, ref) => {
             onStartShouldSetResponder={() => true}
           >
             <GlassBackdrop
-              blurRadius={24}
               overlayOpacity={0.62}
+              restOffset={slide.sheetLayout}
               style={{ backgroundColor: theme['c-content-background'] }}
             />
             <View style={styles.content}>

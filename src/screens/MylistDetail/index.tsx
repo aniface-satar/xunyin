@@ -157,9 +157,12 @@ export default ({ componentId, info, embedded = false, onBack }: {
   }, [activeTab, componentId, isMultiSelectMode])
 
   const handlePageSelected = useCallback(({ nativeEvent }: PagerViewOnPageSelectedEvent) => {
+    // 详情栈里的页面被上层详情页遮住时收到的页码回调不是用户滑动，不能拿它改标签；
+    // 栈外实例（原生路由页面）拿不到这个上下文，恒为 false，按原逻辑处理
+    if (embedded && !detailPageActive) return
     const tab = tabs[nativeEvent.position]
     if (tab && tab != activeTab) handleTabChange(tab)
-  }, [activeTab, handleTabChange, tabs])
+  }, [activeTab, detailPageActive, embedded, handleTabChange, tabs])
 
   useEffect(() => {
     const index = tabs.indexOf(activeTab)

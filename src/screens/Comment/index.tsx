@@ -15,6 +15,8 @@ import PageContent from '@/components/PageContent'
 import playerState from '@/store/player/state'
 import { scaleSizeH } from '@/utils/pixelRatio'
 import { BorderWidths } from '@/theme'
+import { useBackHandler } from '@/utils/hooks/useBackHandler'
+import { pop } from '@/navigation'
 
 type ActiveId = 'hot' | 'new'
 
@@ -91,6 +93,15 @@ export default memo(({ componentId }: {
     setComponentId(COMPONENT_IDS.comment, componentId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 评论页是从全屏播控页（PlayerOverlay）上以原生方式推上来的，而播控页在全屏期间注册的
+  // 硬件返回监听更早注册：不在这里接住返回键，它会先把播控卡片收起，评论页却原地不动。
+  // BackHandler 后注册者先执行，本屏挂载晚于播控页，所以这里先拿到返回键并弹出自己。
+  const handleBack = useCallback(() => {
+    void pop(componentId)
+    return true
+  }, [componentId])
+  useBackHandler(handleBack)
 
   const tabs = useMemo(() => {
     return [

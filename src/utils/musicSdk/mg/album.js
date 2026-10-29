@@ -4,6 +4,7 @@ import { filterMusicInfoList } from './musicInfo'
 import { createSignature } from './musicSearch'
 import { formatPlayCount } from '../../index'
 import { normalizeMgAlbumSearch } from '../albumNormalizers'
+import { pickMgAlbumImg } from './img'
 
 export default {
   /**
@@ -82,7 +83,7 @@ export default {
 
     return {
       name: info.title,
-      image: info.imgItems?.length ? info.imgItems[0].img : null,
+      image: pickMgAlbumImg(info.imgItems, 'large'),
       desc: info.summary,
       author: info.singer,
       publishDate: info.publishTime ?? info.publishDate ?? null,

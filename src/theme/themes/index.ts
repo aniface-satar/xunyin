@@ -111,9 +111,9 @@ export const buildActiveThemeColors = (theme: LX.Theme): LX.ActiveTheme => {
   // 逐个改成 transparent 既改不全也守不住 —— 新加一个页面就漏一个。这一层是它们共同的来源，
   // 换一次就全换。组件侧只剩三处需要知情：PageContent 铺柔光、GlassBackdrop 不再糊背景、
   // PlayerOverlay 的播控背景不叠压暗层，它们都读 `is-wallpaper`。
-  // 第二个参数：图铺到播控页了 ⇒ 强调色抽白。主界面那份（applyToPlayer 关着时）留着主题色，
-  // 那边 PageContent 的柔光压得比播控页深，不需要跟着抽（见 utils/wallpaper/palette.ts）。
-  return customBg != null ? buildWallpaperTheme(activeTheme, customBg.applyToPlayer) : activeTheme
+  // 强调色不跟着 applyToPlayer 走：那张图有没有铺到播控页，是播控页的可选项，
+  // 不该让整个 App 的强调色跟着翻（切一次播控页背景就换一套配色）。壁纸模式下永远是同一支白。
+  return customBg != null ? buildWallpaperTheme(activeTheme) : activeTheme
 }
 
 

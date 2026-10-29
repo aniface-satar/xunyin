@@ -16,9 +16,11 @@ import { getMusicAlbumListInfo } from '@/core/musicLinks'
 import { LIST_IDS } from '@/config/constant'
 import musicSdk from '@/utils/musicSdk'
 import { usePlayerMusicInfo, usePlayMusicInfo } from '@/store/player/hook'
+
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
+import { primeBackdropForPanel } from '@/utils/backdropSnapshot'
 import { useOpenMusicDetail } from '@/utils/hooks/useOpenMusicDetail'
 import { assertApiSupport, createStyle, toast } from '@/utils/tools'
 
@@ -83,10 +85,14 @@ const MusicMoreSheet = forwardRef<MusicMoreSheetType, MusicMoreSheetProps>(({ on
 
   useImperativeHandle(ref, () => ({
     show() {
-      setMounted(true)
-      slide.show()
-      requestAnimationFrame(() => {
-        setVisible(true)
+      // 玻璃面糊的是"面板背后真实显示的那一帧"。截图要 60~150ms，先挂面板的话第一帧
+      // 只能空着，等快照回来才糊上 —— 观感就是背景从清晰突然变糊。先拍再挂，首帧即最终形态。
+      void primeBackdropForPanel().then(() => {
+        setMounted(true)
+        slide.show()
+        requestAnimationFrame(() => {
+          setVisible(true)
+        })
       })
     },
   }))
@@ -215,9 +221,8 @@ const MusicMoreSheet = forwardRef<MusicMoreSheetType, MusicMoreSheetProps>(({ on
               onStartShouldSetResponder={() => true}
             >
               <GlassBackdrop
-                blurRadius={24}
                 overlayOpacity={0.62}
-                playerScope
+                restOffset={slide.sheetLayout}
                 style={{ backgroundColor: theme['c-content-background'] }}
               />
               <View style={styles.content} onStartShouldSetResponder={() => true}>

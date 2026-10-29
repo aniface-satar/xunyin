@@ -1,5 +1,5 @@
 import { useRef, useImperativeHandle, forwardRef, useState, useEffect } from 'react'
-import SearchTipList, { type SearchTipListProps as _SearchTipListProps, type SearchTipListType as _SearchTipListType } from '@/components/SearchTipList'
+import SearchTipList, { type SearchTipListAnchor, type SearchTipListProps as _SearchTipListProps, type SearchTipListType as _SearchTipListType } from '@/components/SearchTipList'
 import Button from '@/components/common/Button'
 import { createStyle } from '@/utils/tools'
 import Text from '@/components/common/Text'
@@ -24,8 +24,8 @@ interface TipListProps {
   onSearch: (keyword: string) => void
 }
 export interface TipListType {
-  search: (keyword: string, height: number) => void
-  show: (height: number) => void
+  search: (keyword: string, height: number, anchor?: SearchTipListAnchor) => void
+  show: (height: number, anchor?: SearchTipListAnchor) => void
   hide: () => void
 }
 
@@ -42,8 +42,8 @@ export default forwardRef<TipListType, TipListProps>(({ onSearch }, ref) => {
     }
   }, [])
 
-  const handleSearch = (keyword: string, height: number) => {
-    searchTipListRef.current?.setHeight(height)
+  const handleSearch = (keyword: string, height: number, anchor?: SearchTipListAnchor) => {
+    searchTipListRef.current?.setHeight(height, anchor)
     setSearchText(keyword)
     if (keyword) {
       setTipListInfo(keyword, searchState.temp_source)
@@ -60,8 +60,8 @@ export default forwardRef<TipListType, TipListProps>(({ onSearch }, ref) => {
     }
   }
 
-  const handleShowList = (height: number) => {
-    searchTipListRef.current?.setHeight(height)
+  const handleShowList = (height: number, anchor?: SearchTipListAnchor) => {
+    searchTipListRef.current?.setHeight(height, anchor)
     if (searchState.tipListInfo.list.length) {
       visibleListRef.current = true
       searchTipListRef.current?.setList([...searchState.tipListInfo.list])
@@ -69,22 +69,22 @@ export default forwardRef<TipListType, TipListProps>(({ onSearch }, ref) => {
   }
 
   useImperativeHandle(ref, () => ({
-    search(keyword, height) {
-      if (visible) handleSearch(keyword, height)
+    search(keyword, height, anchor) {
+      if (visible) handleSearch(keyword, height, anchor)
       else {
         setVisible(true)
         requestAnimationFrame(() => {
-          handleSearch(keyword, height)
+          handleSearch(keyword, height, anchor)
         })
       }
     },
-    show(height) {
+    show(height, anchor) {
       visibleListRef.current = true
-      if (visible) handleShowList(height)
+      if (visible) handleShowList(height, anchor)
       else {
         setVisible(true)
         requestAnimationFrame(() => {
-          handleShowList(height)
+          handleShowList(height, anchor)
         })
       }
     },

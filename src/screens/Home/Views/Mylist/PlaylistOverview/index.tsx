@@ -6,8 +6,8 @@ import Image from '@/components/common/Image'
 import Text from '@/components/common/Text'
 import { useTheme } from '@/store/theme/hook'
 import { useMyList } from '@/store/list/hook'
-import { getListMusics, removeUserList } from '@/core/list'
-import { createStyle, confirmDialog } from '@/utils/tools'
+import { getListMusics } from '@/core/list'
+import { createStyle } from '@/utils/tools'
 import { useI18n } from '@/lang'
 import { BorderWidths, BorderRadius } from '@/theme'
 import { LIST_IDS } from '@/config/constant'
@@ -50,15 +50,12 @@ const QuickTile = ({ icon, label, onPress }: QuickTileProps) => {
   )
 }
 
-const PlaylistRow = memo(({ item, meta, onPress, onShowMenu, onSelect, index, isMultiSelect, selected }: {
+const PlaylistRow = memo(({ item, meta, onPress, onShowMenu, index }: {
   item: LX.List.UserListInfo
   index: number
   meta: PlaylistMeta | undefined
   onPress: (item: LX.List.UserListInfo) => void
   onShowMenu: (item: LX.List.UserListInfo, index: number, position: Position) => void
-  onSelect: (item: LX.List.UserListInfo) => void
-  isMultiSelect: boolean
-  selected: boolean
 }) => {
   const theme = useTheme()
   const moreButtonRef = useRef<TouchableOpacity>(null)
@@ -79,22 +76,9 @@ const PlaylistRow = memo(({ item, meta, onPress, onShowMenu, onSelect, index, is
   return (
     <TouchableOpacity
       style={{ ...styles.playlistRow, borderBottomColor: theme['c-border-background'] }}
-      onPress={() => { isMultiSelect ? onSelect(item) : onPress(item) }}
+      onPress={() => { onPress(item) }}
       activeOpacity={0.7}
     >
-      {
-        isMultiSelect
-          ? (
-            <View style={styles.playlistCheckbox}>
-              <Icon
-                name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'}
-                size={18}
-                color={selected ? theme['c-primary'] : theme['c-350']}
-              />
-            </View>
-            )
-          : null
-      }
       <View style={{ ...styles.playlistCover, backgroundColor: theme['c-primary-background'] }}>
         <Image url={meta?.cover} style={styles.playlistCoverImage} />
       </View>
@@ -104,26 +88,16 @@ const PlaylistRow = memo(({ item, meta, onPress, onShowMenu, onSelect, index, is
           {global.i18n.t('mylist_song_count', { count: meta?.count ?? 0 })}
         </Text>
       </View>
-      {
-        !isMultiSelect
-          ? (
-            <TouchableOpacity onPress={handleShowMenu} ref={moreButtonRef} style={styles.playlistMoreBtn} accessibilityRole="button" accessibilityLabel={global.i18n.t('more_actions')}>
-              <Icon name="dots-vertical" color={theme['c-350']} size={16} />
-            </TouchableOpacity>
-            )
-          : null
-      }
+      <TouchableOpacity onPress={handleShowMenu} ref={moreButtonRef} style={styles.playlistMoreBtn} accessibilityRole="button" accessibilityLabel={global.i18n.t('more_actions')}>
+        <Icon name="dots-vertical" color={theme['c-350']} size={16} />
+      </TouchableOpacity>
     </TouchableOpacity>
   )
 })
 
-const OverviewHeader = ({ isMultiSelect, selectedCount, onOpenLove, onOpenHistory, onToggleMultiSelect, onSelectAll, onCreatePlaylist, onOpenSonglist }: {
+const OverviewHeader = ({ onOpenLove, onOpenHistory, onCreatePlaylist, onOpenSonglist }: {
   onOpenLove: () => void
   onOpenHistory: () => void
-  isMultiSelect: boolean
-  selectedCount: number
-  onToggleMultiSelect: () => void
-  onSelectAll: () => void
   onCreatePlaylist: () => void
   onOpenSonglist: () => void
 }) => {
@@ -138,17 +112,8 @@ const OverviewHeader = ({ isMultiSelect, selectedCount, onOpenLove, onOpenHistor
       </View>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionLabel} size={13} color={theme['c-font-label']}>
-          {isMultiSelect ? t('mylist_selected_count', { count: selectedCount }) : t('mylist_user_playlists')}
+          {t('mylist_user_playlists')}
         </Text>
-        <TouchableOpacity
-          style={styles.sectionAction}
-          onPress={onToggleMultiSelect}
-          activeOpacity={0.7}
-        >
-          <Text size={13} color={theme['c-primary']}>
-            {isMultiSelect ? t('list_select_cancel') : t('mylist_multi_select')}
-          </Text>
-        </TouchableOpacity>
         <TouchableOpacity
           style={styles.sectionAction}
           onPress={onOpenSonglist}
@@ -160,11 +125,11 @@ const OverviewHeader = ({ isMultiSelect, selectedCount, onOpenLove, onOpenHistor
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.sectionAction}
-          onPress={isMultiSelect ? onSelectAll : onCreatePlaylist}
+          onPress={onCreatePlaylist}
           activeOpacity={0.7}
         >
           <Text size={13} color={theme['c-primary']}>
-            {isMultiSelect ? t('list_select_all') : t('mylist_new_playlist')}
+            {t('mylist_new_playlist')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -185,8 +150,6 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
       !('isLove' in l && l.isLove)
   }), [allList])
   const [metas, setMetas] = useState<Record<string, PlaylistMeta>>({})
-  const [isMultiSelect, setIsMultiSelect] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const loadMeta = useCallback(async(listId: string) => {
     const list = await getListMusics(listId)
     const cover = list.find(musicInfo => musicInfo.meta.picUrl)?.meta.picUrl ?? null
@@ -219,38 +182,6 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
     listMenuRef.current?.show({ listInfo, index }, position)
   }, [])
 
-  const toggleMultiSelect = useCallback(() => {
-    setIsMultiSelect(prev => !prev)
-    setSelectedIds(new Set())
-  }, [])
-
-  const togglePlaylistSelect = useCallback((listInfo: LX.List.UserListInfo) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      if (next.has(listInfo.id)) next.delete(listInfo.id)
-      else next.add(listInfo.id)
-      return next
-    })
-  }, [])
-
-  const selectAllPlaylists = useCallback(() => {
-    setSelectedIds(prev => prev.size == userList.length ? new Set() : new Set(userList.map(listInfo => listInfo.id)))
-  }, [userList])
-
-  const removeSelectedPlaylists = useCallback(() => {
-    const ids = userList.filter(listInfo => selectedIds.has(listInfo.id)).map(listInfo => listInfo.id)
-    if (!ids.length) return
-    void confirmDialog({
-      message: global.i18n.t('mylist_playlist_remove_multi_tip', { num: ids.length }),
-      confirmButtonText: global.i18n.t('list_remove_tip_button'),
-    }).then(confirmed => {
-      if (!confirmed) return
-      void removeUserList(ids)
-      setIsMultiSelect(false)
-      setSelectedIds(new Set())
-    })
-  }, [selectedIds, userList])
-
   const renderItem: FlatListType['renderItem'] = ({ item, index }) => (
     <PlaylistRow
       item={item}
@@ -258,9 +189,6 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
       meta={metas[item.id]}
       onPress={onOpenList}
       onShowMenu={showMenu}
-      onSelect={togglePlaylistSelect}
-      isMultiSelect={isMultiSelect}
-      selected={selectedIds.has(item.id)}
     />
   )
   const getKey: FlatListType['keyExtractor'] = item => item.id
@@ -280,10 +208,6 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
           <OverviewHeader
             onOpenLove={onOpenLove}
             onOpenHistory={onOpenHistory}
-            isMultiSelect={isMultiSelect}
-            selectedCount={selectedIds.size}
-            onToggleMultiSelect={toggleMultiSelect}
-            onSelectAll={selectAllPlaylists}
             onCreatePlaylist={() => { listNameEditRef.current?.showCreate(userList.length) }}
             onOpenSonglist={() => { openListModalRef.current?.show(songlistState.listInfo.source) }}
           />
@@ -327,29 +251,6 @@ export default ({ onOpenList, onOpenLove, onOpenHistory }: {
         onSync={info => { handleSync(info) }}
         onSelectLocalFile={(info, position) => listImportExportRef.current?.selectFile(info, position)}
       />
-      {
-        isMultiSelect
-          ? (
-            <View style={{ ...styles.selectionBar, backgroundColor: theme['c-content-background'] }}>
-              <TouchableOpacity style={styles.selectionBtn} onPress={toggleMultiSelect}>
-                <Text size={13} color={theme['c-font']}>{t('list_select_cancel')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.selectionBtn} onPress={selectAllPlaylists}>
-                <Text size={13} color={theme['c-font']}>
-                  {selectedIds.size == userList.length ? t('list_select_unall') : t('list_select_all')}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={{ ...styles.selectionBtn, opacity: selectedIds.size ? 1 : 0.3 }}
-                disabled={!selectedIds.size}
-                onPress={removeSelectedPlaylists}
-              >
-                <Text size={13} color={theme['c-primary']}>{t('delete')}</Text>
-              </TouchableOpacity>
-            </View>
-            )
-          : null
-      }
     </View>
   )
 }
@@ -406,9 +307,6 @@ const styles = createStyle({
     overflow: 'hidden',
     marginRight: 12,
   },
-  playlistCheckbox: {
-    marginRight: 10,
-  },
   playlistCoverImage: {
     width: '100%',
     height: '100%',
@@ -429,23 +327,5 @@ const styles = createStyle({
   emptyText: {
     textAlign: 'center',
     paddingTop: 24,
-  },
-  selectionBar: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: BorderRadius.normal,
-    borderWidth: BorderWidths.normal,
-    borderColor: 'transparent',
-    minHeight: 48,
-  },
-  selectionBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
   },
 })

@@ -108,7 +108,7 @@ export default forwardRef<DialogType, DialogProps>(({
             // 不糊的话一整块内容就直接压在照片纹理上，每一行都要在图的明暗里找字。
             // 糊图铺满整屏、按窗口坐标对齐，所以面板里那一块的纹理与页面上的壁纸对得上。
             // 普通主题不插：那边本来就是实白底，多铺一层会改变观感。
-            theme['is-wallpaper'] ? <GlassBackdrop blurRadius={24} style={{ borderRadius: 4 }} /> : null
+            theme['is-wallpaper'] ? <GlassBackdrop style={{ borderRadius: 4 }} /> : null
           }
           <View style={{ ...styles.header, backgroundColor: theme['c-primary-light-100-alpha-100'] }}>
             {/* 这个键在壁纸模式下被整族反转成了暗色（它是"纸面白"，那里得变成暗面），

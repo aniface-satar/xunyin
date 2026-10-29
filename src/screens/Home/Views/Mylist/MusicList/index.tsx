@@ -56,6 +56,9 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
   const musicToggleModalRef = useRef<MusicToggleModalType>(null)
   const downloadQualitySheetRef = useRef<DownloadQualitySheetType>(null)
   const layoutHeightRef = useRef<number>(0)
+  const contentRef = useRef<View>(null)
+  // 搜索下拉贴在这块列表区的顶边，糊底要按它在窗口里的坐标铺图
+  const contentOffsetRef = useRef({ x: 0, y: 0 })
   const isShowMultipleModeBar = useRef(false)
   const isShowSearchBarModeBar = useRef(false)
   const selectedInfoRef = useRef<SelectInfo>()
@@ -69,7 +72,8 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
       handleShowSearch()
     },
     search(keyword) {
-      listMusicSearchRef.current?.search(keyword, layoutHeightRef.current)
+      measureContent()
+      listMusicSearchRef.current?.search(keyword, layoutHeightRef.current, contentOffsetRef.current)
     },
     exitSearch() {
       handleExitSearch()
@@ -152,6 +156,16 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
   }, [handleExitSearch, onExitSearch])
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     layoutHeightRef.current = e.nativeEvent.layout.height
+    contentRef.current?.measureInWindow((x, y) => {
+      contentOffsetRef.current = { x, y }
+    })
+  }, [])
+
+  // 切标签时布局不会重新触发，弹下拉前再量一次窗口坐标
+  const measureContent = useCallback(() => {
+    contentRef.current?.measureInWindow((x, y) => {
+      contentOffsetRef.current = { x, y }
+    })
   }, [])
 
   const handleAddMusic = useCallback((info: SelectInfo) => {
@@ -252,7 +266,7 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
             </View>
           : null
       }
-      <View style={{ flex: 1 }} onLayout={onLayout}>
+      <View ref={contentRef} collapsable={false} style={{ flex: 1 }} onLayout={onLayout}>
         <List
           ref={listRef}
           isCustomSortMode={isCustomSortMode}

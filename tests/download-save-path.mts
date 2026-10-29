@@ -9,12 +9,12 @@ const CN_TREE_URI = 'content://com.android.externalstorage.documents/tree/primar
 const SD_TREE_URI = 'content://com.android.externalstorage.documents/tree/7475-0712%3AMusic'
 
 test('plain directory keeps write and probe path identical', () => {
-  assert.equal(childWritePath('/data/data/cn.toside.music.mobile/files/Downloads', 'a.mp3'), '/data/data/cn.toside.music.mobile/files/Downloads/a.mp3')
-  assert.equal(childProbePath('/data/data/cn.toside.music.mobile/files/Downloads', 'a.mp3'), '/data/data/cn.toside.music.mobile/files/Downloads/a.mp3')
+  assert.equal(childWritePath('/data/data/cn.xunyin.music/files/Downloads', 'a.mp3'), '/data/data/cn.xunyin.music/files/Downloads/a.mp3')
+  assert.equal(childProbePath('/data/data/cn.xunyin.music/files/Downloads', 'a.mp3'), '/data/data/cn.xunyin.music/files/Downloads/a.mp3')
 })
 
 test('app private dir has no real path to scan', () => {
-  assert.equal(childRealPath('/data/data/cn.toside.music.mobile/files/Downloads', 'a.mp3'), null)
+  assert.equal(childRealPath('/data/data/cn.xunyin.music/files/Downloads', 'a.mp3'), null)
 })
 
 test('tree uri write path is the joined form the native layer splits', () => {
@@ -71,7 +71,7 @@ test('grant covers the picked dir only when it is the same tree or an ancestor',
 })
 
 test('a plain directory needs no SAF grant', () => {
-  assert.ok(isDirGranted([], '/data/data/cn.toside.music.mobile/files/Downloads'))
+  assert.ok(isDirGranted([], '/data/data/cn.xunyin.music/files/Downloads'))
 })
 
 test('grant of an ancestor folder covers the picked sub folder', () => {

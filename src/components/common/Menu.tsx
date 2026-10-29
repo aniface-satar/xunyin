@@ -135,7 +135,7 @@ const Menu = ({
         // 这一处就是那张菜单浮窗：歌曲条右侧 ⋮、自建歌单条 ⋮、以及音源选择（SourceSelector）
         // 全走这一个组件，糊图按屏幕坐标铺，与下拉那一小块底下的壁纸对得上。
         // 普通主题不插：那边本来就是实底，多铺一层会改观感。
-        theme['is-wallpaper'] ? <GlassBackdrop blurRadius={24} style={{ borderRadius: 2 }} /> : null
+        theme['is-wallpaper'] ? <GlassBackdrop style={{ borderRadius: 2 }} /> : null
       }
       <Animated.ScrollView keyboardShouldPersistTaps={'always'}>
         {

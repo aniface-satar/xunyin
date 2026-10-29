@@ -6,6 +6,7 @@ import {
   SYNC_MODE_MODAL,
 } from './screenNames'
 import themeState from '@/store/theme/state'
+import { primeBackdropForPanel } from '@/utils/backdropSnapshot'
 
 
 export const getStatusBarStyle = (isDark: boolean) => isDark ? 'light' : 'dark'
@@ -65,10 +66,15 @@ export const showPactModal = () => {
   })
 }
 
-export const showVersionModal = () => {
+export const showVersionModal = async() => {
   const theme = themeState.theme
 
-  void Navigation.showOverlay({
+  // 先拍一张「背后的画面」再挂 overlay：这张窗口走的是 RNN 的 showOverlay，跟页面同处
+  // 一个 Activity 的 content —— 挂上之后再 captureScreen，拍到的会包含它自己（黑色遮罩 + 窗口），
+  // 玻璃面糊的就是"糊中糊"。先拍再挂，首帧拿到的就是它背后那一帧。
+  if (theme['is-wallpaper']) await primeBackdropForPanel()
+
+  await Navigation.showOverlay({
     component: {
       name: VERSION_MODAL,
       options: {
@@ -88,27 +94,6 @@ export const showVersionModal = () => {
           // visible: false,
           backgroundColor: theme['c-content-background'],
         },
-        // animations: {
-
-        //   showModal: {
-        //     enter: {
-        //       enabled: true,
-        //       alpha: {
-        //         from: 0,
-        //         to: 1,
-        //         duration: 300,
-        //       },
-        //     },
-        //     exit: {
-        //       enabled: true,
-        //       alpha: {
-        //         from: 1,
-        //         to: 0,
-        //         duration: 300,
-        //       },
-        //     },
-        //   },
-        // },
       },
     },
   })

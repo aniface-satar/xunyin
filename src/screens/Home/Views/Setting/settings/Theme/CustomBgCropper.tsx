@@ -15,6 +15,8 @@ import Slider from '@/components/common/Slider'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
 import { useI18n } from '@/lang'
+import { useStatusbarHeight } from '@/store/common/hook'
+import { BorderRadius } from '@/theme'
 import { useWindowSize } from '@/utils/hooks'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
@@ -65,6 +67,11 @@ const touchDistance = (event: GestureResponderEvent) => {
 export default memo(({ visible, source, initialCrop, initialBlur, initialVeil, onCancel, onApply }: Props) => {
   const t = useI18n()
   const { width: winWidth, height: winHeight } = useWindowSize()
+  const statusBarHeight = useStatusbarHeight()
+  // 顶栏的上边距。这一层是 statusBarTranslucent，内容从 y=0 起画，写死的 28 在刘海屏/挖孔屏上
+  // 不够（状态栏 32~40dp 的机器，按钮会压到状态栏图标上）。改成跟真实状态栏高度走，
+  // 留 6dp 呼吸；28 作下限 —— 首帧 statusbarHeight 还是 0 时不该把按钮顶到屏幕边缘。
+  const topInset = Math.max(statusBarHeight + 6, 28)
 
   // 裁剪框按当前手机的屏幕比例来：导出的图正好铺满整屏，不会再被 cover 二次裁掉边角。
   // 竖屏下是一根窄高的框，看着别扭但那是真实比例；横屏/平板会自动变宽。
@@ -262,15 +269,18 @@ export default memo(({ visible, source, initialCrop, initialBlur, initialVeil, o
       <StatusBar barStyle="light-content" backgroundColor="#14110e" />
       <View style={styles.root}>
         {/* 顶栏：取消在左、确认在右，中间只留一行标题 —— 竖向空间全给下面的画面 */}
-        <View style={styles.topBar}>
+        <View style={[styles.topBar, { paddingTop: topInset }]}>
+          {/* 关闭沿用歌词卡片分享页那套：裸图标、48dp 触控区、无描边无底色，
+             两处是同一个动作，观感该一致。底色固定深，所以字色也固定取这页的墨色 */}
           <TouchableOpacity
             style={styles.topBtnGhost}
             activeOpacity={0.7}
             onPress={onCancel}
             disabled={busy}
+            accessibilityRole="button"
             accessibilityLabel={t('cancel')}
           >
-            <Icon name="close" size={17} color="rgba(244,239,230,0.9)" rawSize={scaleSizeW(17)} />
+            <Icon name="close" size={20} color="#f4efe6" rawSize={scaleSizeW(20)} />
           </TouchableOpacity>
           <View style={styles.topTitleWrap}>
             <Text size={14} numberOfLines={1} color="#f4efe6">{t('setting_basic_theme_custom_bg_crop_title')}</Text>
@@ -281,8 +291,7 @@ export default memo(({ visible, source, initialCrop, initialBlur, initialVeil, o
             onPress={() => { void handleApply() }}
             disabled={busy}
           >
-            <Icon name="checkbox-marked" size={15} color="#14110e" rawSize={scaleSizeW(15)} />
-            <Text size={13} color="#14110e" style={styles.topBtnText}>
+            <Text size={13} color="#14110e">
               {busy ? t('setting_basic_theme_custom_bg_crop_processing') : t('confirm')}
             </Text>
           </TouchableOpacity>
@@ -398,11 +407,11 @@ const styles = createStyle({
   root: {
     flex: 1,
     backgroundColor: '#14110e',
-    paddingTop: 28,
     paddingBottom: 16,
   },
   // 取消 / 确认分居左右两端：和 App 里其它页面的顶栏同一手感，
-  // 也不再在顶部堆两行说明，竖向空间全留给画面
+  // 也不再在顶部堆两行说明，竖向空间全留给画面。
+  // paddingTop 不再写死，由 topInset（状态栏高度）在 JSX 里给 —— 见那边的注释
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -414,26 +423,22 @@ const styles = createStyle({
     minWidth: 0,
     alignItems: 'center',
   },
+  // 与 ShareCardModal 的 closeBtn 同尺寸：48 是触控区，图标本身 20，不画描边也不垫底色
   topBtnGhost: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(244,239,230,0.22)',
   },
+  // 圆角跟 App 内其它按钮同一套（BorderRadius.normal = 4），不再是 18 的胶囊；
+  // 左侧那枚勾选图标已去掉，按钮只剩文字
   topBtnPrimary: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'center',
     height: 36,
-    paddingHorizontal: 14,
-    borderRadius: 18,
+    paddingHorizontal: 16,
+    borderRadius: BorderRadius.normal,
     backgroundColor: '#f4efe6',
-  },
-  topBtnText: {
-    marginStart: 4,
   },
   btnDisabled: {
     opacity: 0.6,

@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { View, ScrollView } from 'react-native'
 
 import Button from '@/components/common/Button'
@@ -7,10 +8,19 @@ import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import ModalContent from './ModalContent'
 import { hideNoticeModal } from '@/core/version'
+import { useBackHandler } from '@/utils/hooks/useBackHandler'
 
 const NoticeModal = ({ componentId, text }: { componentId: string, text: string }) => {
   const theme = useTheme()
   const t = useI18n()
+
+  // 与更新窗口同一处坑：overlay 盖在设置页上，设置页的返回监听还注册着。
+  // 不自己接管，系统返回会把底下的设置子页退回去，公告窗口留在原地。
+  const handleBack = useCallback(() => {
+    void hideNoticeModal(componentId)
+    return true
+  }, [componentId])
+  useBackHandler(handleBack)
 
   return (
     <ModalContent>

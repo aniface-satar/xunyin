@@ -33,6 +33,7 @@ export interface ListProps {
   onPlayList?: (index: number) => void
   progressViewOffset?: number
   ListHeaderComponent?: FlatListType['ListEmptyComponent']
+  onScroll?: FlatListType['onScroll']
   checkHomePagerIdle: boolean
   rowType?: RowInfoType
   onSelectedListChange?: (list: LX.Music.MusicInfoOnline[]) => void
@@ -59,6 +60,7 @@ const List = forwardRef<ListType, ListProps>(({
   onPlayList,
   progressViewOffset,
   ListHeaderComponent,
+  onScroll,
   checkHomePagerIdle,
   rowType,
   onSelectedListChange,
@@ -303,6 +305,8 @@ const List = forwardRef<ListType, ListProps>(({
         onEndReached={handleLoadMore}
         progressViewOffset={progressViewOffset}
         ListHeaderComponent={showLocateButton ? locateHeaderComponent : ListHeaderComponent}
+        onScroll={onScroll}
+        scrollEventThrottle={onScroll ? 16 : undefined}
         refreshControl={refreshControl}
         ListFooterComponent={footerComponent}
       />

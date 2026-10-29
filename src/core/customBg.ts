@@ -13,7 +13,7 @@ import { getData, saveData } from '@/plugins/storage'
 import { storageDataPrefix } from '@/config/constant'
 import { copyFile, existsFile, mkdir, privateStorageDirectoryPath, temporaryDirectoryPath, unlink } from '@/utils/fs'
 import { setCustomBgSource } from '@/utils/customBgBridge'
-import { DEFAULT_WALLPAPER_VEIL, MAX_WALLPAPER_VEIL, clampWallpaperVeil } from '@/utils/wallpaper/palette'
+import { MAX_WALLPAPER_VEIL, clampWallpaperVeil } from '@/utils/wallpaper/palette'
 import settingState from '@/store/setting/state'
 import { updateSetting } from '@/core/common'
 
@@ -47,9 +47,10 @@ export interface CustomBgItem {
 
 export const CUSTOM_BG_DIR = `${privateStorageDirectoryPath}/custom_bg`
 export const MAX_CUSTOM_BG = 8
-export const DEFAULT_CUSTOM_BG_BLUR = 14
+export const DEFAULT_CUSTOM_BG_BLUR = 0
 export const MAX_CUSTOM_BG_BLUR = 40
-export const DEFAULT_CUSTOM_BG_VEIL = DEFAULT_WALLPAPER_VEIL
+/** 单独定 0.3，不跟 WALLPAPER 那档走：新图默认只压一点，不喜欢再去滑块里加 */
+export const DEFAULT_CUSTOM_BG_VEIL = 0.3
 export const MAX_CUSTOM_BG_VEIL = MAX_WALLPAPER_VEIL
 
 let items: CustomBgItem[] = []

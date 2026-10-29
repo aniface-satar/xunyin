@@ -2,10 +2,11 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { ImageBackground, StyleSheet, View, type ImageSourcePropType, type ViewProps } from 'react-native'
 
 import { useTheme } from '@/store/theme/hook'
-import { useSettingValue } from '@/store/setting/hook'
+import { useStatusbarHeight } from '@/store/common/hook'
+import { getCachedBackdropSnapshot, requestBackdropSnapshot, type BackdropSnapshot } from '@/utils/backdropSnapshot'
 import { getCustomBgSource } from '@/utils/customBgBridge'
 import useWindowSize from '@/utils/hooks/useWindowSize'
-import { WALLPAPER_SCRIM, clampWallpaperVeil } from '@/utils/wallpaper/palette'
+import { WALLPAPER_SCRIM } from '@/utils/wallpaper/palette'
 
 // 跟帧重测的落定条件：连续 N 帧测量值不变视为动画已结束；超过时限强制停止兜底
 const SETTLE_STABLE_FRAMES = 3
@@ -21,63 +22,87 @@ interface GlassBackdropProps {
    */
   flat?: boolean
   /**
-   * 挂在播控页那一侧的弹层（更多、分享卡）用：只有用户把图片背景也应用到播控页
-   * （`theme.customBg.applyToPlayer`）时才糊图，否则退回只有压暗的那一版。
+   * 位置重测信号。抽屉（DrawerLayoutAndroid）这类"整个面会平移"的容器用：
+   * 它的导航视图在关闭时整块位于屏幕外，而这里的位置只在 onLayout 时测一次 ——
+   * 挂载那一刻测到的是"还没滑进来"的坐标，糊图会整体偏出一个抽屉宽度。
+   * 外部在容器挪动时换一个值（不传则不启用），这里就重跑一轮跟帧测量。
    */
-  playerScope?: boolean
+  measureKey?: unknown
+  /**
+   * 静止位置（窗口坐标，dp）。面板自己会做入场位移，而这里铺的图必须钉在屏幕上 ——
+   * 传了它就按它摆，不再逐帧 measureInWindow 去追面板。追是追不上的：测量回调比原生
+   * 动画慢一帧以上，面板起步最快的那几帧错位最大，落定时再猛地对齐，观感就是背景"跳一下"。
+   * 面板的 onLayout 坐标不含 translateY，正好就是这个位置（见 useSheetSlideAnimation.sheetLayout）。
+   * 不传（抽屉那种整块平移的容器）才走测量。
+   */
+  restOffset?: { x: number, y: number } | null
+  /**
+   * 壁纸模式下压暗层的不透明度。快照里已经烘着页面自己那层柔光（`theme.customBg.veil`），
+   * 这里再按页面那档压一遍就会明显比四周黑一截、像一块深色框；固定成一个轻档，
+   * 各处玻璃面才是"同一张图的磨砂版"。
+   */
+  scrimOpacity?: number
   style?: ViewProps['style']
 }
 
-const GlassBackdrop = ({ blurRadius = 18, overlayOpacity = 0.62, flat = false, playerScope = false, style }: GlassBackdropProps) => {
+const GlassBackdrop = ({ blurRadius = 16, overlayOpacity = 0.62, scrimOpacity = 0.3, flat = false, measureKey, restOffset, style }: GlassBackdropProps) => {
   const theme = useTheme()
   const windowSize = useWindowSize()
-  const veil = useSettingValue('theme.customBg.veil')
+  const statusBarHeight = useStatusbarHeight()
+  const wallpaper = theme['is-wallpaper']
+  // 判据只认"壁纸模式在不在"，不认 applyToPlayer：那个开关管的是播控页自己铺哪张底图，
+  // 而这里糊的是快照（背后真实显示的页面）。播控页背景关掉时它背后可能是封面动态背景，
+  // 快照照样拍得对 —— 再按 applyToPlayer 关门，只会让「更多」这类面板独独没有模糊。
+  const customSource = wallpaper ? getCustomBgSource() : null
+  const canUseBackdrop = customSource != null
   const viewRef = useRef<View>(null)
-  const [windowOffset, setWindowOffset] = useState({ x: 0, y: 0 })
-  // 跟帧重测的运行标记：兼作卸载标记（cleanup 置 false，让在途回调直接丢弃）
-  const settlingRef = useRef(false)
+  const [measuredOffset, setMeasuredOffset] = useState({ x: 0, y: 0 })
+  // 有静止锚点就用锚点，没有才用测量值（抽屉那条路）
+  const windowOffset = restOffset ?? measuredOffset
+  // 底图是"面板背后真实显示的那一帧"（见 utils/backdropSnapshot）。挂载时就取缓存：
+  // 各面板在打开之前已经拍好，首帧拿到的就是最终那张图，没有"先垫一张、过一会儿再换"的中间态。
+  const [snapshot, setSnapshot] = useState<BackdropSnapshot | null>(() => {
+    return wallpaper && !flat && canUseBackdrop ? getCachedBackdropSnapshot() : null
+  })
+  // 跟帧重测的批次号：每次 startSettleLoop 自增，旧批次在下一帧发现批次号变了就自行退出。
+  // 用它而不是"是否正在跑"的布尔量，是因为抽屉会二次触发（拖动 / 沉降 / 落定各一次），
+  // 必须让在跑的那一轮立刻作废、由新一轮从当前坐标重测 —— 布尔量只能"有则忽略"，
+  // 后到的触发会被吞掉，糊图就停在上一次（还在屏幕外的）坐标上。
+  // 兼作卸载标记：cleanup 自增一次，在途的 measure 回调直接丢弃。
+  const settleGenRef = useRef(0)
 
   const applyOffset = useCallback((x: number, y: number) => {
-    setWindowOffset((offset) => {
+    setMeasuredOffset((offset) => {
       return offset.x == x && offset.y == y ? offset : { x, y }
     })
   }, [])
 
   // 弹层（Sheet / Dialog / 分享卡）的入场是祖先节点上的 translateY 动画（useSheetSlideAnimation 等），
-  // 而 Android 的 measureInWindow 会把动画进行中的位移一并算进窗口坐标 —— 挂载那一刻面板还在
-  // 屏幕外半路上，首测结果整体偏下，糊图跟着上移，最后只有面板顶部一小条能对上屏幕。
-  // 所以测量不能只做一次：onLayout 后跟帧重测，直到数值连续数帧不再变化（动画落定）或超时。
+  // 而 Android 的 measureInWindow 会把动画进行中的位移一并算进窗口坐标。能拿到静止锚点（restOffset）
+  // 的弹层根本不测；只有抽屉这种"位置由外部决定、又拿不到布局坐标"的面才走这套跟帧测量：
+  // onLayout 后跟帧重测，直到数值连续数帧不再变化（动画落定）或超时。
   const startSettleLoop = useCallback(() => {
-    if (settlingRef.current) return
-    settlingRef.current = true
+    const gen = ++settleGenRef.current
     let lastX = Number.NaN
     let lastY = Number.NaN
     let stableFrames = 0
     const startedAt = Date.now()
     const tick = () => {
+      if (settleGenRef.current != gen) return
       const view = viewRef.current
-      if (view == null) {
-        settlingRef.current = false
-        return
-      }
+      if (view == null) return
       view.measureInWindow((x, y) => {
-        if (!settlingRef.current) return
+        if (settleGenRef.current != gen) return
         if (x == lastX && y == lastY) {
           stableFrames += 1
-          if (stableFrames >= SETTLE_STABLE_FRAMES) {
-            settlingRef.current = false
-            return
-          }
+          if (stableFrames >= SETTLE_STABLE_FRAMES) return
         } else {
           stableFrames = 0
           lastX = x
           lastY = y
           applyOffset(x, y)
         }
-        if (Date.now() - startedAt > SETTLE_TIMEOUT) {
-          settlingRef.current = false
-          return
-        }
+        if (Date.now() - startedAt > SETTLE_TIMEOUT) return
         requestAnimationFrame(tick)
       })
     }
@@ -86,25 +111,59 @@ const GlassBackdrop = ({ blurRadius = 18, overlayOpacity = 0.62, flat = false, p
 
   useEffect(() => {
     return () => {
-      settlingRef.current = false
+      // 自增一次，让在途的 measure 回调直接丢弃
+      settleGenRef.current += 1
     }
   }, [])
 
+  // RN Modal 在 Android 是独立 window，captureScreen 只拍 Activity 的 content 区，
+  // 所以这里拿到的是面板背后真实的页面（含封面、文字、图标），不是另一张壁纸副本。
+  // 同一次打开如果挂了多个玻璃层，它们共用 backdropSnapshot 里的在途请求与短缓存。
+  useEffect(() => {
+    if (!wallpaper || flat || !canUseBackdrop) return
+    const cached = getCachedBackdropSnapshot()
+    if (cached != null) {
+      setSnapshot(cached)
+      // 已经有"背后那一帧"就到此为止，不再重拍：换一张新 URI 就是换底，
+      // 亮度、位置、模糊强度会跟着一起变，观感就是背景"跳一下"。
+      return
+    }
+    // 没赶上预拍（截图失败 / 从别的入口挂上来）才补一张。这一档会有一次"从空到糊"，
+    // 但至少不会两张图互跳 —— 补上之后就固定住。
+    let active = true
+    void requestBackdropSnapshot().then((next) => {
+      if (!active || next == null) return
+      setSnapshot(next)
+    })
+    return () => {
+      active = false
+    }
+  }, [wallpaper, flat, canUseBackdrop, customSource?.uri])
+
+  // 外部换值 = "这个面刚刚挪过位置"（抽屉从屏幕外滑进来）。首帧就会 applyOffset，
+  // 所以这里不必额外先测一次。挂载时也会跑一轮，与 onLayout 那一轮重叠，无害。
+  useEffect(() => {
+    if (measureKey === undefined) return
+    startSettleLoop()
+  }, [measureKey, startSettleLoop])
+
   const handleLayout = useCallback(() => {
+    // 有静止锚点时布局位置已经不再需要：锚点由父级 onLayout 给出，天然不带动画位移
+    if (restOffset != null) return
     viewRef.current?.measureInWindow((x, y) => {
       applyOffset(x, y)
       startSettleLoop()
     })
-  }, [applyOffset, startSettleLoop])
+  }, [applyOffset, startSettleLoop, restOffset])
 
   // 壁纸模式：
   // - 贴在"页面自己铺过柔光的横栏"上（flat：底部导航栏、播放栏）什么都不画 —— 那两条下面
   //   就是 PageContent 那层柔光，再糊一遍等于把壁纸在原地打码，与"图直接铺在最底层"矛盾。
   // - 弹层（Sheet / Dialog / Popup / 分享卡）不同：它们的面在壁纸模式里是透明的，弹层自己的
   //   背景必须糊，否则一整块内容直接压在照片纹理上，每一行都要在图的明暗里找字。
-  //   所以这里糊的是弹层自己的底：糊掉的壁纸 + 深色压暗，糊图按屏幕坐标铺，与页面上的壁纸对得上。
-  const wallpaper = theme['is-wallpaper']
-
+  //   糊的是**面板背后真实显示的页面**（封面、文字、图标一起进去），这就是"自身的毛玻璃"：
+  //   面板内外是同一幅画面的清晰版与模糊版，不是"面板里另贴了一张糊壁纸"。
+  //   模糊只算这一层 —— 快照是清晰的截图，没有预先糊过，不存在两层叠加。
   const source: ImageSourcePropType | undefined = theme['bg-image']
   const hasSource = source != null
 
@@ -113,29 +172,27 @@ const GlassBackdrop = ({ blurRadius = 18, overlayOpacity = 0.62, flat = false, p
       // 只为保留 measureInWindow 的 onLayout（播放栏那一支没有依赖它，但保住结构一致没坏处）
       return <View ref={viewRef} onLayout={handleLayout} pointerEvents="none" style={[styles.backdrop, style]} />
     }
-    // 壁纸模式下 `bg-image` 只在 applyToPlayer 打开时才是那张自定义图（关掉时它是主题插画）。
-    // 播控页那一侧的弹层跟着播控页走（playerScope）：用户关了 applyToPlayer 就是明说
-    // "播放页不要这张图"，这里再糊出来等于绕过那个开关，退回只有压暗的那一版。
-    const customSource = getCustomBgSource()
-    const layerSource: ImageSourcePropType | undefined = customSource == null
-      ? undefined
-      : (playerScope && !customSource.applyToPlayer ? undefined : { uri: customSource.uri })
     return (
       <View ref={viewRef} onLayout={handleLayout} pointerEvents="none" style={[styles.backdrop, style]}>
-        {layerSource != null && (
+        {snapshot != null && (
           <ImageBackground
             // 按屏幕坐标铺：弹层只占屏幕的一块（抽屉 3/4、底部面板大半屏），
             // 用 cover 铺容器会把这张图重新裁一遍，弹层里那块的纹理与页面上的对不上（糊过之后仍看得出来）
             style={{
               position: 'absolute',
               left: -windowOffset.x,
-              top: -windowOffset.y,
+              // 快照来自 Activity content 区，起点在状态栏下；壁纸本身则覆盖整个屏幕
+              top: statusBarHeight - windowOffset.y,
               width: windowSize.width,
-              height: windowSize.height,
+              height: Math.max(1, windowSize.height - statusBarHeight),
             }}
-            source={layerSource}
+            source={{ uri: snapshot.uri }}
             resizeMode="cover"
-            blurRadius={blurRadius}
+            // RN Android 给非资源图默认带 300ms 淡入（ReactImageView 里 REMOTE_IMAGE_FADE_DURATION_MS），
+            // 底图不该自带淡入，否则面板会先透明一下再糊起来
+            fadeDuration={0}
+            // 快照只有屏幕 DP 的 1/4，半径同步缩小，放大回屏幕后才与这一层的模糊强度一致
+            blurRadius={Math.max(1, blurRadius * snapshot.scale)}
           />
         )}
         <View
@@ -143,7 +200,7 @@ const GlassBackdrop = ({ blurRadius = 18, overlayOpacity = 0.62, flat = false, p
             StyleSheet.absoluteFill,
             {
               backgroundColor: WALLPAPER_SCRIM,
-              opacity: Math.max(clampWallpaperVeil(veil), 0.62),
+              opacity: scrimOpacity,
             },
           ]}
         />
@@ -169,6 +226,8 @@ const GlassBackdrop = ({ blurRadius = 18, overlayOpacity = 0.62, flat = false, p
           }}
           source={source}
           resizeMode="cover"
+          // 同上：底图不该自带 300ms 淡入，否则"无壁纸"主题下也会先透明一下
+          fadeDuration={0}
           blurRadius={blurRadius}
         />
       )}

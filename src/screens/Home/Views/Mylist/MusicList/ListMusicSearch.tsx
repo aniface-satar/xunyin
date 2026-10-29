@@ -1,5 +1,5 @@
 import { useRef, useImperativeHandle, forwardRef, useState, useEffect } from 'react'
-import SearchTipList, { type SearchTipListProps as _SearchTipListProps, type SearchTipListType } from '@/components/SearchTipList'
+import SearchTipList, { type SearchTipListAnchor, type SearchTipListProps as _SearchTipListProps, type SearchTipListType } from '@/components/SearchTipList'
 import { debounce } from '@/utils'
 import { searchListMusic } from './listAction'
 import Button from '@/components/common/Button'
@@ -21,7 +21,7 @@ interface ListMusicSearchProps {
 export const ITEM_HEIGHT = scaleSizeH(68)
 
 export interface ListMusicSearchType {
-  search: (keyword: string, height: number) => void
+  search: (keyword: string, height: number, anchor?: SearchTipListAnchor) => void
   hide: () => void
 }
 
@@ -38,8 +38,8 @@ export default forwardRef<ListMusicSearchType, ListMusicSearchProps>(({ onScroll
   const currentKeywordRef = useRef('')
   const theme = useTheme()
 
-  const handleShowList = (keyword: string, height: number) => {
-    searchTipListRef.current?.setHeight(height)
+  const handleShowList = (keyword: string, height: number, anchor?: SearchTipListAnchor) => {
+    searchTipListRef.current?.setHeight(height, anchor)
     currentKeywordRef.current = keyword
     const id = currentListIdRef.current = listState.activeListId
     if (keyword) {
@@ -55,12 +55,12 @@ export default forwardRef<ListMusicSearchType, ListMusicSearchProps>(({ onScroll
   }
 
   useImperativeHandle(ref, () => ({
-    search(keyword, height) {
-      if (visible) handleShowList(keyword, height)
+    search(keyword, height, anchor) {
+      if (visible) handleShowList(keyword, height, anchor)
       else {
         setVisible(true)
         requestAnimationFrame(() => {
-          handleShowList(keyword, height)
+          handleShowList(keyword, height, anchor)
         })
       }
     },

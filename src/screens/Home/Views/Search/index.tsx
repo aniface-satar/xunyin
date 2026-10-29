@@ -18,6 +18,9 @@ import List, { type ListType } from './List'
 import { addHistoryWord, setSearchText } from '@/core/search/search'
 import SearchTypeSelector from './SearchTypeSelector'
 import { shouldShowSearchType } from './searchTypeVisibility'
+import { useBackHandler } from '@/utils/hooks/useBackHandler'
+import commonState from '@/store/common/state'
+import homeDetailState from '@/store/homeDetail/state'
 
 
 interface SearchInfo {
@@ -44,6 +47,9 @@ export default () => {
   const searchTipListRef = useRef<TipListType>(null)
   const listRef = useRef<ListType>(null)
   const layoutHeightRef = useRef<number>(0)
+  const contentRef = useRef<View>(null)
+  // 下拉面板贴在这块 content 的顶边，糊底要按它在窗口里的坐标铺图
+  const contentOffsetRef = useRef({ x: 0, y: 0 })
   const [showSearchType, setShowSearchType] = useState(shouldShowSearchType(searchState.searchText))
   const [searchType, setSearchType] = useState<SearchType>('music')
   const searchInfo = useRef<SearchInfo>({ temp_source: 'kw', source: 'kw', searchType: 'music' })
@@ -88,8 +94,17 @@ export default () => {
   }, [])
 
 
+  // 页面在 PagerView 里、切标签时布局不会重新触发，所以每次要弹下拉前再量一次，
+  // 免得糊底用着切换前的横坐标（会整块错开一个页宽）
+  const measureContent = useCallback(() => {
+    contentRef.current?.measureInWindow((x, y) => {
+      contentOffsetRef.current = { x, y }
+    })
+  }, [])
+
   const handleLayout = (e: LayoutChangeEvent) => {
     layoutHeightRef.current = e.nativeEvent.layout.height
+    measureContent()
   }
 
   const handleSourceChange: HeaderBarProps['onSourceChange'] = (source) => {
@@ -98,34 +113,48 @@ export default () => {
     listRef.current?.loadList(searchState.searchText, source, searchInfo.current.searchType)
   }
   const handleTipSearch: HeaderBarProps['onTipSearch'] = (text) => {
+    measureContent()
     setTimeout(() => {
-      searchTipListRef.current?.search(text, layoutHeightRef.current)
+      searchTipListRef.current?.search(text, layoutHeightRef.current, contentOffsetRef.current)
     }, 500)
   }
-  const handleHideTipList = () => {
+  const handleHideTipList = useCallback(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current)
       timeoutRef.current = null
     }
     searchTipListRef.current?.hide()
-  }
-  const handleSearch: HeaderBarProps['onSearch'] = (text) => {
+  }, [])
+  const handleSearch = useCallback((text: string) => {
     setSearchText(text)
     handleHideTipList()
-    searchTipListRef.current?.search(text, layoutHeightRef.current)
+    measureContent()
+    searchTipListRef.current?.search(text, layoutHeightRef.current, contentOffsetRef.current)
     setShowSearchType(shouldShowSearchType(text))
     headerBarRef.current?.setText(text)
     headerBarRef.current?.blur()
     void addHistoryWord(text)
     // 手动搜索总是重新拉取，滑动切标签才复用已加载结果
     listRef.current?.loadList(text, searchInfo.current.source, searchInfo.current.searchType, true)
-  }
+  }, [handleHideTipList, measureContent])
   const handleShowTipList: HeaderBarProps['onShowTipList'] = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    measureContent()
     timeoutRef.current = setTimeout(() => {
-      searchTipListRef.current?.show(layoutHeightRef.current)
+      searchTipListRef.current?.show(layoutHeightRef.current, contentOffsetRef.current)
     }, 500)
   }
+
+  // 结果页按系统返回：回到"输入框无输入"的空白态（与点输入框清空按钮同一条路径）。
+  // 搜索 tab 不在前台、或详情页还压在上面时不能抢返回键。
+  const handleBack = useCallback(() => {
+    if (commonState.navActiveId != 'nav_search') return false
+    if (homeDetailState.stacks.nav_search.length) return false
+    if (!searchState.searchText) return false
+    handleSearch('')
+    return true
+  }, [handleSearch])
+  useBackHandler(handleBack)
 
   return (
     <View style={styles.container}>
@@ -138,7 +167,7 @@ export default () => {
         onShowTipList={handleShowTipList}
       />
       {showSearchType ? <SearchTypeSelector style={styles.searchTypeSelector} type={searchType} onTypeChange={handleTypeChange} /> : null}
-      <View style={styles.content} onLayout={handleLayout}>
+      <View ref={contentRef} collapsable={false} style={styles.content} onLayout={handleLayout}>
         <TipList ref={searchTipListRef} onSearch={handleSearch} />
         <List ref={listRef} onSearch={handleSearch} type={searchType} onTypeChange={handleTypeChange} />
       </View>
