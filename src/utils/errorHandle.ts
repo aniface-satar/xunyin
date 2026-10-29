@@ -12,6 +12,9 @@ const errorHandler = (e: Error, isFatal: boolean) => {
     if (excludedErrors.some((excludedError) => e.message.includes(excludedError))) {
       toast('应用遇到了错误，如果你有固定的复现方式，请截图并在 GitHub 反馈（并附上具体的操作步骤，以及“设置-错误日志”的内容）')
     } else {
+      // 这里刻意保留系统原生 Alert：它是 JS 致命错误的最后一道出口，
+      // 而应用自己的框（AlertHost → Dialog）要经 React 渲染，此刻 React 树本身可能已经坏了 ——
+      // 一个弹不出来的毛玻璃框，比不上一个一定能弹出来的白框。其余提示框都已换成玻璃样式。
       Alert.alert(
         '💥Unexpected error occurred💥',
         `

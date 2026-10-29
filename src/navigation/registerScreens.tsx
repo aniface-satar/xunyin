@@ -1,5 +1,6 @@
 // @flow
 
+import { type ComponentType } from 'react'
 import { Navigation } from 'react-native-navigation'
 
 import {
@@ -30,14 +31,18 @@ import VersionModal from './components/VersionModal'
 import NoticeModal from './components/NoticeModal'
 import PactModal from './components/PactModal'
 import SyncModeModal from './components/SyncModeModal'
+import AlertHost from '@/components/common/AlertHost'
 
-function WrappedComponent(Component: any) {
+function WrappedComponent(Component: any, Host?: ComponentType) {
   return function inject(props: Record<string, any>) {
     const EnhancedComponent = () => (
       <Provider>
         <Component
           {...props}
         />
+        {/* 全局提示 / 确认框的宿主：只挂在首页（栈根，推任何页面都不会卸载它）。
+            它底层是 Dialog window，浮在 Activity 内容之上，别的页面与 Modal 之上都盖得住。 */}
+        {Host ? <Host /> : null}
       </Provider>
     )
 
@@ -46,7 +51,7 @@ function WrappedComponent(Component: any) {
 }
 
 export default () => {
-  Navigation.registerComponent(HOME_SCREEN, () => WrappedComponent(Home))
+  Navigation.registerComponent(HOME_SCREEN, () => WrappedComponent(Home, AlertHost))
   Navigation.registerComponent(PLAY_DETAIL_SCREEN, () => WrappedComponent(PlayDetail))
   Navigation.registerComponent(SONGLIST_DETAIL_SCREEN, () => WrappedComponent(SonglistDetail))
   Navigation.registerComponent(LEADERBOARD_DETAIL_SCREEN, () => WrappedComponent(LeaderboardDetail))
