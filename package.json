@@ -1,7 +1,7 @@
 {
   "name": "xunyin",
-  "version": "1.2.0",
-  "versionCode": 89,
+  "version": "1.3.0",
+  "versionCode": 90,
   "private": true,
   "scripts": {
     "postinstall": "node dependencies-patch.js",

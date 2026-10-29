@@ -841,7 +841,7 @@
   "user_api_update_same_version_tip": "更新地址里是同一版本（{version}）的新内容，要换上吗？",
   "user_api_update_unknown_version_tip": "更新地址里的脚本和当前不一样，但版本号认不出来，要更新吗？",
   "version_btn_close": "关闭",
-  "version_migrate_title": "⚠️ 重要：本次为换包名更新",
+  "version_migrate_title": "❗ 重要：本次为换包名更新",
   "version_migrate_highlight": "安装后桌面会出现【两个】寻音图标，这是正常现象。新旧版本数据不互通，请按以下步骤迁移歌单，完成后再卸载旧版。",
   "version_migrate_step1": "① 在【旧版】寻音：设置 → 备份与恢复 → 列表数据 → 导出列表，保存 lx_list.lxmc 文件。",
   "version_migrate_step2": "② 打开【新版】寻音：设置 → 备份与恢复 → 列表数据 → 导入列表，选择刚保存的文件。",

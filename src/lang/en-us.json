@@ -841,7 +841,7 @@
   "user_api_update_same_version_tip": "The update address has new content for the same version ({version}). Replace the current script?",
   "user_api_update_unknown_version_tip": "The script at the update address differs from the current one, but its version can't be compared. Update?",
   "version_btn_close": "Close",
-  "version_migrate_title": "⚠️ Important: package name changed in this update",
+  "version_migrate_title": "❗ Important: package name changed in this update",
   "version_migrate_highlight": "After installing, TWO Xunyin icons will appear on your home screen — this is expected. Data is NOT shared between the old and new versions. Follow the steps below to migrate your playlists, then uninstall the old app.",
   "version_migrate_step1": "① In the OLD app: Settings → Backup & Restore → List Data → Export lists, save the lx_list.lxmc file.",
   "version_migrate_step2": "② Open the NEW app: Settings → Backup & Restore → List Data → Import lists, then select the saved file.",
