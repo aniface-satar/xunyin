@@ -95,6 +95,10 @@ const defaultSetting: LX.AppSetting = {
   'theme.fontShadow': false,
   'theme.dynamicBg': true,
   'theme.dynamicBgAlgorithm': 'blur',
+  'theme.customBg.enabled': false,
+  'theme.customBg.applyToPlayer': true,
+  'theme.customBg.activeId': '',
+  'theme.customBg.veil': 0.55,
 }
 
 

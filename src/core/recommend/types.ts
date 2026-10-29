@@ -269,11 +269,19 @@ export interface ProfileSeedTrack {
   fromPassiveComplete: boolean
 }
 
+/** 歌手页显式收藏的歌手：只用于相似歌手/专辑扩展，不进入 topArtists 加重同歌手召回。 */
+export interface LikedArtistSeed {
+  name: string
+  source?: string
+  id?: string
+}
+
 export interface RadioProfile {
   directions: InterestDirection[]
   seeds: ProfileSeedTrack[]
   seedKeys: Set<string>
   topArtists: Array<{ artist: string, weight: number }>
+  likedArtists?: LikedArtistSeed[]
   updatedAt: number
 }
 export interface RecommendQueueItem {

@@ -280,6 +280,12 @@ declare global {
       'c-content-background': string
       'c-border-background': string
       'bg-image'?: ImageSourcePropType
+      /**
+       * 壁纸模式：自定义图片背景生效时，整棵树都换成了「白字 + 透明面」那一套配色
+       * （见 utils/wallpaper/palette.ts）。组件靠这个布尔决定要不要再糊一层背景、
+       * 要不要在柔光之外补压一层，不用各自去读设置。
+       */
+      'is-wallpaper': boolean
     }
 
     interface Theme {

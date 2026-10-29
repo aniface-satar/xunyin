@@ -1,7 +1,8 @@
 import { recommendationConfig } from './config.ts'
 import { buildTrackKey, exactPairKey, getArtistKeys, normalizeText } from './trackKey.ts'
 import { buildTrackPlaylistIndex, computeCandidateCoOccurrence, computeProfileAffinity, groupSimilarPlaylists } from './similarity.ts'
-import { buildPlaylistKeywords, pickChartBoard } from './profile.ts'
+import { buildPlaylistKeywords, pickChartBoard, selectArtistHitTargets } from './profile.ts'
+import type { SimilarAlbumPick } from './profile.ts'
 import { getLearnedStyleTokens } from './tokenFeedback.ts'
 import { createPoolCandidate, mergePoolCandidates, planRefreshBudget, resolvePoolLang } from './candidatePool.ts'
 import { themeAffinityFactor, themeNetWeight } from './feedback.ts'
@@ -229,6 +230,37 @@ export const createSimilarArtistCandidates = (
   return candidates
 }
 
+/**
+ * 相似专辑扩展：种子歌手被显式收藏说明其目录已听得差不多，再从相似歌手的热门歌里
+ * 挑一张"还有未入库曲目"的专辑取详情。亲和度同样由种子歌手权重传导并封顶 0.9。
+ */
+export const createSimilarAlbumCandidates = (
+  albumPick: SimilarAlbumPick,
+  tracks: readonly LX.Music.MusicInfoOnline[],
+  params: CatalogRefreshParams,
+): PoolCandidate[] => {
+  const seedWeight = params.profile.topArtists.find(item => item.artist == albumPick.seedArtist)?.weight ?? 0.5
+  const affinity = Math.max(0.3, Math.min(0.9, seedWeight * 0.8))
+  const sourceId = `similar_album:${albumPick.seedArtist}:${albumPick.albumId}`
+  const candidates: PoolCandidate[] = []
+  for (const musicInfo of tracks) {
+    if (isExcluded(musicInfo, params)) continue
+    candidates.push(createPoolCandidate({
+      musicInfo,
+      channel: 'E',
+      sourceId,
+      channels: ['E'],
+      affinity,
+      coOccurrence: 0,
+      exploration: 0.3,
+      confirmedSeedPlaylist: false,
+      reason: `similar_album:${albumPick.artistName}:${albumPick.albumName || albumPick.albumId}`,
+      now: params.now,
+    }))
+  }
+  return candidates
+}
+
 interface SummaryWithHints {
   id: string
   source: LX.OnlineSource
@@ -328,7 +360,9 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
     ...(params.explicitKeywords ?? []),
     ...positivePlaylistNames.slice(0, 2),
     ...buildPlaylistKeywords(params.profile, recommendationConfig.candidatePool.searchSeedsPerRefresh * 2,
-      getLearnedStyleTokens(params.state.tokenWeights, 3)),
+      getLearnedStyleTokens(params.state.tokenWeights, 3),
+      // 收藏歌手的歌单大多是"他的热门合集"，与推荐目标（相似歌手/专辑）相反，别搜回来
+      (params.profile.likedArtists ?? []).map(item => item.name)),
   ])]
   // 搜索窗口随 rotation 在关键词池中滑动，避免每轮固定抓同一批搜索结果
   const searchCount = Math.min(recommendationConfig.candidatePool.searchSeedsPerRefresh, keywordPool.length)
@@ -628,16 +662,13 @@ export const refreshExternalCandidates = async(params: CatalogRefreshParams): Pr
   }
 
   // 5.5 画像歌手热门歌直采：rotation 在强歌手列表上滑动，每轮只采 1 人 8 首，
-  // 避免单轮就往池里灌一批同歌手候选（配 diversity 的软惩罚一起治连推）
-  const topWeight = params.profile.topArtists[0]?.weight ?? 0
-  const strongArtists = params.profile.topArtists
-    .filter(artist => artist.weight >= topWeight * recommendationConfig.profile.coldStart.strongArtistWeightRatio && artist.weight > 0)
-    .filter(artist => !params.blocked.singerNames.has(artist.artist))
-  const artistHitsPerRefresh = recommendationConfig.candidatePool.artistHitsPerRefresh
-  if (strongArtists.length && caps.canMusicSearch) {
-    const start = strongArtists.length ? Math.abs(rotation) % strongArtists.length : 0
-    const picked = Array.from({ length: Math.min(artistHitsPerRefresh, strongArtists.length) },
-      (_, i) => strongArtists[(start + i) % strongArtists.length])
+  // 避免单轮就往池里灌一批同歌手候选（配 diversity 的软惩罚一起治连推）。
+  // 收藏歌手被排除：他的目录用户基本都听过，该走 E 的相似扩展。
+  const picked = caps.canMusicSearch
+    ? selectArtistHitTargets(params.profile, rotation, params.blocked.singerNames,
+      recommendationConfig.candidatePool.artistHitsPerRefresh)
+    : []
+  if (picked.length) {
     for (const artistEntry of picked) {
       if (requests >= budget) break
       try {

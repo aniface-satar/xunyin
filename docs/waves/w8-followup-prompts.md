@@ -21,7 +21,7 @@ laneC 8，尚未汇总进文档），**总计约 190 条**（此前「147/168」
 ## 提示词 ②：主工作区 RN 改动验证提交
 
 ```text
-你是本仓库（C:/Users/30913/Documents/ChatGPT/music，LX Music 衍生 RN 工程）的集成验证会话。
+你是本仓库（E:/Code/music，LX Music 衍生 RN 工程）的集成验证会话。
 任务：主工作区有一批未提交的 RN 侧改动（专辑/歌手搜索与详情，对齐原生 Wave6 Lane B 的
 跨源搜索能力），验证后提交入库。不要动 android-native/ 下任何文件（Wave8 三车道分支
 w8/laneA|B|C 尚未并回 main，原生侧由集成会话负责）。
@@ -67,7 +67,7 @@ w8/laneA|B|C 尚未并回 main，原生侧由集成会话负责）。
 ## 提示词 ③：真机验收清账
 
 ```text
-你是本仓库（C:/Users/30913/Documents/ChatGPT/music）的真机验收会话。
+你是本仓库（E:/Code/music）的真机验收会话。
 前提（先核实）：① Wave8 三车道已并回 main 且闸门全绿；② 已按合并后 main 构建
 release 包（android-native/gradlew.bat assembleRelease，无签名也可用 debug keystore
 自签测量包——laneA 已验证此口径可用）；③ 用户真机已连 adb（arm64，MIUI/HyperOS
@@ -117,7 +117,7 @@ release 包（android-native/gradlew.bat assembleRelease，无签名也可用 de
 ## 提示词 ④：签名/上架材料/RN 数据迁移/双通道发布
 
 ```text
-你是本仓库（C:/Users/30913/Documents/ChatGPT/music）的发版筹备会话。
+你是本仓库（E:/Code/music）的发版筹备会话。
 前提（先核实）：① Wave8 已并 main；② 真机清账（提示词③）已过关或用户明示带病发版；
 ③ 本任务含四个用户拍板点，凡标 [拍板] 处先问后做，不得替用户决定。
 

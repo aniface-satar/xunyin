@@ -7,6 +7,7 @@ import { useI18n } from '@/lang'
 import { useStatusbarHeight } from '@/store/common/hook'
 import { createStyle } from '@/utils/tools'
 import { Icon } from '@/components/common/Icon'
+import { LoveIcon } from '@/components/common/LoveIcon'
 import Text from '@/components/common/Text'
 import Image from '@/components/common/Image'
 import { type ArtistDetail } from '@/utils/musicSdk/artistNormalizers'
@@ -15,8 +16,10 @@ const IMAGE_WIDTH = scaleSizeW(70)
 
 type HeaderInfo = Pick<ArtistDetail, 'name' | 'alias' | 'img' | 'songCount' | 'albumCount'>
 
-export default ({ info, onBack }: {
+export default ({ info, liked, onToggleLike, onBack }: {
   info: HeaderInfo
+  liked: boolean
+  onToggleLike: () => void
   onBack?: () => void
 }) => {
   const statusBarHeight = useStatusbarHeight()
@@ -53,6 +56,16 @@ export default ({ info, onBack }: {
             ? <Text style={styles.counts} size={11} color={theme['c-font-label']} numberOfLines={1}>{counts}</Text>
             : null}
         </View>
+        <TouchableOpacity
+          style={styles.likeBtn}
+          hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+          accessibilityRole="button"
+          accessibilityLabel={t(liked ? 'love_remove' : 'love_add')}
+          activeOpacity={0.7}
+          onPress={onToggleLike}
+        >
+          <LoveIcon filled={liked} size={20} color={theme['c-font']} />
+        </TouchableOpacity>
       </View>
     </View>
   )
@@ -73,6 +86,13 @@ const styles = createStyle({
     height: 28,
     marginLeft: 10,
     alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  likeBtn: {
+    width: 40,
+    height: 40,
+    marginLeft: 8,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   infoRow: {

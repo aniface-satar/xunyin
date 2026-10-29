@@ -22,6 +22,7 @@ export interface MusicListType {
   exitSearch: () => void
   showMultiSelect: () => void
   exitMultiSelect: () => void
+  selectAll: (isAll: boolean) => void
   enterCustomSort: () => void
   exitCustomSort: () => void
 }
@@ -35,9 +36,15 @@ interface MusicListProps {
   onExitSearch?: () => void
   onMultiSelectModeChange?: (isMultiSelectMode: boolean) => void
   onCustomSortModeChange?: (isCustomSortMode: boolean) => void
+  /**
+   * builtin：多选时由列表自己渲染「已选 N 项 / 全选」选择栏（默认）；
+   * external：不渲染选择栏，改由宿主页面在自己的操作行里绘制「取消 / 全选」，
+   * 宿主通过 ref 的 selectAll 驱动；底部批量操作栏保持不变。
+   */
+  multiSelectUi?: 'builtin' | 'external'
 }
 
-export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMultiSelectModeChange, onCustomSortModeChange }, ref) => {
+export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMultiSelectModeChange, onCustomSortModeChange, multiSelectUi = 'builtin' }, ref) => {
   const listMusicSearchRef = useRef<ListMusicSearchType>(null)
   const listRef = useRef<ListType>(null)
   const multipleModeBarRef = useRef<MultipleModeBarType>(null)
@@ -72,6 +79,10 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
     },
     exitMultiSelect() {
       hancelExitSelect()
+    },
+    selectAll(isAll) {
+      listRef.current?.selectAll(isAll)
+      multipleModeBarRef.current?.setIsSelectAll(isAll)
     },
     enterCustomSort() {
       setIsCustomSortMode(true)
@@ -230,13 +241,17 @@ export default forwardRef<MusicListType, MusicListProps>(({ onExitSearch, onMult
 
   return (
     <View style={styles.container}>
-      <View style={styles.topBar}>
-        <MultipleModeBar
-          ref={multipleModeBarRef}
-          onSelectAll={isAll => listRef.current?.selectAll(isAll)}
-          selectedCount={selectedList.length}
-        />
-      </View>
+      {
+        multiSelectUi == 'builtin'
+          ? <View style={styles.topBar}>
+              <MultipleModeBar
+                ref={multipleModeBarRef}
+                onSelectAll={isAll => listRef.current?.selectAll(isAll)}
+                selectedCount={selectedList.length}
+              />
+            </View>
+          : null
+      }
       <View style={{ flex: 1 }} onLayout={onLayout}>
         <List
           ref={listRef}

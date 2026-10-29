@@ -277,6 +277,8 @@ const state: InitState = {
     'c-content-background': theme['c-primary-light-1000'],
     'c-border-background': theme['c-primary-light-100-alpha-700'],
 
+    'is-wallpaper': false,
+
     'bg-image-position': 'center',
     'bg-image-size': 'cover',
   },

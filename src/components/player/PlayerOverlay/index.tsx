@@ -136,6 +136,18 @@ var OverlayBackdrop = function OverlayBackdrop(_refBackdrop) {
   var hasBackdropImage = backdropImageSource != null;
   var coverBackdrop = (0, require("../../../utils/monet/useCoverSurface").useCoverSurface)();
   var coverSurface = hasBackdropImage || !coverBackdrop.enabled ? null : coverBackdrop.surface;
+  // 壁纸模式（自定义图片背景）：这张背景不许再被任何一层加工 —— 不糊、不洗白、不压暗，
+  // 只跟主界面一样铺一层同样深度的柔光。`is-wallpaper` 是主题层给出的（见 utils/wallpaper/palette.ts），
+  // 但它成立不代表播控页上有这张图：applyToPlayer 关掉时 bg-image 会回落到主题自带插画，
+  // 那是另一张图（还是 require 出来的本地资源），不能按壁纸处理。
+  var wallpaper = theme['is-wallpaper'] === true;
+  var customBgSource = wallpaper ? (0, require("../../../utils/customBgBridge").getCustomBgSource)() : null;
+  var wallpaperBackdrop = customBgSource != null && customBgSource.applyToPlayer && hasBackdropImage;
+  var veil = (0, require("../../../store/setting/hook").useSettingValue)('theme.customBg.veil');
+  // 壁纸模式下这一层整个不画，改由 PlayerOverlay 的 WallpaperBackdrop 在卡片的**外面**铺：
+  // 这一层是卡片的子层，卡片收起时靠 scaleY 把自己压进播放栏，背景图跟着一起被压扁 ——
+  // 那正是"背景随动画形变"的来源。固定层不动、只开窗，才是一层钉在页面上的透明底。
+  if (wallpaperBackdrop) return null;
   // 封面那三层交给 CoverBackdrop：它会"叠一层淡到位"，这里的旧写法是有就整层硬出现。
   // 底色自己不淡的话，淡的就只剩装饰层：c-content-background 被 COVER_RULES 换成封面深色 panel 后，
   // 卡片挂载那一帧就是深底，播放栏→卡片那一下的亮度跳变跟 CoverBackdrop 的墙钟时长无关。
@@ -151,17 +163,81 @@ var OverlayBackdrop = function OverlayBackdrop(_refBackdrop) {
         style: _reactNative.StyleSheet.absoluteFill,
         source: backdropImageSource,
         resizeMode: "cover",
-        blurRadius: 24
+        // 壁纸模式下这张图跟主界面用同一个模糊度（用户为那一套自己设的值）；
+        // 原来那支写死的 24 是"给主题自带插画打底"用的，压在用户自己的照片上就是另一张图了
+        blurRadius: wallpaperBackdrop ? (customBgSource != null ? customBgSource.blur : 0) : 24
       }) : null, coverSurface != null ? (0, _jsxRuntime.jsx)(_CoverBackdrop.default, {
         progress: progress
       }) : null, coverSurface != null ? null : (0, _jsxRuntime.jsx)(_reactNative.View, {
         style: [_reactNative.StyleSheet.absoluteFill, {
-          backgroundColor: theme['c-content-background'],
-          opacity: hasBackdropImage ? 0.58 : 0.64
+          // 壁纸模式下"洗白"这层换成跟主界面同款的深色柔光：不柔光的话白字直接压在照片上，
+          // 就是用户反馈的那个可读性问题；洗白的话照片又被洗淡了，两头都不对。
+          // 没有图（applyToPlayer 关掉、动态背景也关着）时铺满柔光色 —— 壁纸模式下 c-content-background
+          // 是全透明的，这时候不兜一层，整个播控页就变成一张全透明的膜，透出下面的首页。
+          backgroundColor: wallpaper ? (0, require("../../../utils/wallpaper/palette").WALLPAPER_SCRIM) : theme['c-content-background'],
+          opacity: wallpaper
+            ? (hasBackdropImage ? (0, require("../../../utils/wallpaper/palette").clampWallpaperVeil)(veil) : 1)
+            : (hasBackdropImage ? 0.58 : 0.64)
         }]
       })]
     })
   });
+};
+// 壁纸模式（自定义图片同时用作播控页背景）下的背景层，铺在卡片**外面**。
+//
+// 卡片从整屏收到播放栏靠的是 translate + scaleY：背景图挂在它的子树里就跟着被纵向压扁，
+// 全程看得见照片在变形，收到最后是一张被挤进横栏的缩略图。
+// 这里改成"开窗"：图钉死在屏幕坐标上（窗框下移多少，图就反向补偿多少，净位移恒为 0），
+// 真正动的只有露出它的那扇窗 —— 观感是一层透明、钉在页面上的底，内容从它上面滑过去。
+//
+// 窗框必须与卡片的可见矩形严格重合：上沿跟卡片同一条 `bar.y * p`（cardStyle 的 translateY 就是它），
+// 下沿交给外层的 clip（同一个 clipStyle）。于是 p=1 时窗里露出的正是屏幕底部那一格，
+// 与下面是透明播放栏、露出的页面壁纸完全对齐 —— 卸下 overlay 不会跳。
+var WallpaperBackdrop = function WallpaperBackdrop(_refWallpaper) {
+  var winWidth = _refWallpaper.winWidth,
+    winHeight = _refWallpaper.winHeight,
+    progress = _refWallpaper.progress,
+    imageSource = _refWallpaper.imageSource,
+    blurRadius = _refWallpaper.blurRadius,
+    veil = _refWallpaper.veil,
+    barTop = _refWallpaper.barTop;
+  return <_reactNative.Animated.View pointerEvents="none" style={{
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: winWidth,
+    height: winHeight,
+    overflow: 'hidden',
+    // 窗框下移：p=1 时正好落到播放栏的位置（barTop）
+    transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [0, barTop] }) }]
+  }}>
+    <_reactNative.Animated.View style={{
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      width: winWidth,
+      height: winHeight,
+      // 反向补偿，净位移恒为 0：这张图自始至终停在屏幕原点，一帧都没有被移动或缩放
+      transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [0, -barTop] }) }]
+    }}>
+      <_ImageBackground.default
+        style={_reactNative.StyleSheet.absoluteFill}
+        source={imageSource}
+        resizeMode="cover"
+        blurRadius={blurRadius}
+      />
+      {/* 与主界面同款、同深度的柔光：0.24 亮纱会让壁纸发灰，洗白会把照片洗没 */}
+      <_reactNative.View
+        style={[
+          _reactNative.StyleSheet.absoluteFill,
+          {
+            backgroundColor: require("../../../utils/wallpaper/palette").WALLPAPER_SCRIM,
+            opacity: (0, require("../../../utils/wallpaper/palette").clampWallpaperVeil)(veil),
+          },
+        ]}
+      />
+    </_reactNative.Animated.View>
+  </_reactNative.Animated.View>
 };
 var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var _measuredActionLayout, _measuredActionLayout2, _measuredActionLayout3, _progressTarget$heigh, _source$bar$y, _source$bar$height, _source$bar$x, _source$bar$width, _source$progress, _source$bar$x2, _source$bar$width2, _source$bar$y2, _source$bar$height2, _source$bar$width3, _source$controls, _source$pic$y, _source$pic$height, _source$pic$height2, _source$pic$width, _source$pic$y2, _source$title$y, _source$pic$x, _source$pic$x2, _source$title, _source$artist, _musicInfoLayout$titl, _musicInfoLayout$arti;
@@ -170,6 +246,12 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     onBarSettledChange = _ref2.onBarSettledChange;
   var theme = (0, require("../../../store/theme/hook").useTheme)();
   var glassColors = (0, require("../../../utils/hooks/useGlassColors").useGlassColors)();
+  // 壁纸模式下播控页的背景只画一次，且画在卡片外面（见 WallpaperBackdrop）。
+  // 判据只看"用户有没有把这张图也应用到播控页"（applyToPlayer）—— 那是 buildActiveThemeColors
+  // 把 bg-image 换成壁纸 URI 的唯一条件；关掉时 bg-image 会回落到主题自带插画，那是另一张图。
+  var wallpaperCustomBg = (0, require("../../../utils/customBgBridge").getCustomBgSource)();
+  var wallpaperBackdropSource = wallpaperCustomBg != null && wallpaperCustomBg.applyToPlayer ? wallpaperCustomBg : null;
+  var wallpaperBackdropVeil = (0, require("../../../store/setting/hook").useSettingValue)('theme.customBg.veil');
   // 进入/收起那一下的"变色"必须挂在 progress 轴上（窗口表在 ./transition）：底色和墨色都是
   // OnCoverThemeProvider 从 context 发下来的静态值，卡片挂载那一帧就整体翻完，任何墙钟淡入都追不上手指。
   // baseTheme 直接读 store —— provider 只换 context、不换这份，于是两个端点就是"播放栏那一面"与"全屏那一面"。
@@ -1212,14 +1294,25 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   };
   var progressPercent = `${toProgressNumber(playProgress) * 100}%`;
   var bufferedPercent = `${toProgressNumber(playBuffered) * 100}%`;
-  return <_reactNative.View ref={rootRef} pointerEvents={mounted ? 'box-none' : 'none'} style={styles.root}>{mounted && source && <>{(<_reactNative.Animated.View pointerEvents="box-none" style={[styles.clip, clipStyle]}>{(0, _jsxRuntime.jsxs)(_reactNative.Animated.View, Object.assign({
+  return <_reactNative.View ref={rootRef} pointerEvents={(0, require("./transition").getOverlayRootPointerEvents)(mounted)} style={styles.root}>{mounted && source && <>{(<_reactNative.Animated.View pointerEvents="box-none" style={[styles.clip, clipStyle]}>{wallpaperBackdropSource != null ? <WallpaperBackdrop
+        winWidth={winWidth}
+        winHeight={winHeight}
+        progress={progress}
+        imageSource={{ uri: wallpaperBackdropSource.uri }}
+        blurRadius={wallpaperBackdropSource.blur}
+        veil={wallpaperBackdropVeil}
+        barTop={source == null ? winHeight : source.bar.y}
+      /> : null}{(0, _jsxRuntime.jsxs)(_reactNative.Animated.View, Object.assign({
         pointerEvents: mounted && !isTransitioning ? 'auto' : 'none',
         style: [styles.card, cardStyle]
       }, closePanResponder.panHandlers, {
         children: [(0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
           pointerEvents: "none",
           style: [_reactNative.StyleSheet.absoluteFillObject, {
-            backgroundColor: enterFieldBg
+            // 壁纸模式：卡片必须是一层透明的膜，底由外面那层 WallpaperBackdrop 出。
+            // 不能继续用 enterFieldBg —— 那条插值在"封面动态背景也开着"时会端起一支不透明的
+            // 深色 panel（baseTheme 是壁纸模式、context 是 on-cover），整屏把那层壁纸盖死。
+            backgroundColor: wallpaperBackdropSource != null ? 'transparent' : enterFieldBg
           }]
         }), (0, _jsxRuntime.jsx)(_reactNative.Animated.View, {
           style: styles.background,

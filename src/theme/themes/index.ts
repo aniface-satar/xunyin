@@ -5,6 +5,8 @@ import settingState from '@/store/setting/state'
 import themeState from '@/store/theme/state'
 import { isUrl } from '@/utils'
 import { privateStorageDirectoryPath } from '@/utils/fs'
+import { getCustomBgSource } from '@/utils/customBgBridge'
+import { buildWallpaperTheme } from '@/utils/wallpaper/palette'
 import { type ImageSourcePropType } from 'react-native'
 
 export const BG_IMAGES = {
@@ -61,6 +63,13 @@ export const buildActiveThemeColors = (theme: LX.Theme): LX.ActiveTheme => {
     }
   }
 
+  // 自定义图片背景：用户显式选的那张，优先级压在主题自带背景图之上。
+  // 只有 applyToPlayer 打开时才递给主题 —— 播控页那边（PlayerOverlay 的反编译代码）只看
+  // theme['bg-image'] 有没有值，有就铺图、没有就回落到封面动态背景；主界面那份由 PageContent
+  // 自己读（它还要带每套自己的模糊度），所以关掉这个开关不会连带把首页的背景也撤掉。
+  const customBg = getCustomBgSource()
+  if (customBg?.applyToPlayer) bgImg = { uri: customBg.uri }
+
   theme.config.extInfo = { ...theme.config.extInfo }
 
   for (const [k, v] of Object.entries(theme.config.extInfo) as Array<[ExtInfoKey, LX.Theme['config']['extInfo'][ExtInfoKey]]>) {
@@ -68,7 +77,7 @@ export const buildActiveThemeColors = (theme: LX.Theme): LX.ActiveTheme => {
     theme.config.extInfo[k] = theme.config.themeColors[v.replace(varColorRxp, '$1') as ColorsKey]
   }
 
-  return {
+  const activeTheme = {
     id: theme.id,
     name: theme.name,
     isDark: theme.isDark,
@@ -93,7 +102,18 @@ export const buildActiveThemeColors = (theme: LX.Theme): LX.ActiveTheme => {
     'c-content-background': theme.config.themeColors['c-primary-light-1000'],
     'c-border-background': theme.config.themeColors['c-primary-light-100-alpha-700'],
     'bg-image': bgImg,
-  } as const
+    'is-wallpaper': false,
+  } as unknown as LX.ActiveTheme
+
+  // 壁纸模式：整棵树换成「白字 + 透明面 + 深色柔光」那一套（见 utils/wallpaper/palette.ts）。
+  //
+  // 为什么在这里换而不是各组件里换：`c-content-background` 全项目有 45 个 .tsx 在读，
+  // 逐个改成 transparent 既改不全也守不住 —— 新加一个页面就漏一个。这一层是它们共同的来源，
+  // 换一次就全换。组件侧只剩三处需要知情：PageContent 铺柔光、GlassBackdrop 不再糊背景、
+  // PlayerOverlay 的播控背景不叠压暗层，它们都读 `is-wallpaper`。
+  // 第二个参数：图铺到播控页了 ⇒ 强调色抽白。主界面那份（applyToPlayer 关着时）留着主题色，
+  // 那边 PageContent 的柔光压得比播控页深，不需要跟着抽（见 utils/wallpaper/palette.ts）。
+  return customBg != null ? buildWallpaperTheme(activeTheme, customBg.applyToPlayer) : activeTheme
 }
 
 

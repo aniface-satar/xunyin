@@ -1,5 +1,6 @@
 import { getData, saveData, getAllKeys, removeDataMultiple, saveDataMultiple, removeData, getDataMultiple } from '@/plugins/storage'
 import { DEFAULT_SETTING, LIST_IDS, storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
+import type { LikedArtist } from '@/core/artistLibrary'
 import { matchHeaderComment, parseScriptHeader } from '@/core/userApiUpdate/resolveScript.ts'
 import { BUILTIN_SOURCES } from '@/config/builtinSources/catalog.ts'
 import { planBuiltinSeed } from './builtinSources.ts'
@@ -33,6 +34,7 @@ const syncHostPrefix = storageDataPrefix.syncHost
 const syncHostHistoryPrefix = storageDataPrefix.syncHostHistory
 const listPrefix = storageDataPrefix.list
 const dislikeListPrefix = storageDataPrefix.dislikeList
+const likedArtistPrefix = storageDataPrefix.likedArtist
 const userApiPrefix = storageDataPrefix.userApi
 const openStoragePathPrefix = storageDataPrefix.openStoragePath
 const selectedManagedFolderPrefix = storageDataPrefix.selectedManagedFolder
@@ -585,6 +587,14 @@ export const getDislikeListRules = async() => {
  */
 export const saveDislikeListRules = async(rules: string) => {
   await saveData(dislikeListPrefix, rules)
+}
+
+export const getLikedArtists = async() => {
+  return await getData<LikedArtist[]>(likedArtistPrefix) ?? []
+}
+
+export const saveLikedArtists = async(list: LikedArtist[]) => {
+  await saveData(likedArtistPrefix, list)
 }
 
 // export const clearMusicUrlAndLyric = async() => {

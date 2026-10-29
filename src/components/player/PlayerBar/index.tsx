@@ -127,7 +127,7 @@ export default memo(({ isHome = false }: { isHome?: boolean }) => {
       pointerEvents={barVisible ? 'auto' : 'none'}
       {...panResponder.panHandlers}
     >
-      <GlassBackdrop blurRadius={24} overlayOpacity={0.58} />
+      <GlassBackdrop blurRadius={24} overlayOpacity={0.58} flat />
       <View style={styles.mainRow}>
         <Pic isHome={isHome} onLayout={handlePicLayout} />
         <View style={styles.center}>

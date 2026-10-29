@@ -117,6 +117,28 @@ declare global {
     'theme.dynamicBg': boolean
 
     /**
+       * 自定义图片背景：用户自己选的图片铺底（可多套，各自带剪裁与模糊度）
+       */
+    'theme.customBg.enabled': boolean
+
+    /**
+       * 自定义图片背景是否铺到全屏播控页；关掉时播控页仍走封面动态背景
+       */
+    'theme.customBg.applyToPlayer': boolean
+
+    /**
+       * 当前生效的那套自定义背景 id（列表本身存在 storage 里，见 core/customBg.ts）
+       */
+    'theme.customBg.activeId': string
+
+    /**
+     * 壁纸模式的深色柔光强度（0 ~ 0.85）。
+     * 壁纸模式下字色只有白这一套，任何背景都得靠这层柔光压到足够暗才读得清 ——
+     * 明信片一样亮的图要多压一点，夜景图可以少压一点，所以做成可调的。
+     */
+    'theme.customBg.veil': number
+
+    /**
        * 动态背景的取色算法：
        * monet = 官方 Material Color Utilities 链路（一块染色底 + 少量封面透出）
        * blur = 重度模糊的封面图本身固定铺底（默认）

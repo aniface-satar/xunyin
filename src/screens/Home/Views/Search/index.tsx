@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react'
+import { useCallback, useRef, useEffect, useState } from 'react'
 import { type LayoutChangeEvent, View } from 'react-native'
 
 // import music from '@/utils/musicSdk'
@@ -45,8 +45,24 @@ export default () => {
   const listRef = useRef<ListType>(null)
   const layoutHeightRef = useRef<number>(0)
   const [showSearchType, setShowSearchType] = useState(shouldShowSearchType(searchState.searchText))
+  const [searchType, setSearchType] = useState<SearchType>('music')
   const searchInfo = useRef<SearchInfo>({ temp_source: 'kw', source: 'kw', searchType: 'music' })
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // 标签点击和左右滑动都走这里：切换类型、换源、加载该类型的结果
+  const handleTypeChange = useCallback((type: SearchType) => {
+    if (type == searchInfo.current.searchType) return
+    searchInfo.current.searchType = type
+    setSearchType(type)
+    const sources = getSearchSources(type)
+    if (!sources.includes(searchInfo.current.source)) {
+      searchInfo.current.source = sources[0]
+      void saveSearchSetting({ source: searchInfo.current.source })
+    }
+    void saveSearchSetting({ type })
+    headerBarRef.current?.setSourceList(sources, searchInfo.current.source)
+    listRef.current?.loadList(searchState.searchText, searchInfo.current.source, type)
+  }, [])
 
   useEffect(() => {
     void getSearchSetting().then(info => {
@@ -54,31 +70,19 @@ export default () => {
       searchInfo.current.temp_source = info.temp_source
       searchInfo.current.source = info.source
       searchInfo.current.searchType = info.type
+      setSearchType(info.type)
       headerBarRef.current?.setSourceList(getSearchSources(info.type), info.source)
       headerBarRef.current?.setText(searchState.searchText)
       listRef.current?.loadList(searchState.searchText, searchInfo.current.source, searchInfo.current.searchType)
     })
 
-    const handleTypeChange = (type: SearchType) => {
-      searchInfo.current.searchType = type
-      const sources = getSearchSources(type)
-      if (!sources.includes(searchInfo.current.source)) {
-        searchInfo.current.source = sources[0]
-        void saveSearchSetting({ source: searchInfo.current.source })
-      }
-      void saveSearchSetting({ type })
-      headerBarRef.current?.setSourceList(sources, searchInfo.current.source)
-      listRef.current?.loadList(searchState.searchText, searchInfo.current.source, type)
-    }
     const handleHomeTabReset = () => {
       searchTipListRef.current?.hide()
       setShowSearchType(shouldShowSearchType(searchState.searchText))
     }
-    global.app_event.on('searchTypeChanged', handleTypeChange)
     global.app_event.on('homeTabReset', handleHomeTabReset)
 
     return () => {
-      global.app_event.off('searchTypeChanged', handleTypeChange)
       global.app_event.off('homeTabReset', handleHomeTabReset)
     }
   }, [])
@@ -113,7 +117,8 @@ export default () => {
     headerBarRef.current?.setText(text)
     headerBarRef.current?.blur()
     void addHistoryWord(text)
-    listRef.current?.loadList(text, searchInfo.current.source, searchInfo.current.searchType)
+    // 手动搜索总是重新拉取，滑动切标签才复用已加载结果
+    listRef.current?.loadList(text, searchInfo.current.source, searchInfo.current.searchType, true)
   }
   const handleShowTipList: HeaderBarProps['onShowTipList'] = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
@@ -132,10 +137,10 @@ export default () => {
         onHideTipList={handleHideTipList}
         onShowTipList={handleShowTipList}
       />
-      {showSearchType ? <SearchTypeSelector style={styles.searchTypeSelector} /> : null}
+      {showSearchType ? <SearchTypeSelector style={styles.searchTypeSelector} type={searchType} onTypeChange={handleTypeChange} /> : null}
       <View style={styles.content} onLayout={handleLayout}>
         <TipList ref={searchTipListRef} onSearch={handleSearch} />
-        <List ref={listRef} onSearch={handleSearch} />
+        <List ref={listRef} onSearch={handleSearch} type={searchType} onTypeChange={handleTypeChange} />
       </View>
     </View>
   )

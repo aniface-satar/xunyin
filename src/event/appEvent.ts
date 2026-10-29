@@ -2,7 +2,6 @@ import { setNavActiveId } from '@/core/common'
 import Event from './Event'
 import commonState from '@/store/common/state'
 import { type Source as SonglistSource } from '@/store/songlist/state'
-import { type SearchType } from '@/store/search/state'
 import { type HistoryItem } from '@/core/musicRecognition/history'
 
 
@@ -174,14 +173,6 @@ export class AppEvent extends Event {
 
   changeMenuVisible(visible: boolean) {
     this.emit('changeMenuVisible', visible)
-  }
-
-  /**
-   * 搜索类型改变事件
-   * @param type
-   */
-  searchTypeChanged(type: SearchType) {
-    this.emit('searchTypeChanged', type)
   }
 
   jumpListPosition() {

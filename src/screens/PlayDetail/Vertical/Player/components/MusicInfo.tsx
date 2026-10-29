@@ -4,16 +4,15 @@ import { StyleSheet, TouchableOpacity, View, type LayoutChangeEvent } from 'reac
 import Text from '@/components/common/Text'
 import { LoveIcon } from '@/components/common/LoveIcon'
 import { Icon } from '@/components/common/Icon'
+import ArtistPickerSheet from '@/components/ArtistPickerSheet'
 import { usePlayerMusicInfo, usePlayMusicInfo } from '@/store/player/hook'
 import { useIsLove } from '@/store/player/useIsLove'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import SynchronizedMarquee, { useSynchronizedMarquee } from '@/components/common/SynchronizedMarquee'
 import SheetThemeProvider from '@/components/player/SheetThemeProvider'
-import { createStyle, toast } from '@/utils/tools'
+import { createStyle } from '@/utils/tools'
 import { collectMusic, uncollectMusic } from '@/core/player/player'
-import { resolveArtistForMusic } from '@/core/artistResolve'
-import { getArtistSearchName } from '@/core/musicLinks'
-import { useOpenMusicDetail } from '@/utils/hooks/useOpenMusicDetail'
+import { useArtistPicker } from '@/utils/hooks/useArtistPicker'
 import { useStatusbarHeight } from '@/store/common/hook'
 import { scaleSizeH, scaleSizeW } from '@/utils/pixelRatio'
 import { HEADER_HEIGHT } from '@/screens/PlayDetail/Vertical/components/Header'
@@ -60,18 +59,15 @@ export default ({
   )
   const isLove = useIsLove()
   const moreSheetRef = useRef<MusicMoreSheetType>(null)
+  const { sheetRef: artistSheetRef, openArtist } = useArtistPicker()
   const marquee = useSynchronizedMarquee({ lineCount: 2 })
   const layoutRef = useRef<Partial<MusicInfoLayout>>({})
-  const resolvingArtistRef = useRef(false)
-  const openMusicDetail = useOpenMusicDetail()
   const rawMusicInfo = playMusicInfo.musicInfo
     ? 'progress' in playMusicInfo.musicInfo
       ? playMusicInfo.musicInfo.metadata.musicInfo
       : playMusicInfo.musicInfo
     : null
-  const artistSearchName = rawMusicInfo && rawMusicInfo.source != 'local'
-    ? getArtistSearchName(rawMusicInfo.singer)
-    : null
+  const canOpenArtist = rawMusicInfo != null && rawMusicInfo.source != 'local'
 
   const emitLayout = useCallback(() => {
     const {
@@ -128,14 +124,8 @@ export default ({
   }
 
   const handleOpenArtist = useCallback(() => {
-    if (!rawMusicInfo || !artistSearchName || resolvingArtistRef.current) return
-    resolvingArtistRef.current = true
-    void resolveArtistForMusic(rawMusicInfo).then(item => {
-      resolvingArtistRef.current = false
-      if (item) openMusicDetail({ type: 'artist', info: item })
-      else toast(global.i18n.t('artist_not_found'))
-    })
-  }, [artistSearchName, openMusicDetail, rawMusicInfo])
+    if (rawMusicInfo) openArtist(rawMusicInfo)
+  }, [openArtist, rawMusicInfo])
 
   return (
     <View style={{ ...styles.container, marginTop: titleGap, width: textWidth }}>
@@ -164,7 +154,7 @@ export default ({
           >
             <TouchableOpacity
               activeOpacity={0.7}
-              disabled={!artistSearchName}
+              disabled={!canOpenArtist}
               onPress={handleOpenArtist}
               accessibilityRole="button"
               accessibilityLabel={musicInfo.singer}
@@ -204,7 +194,8 @@ export default ({
       </View>
       <LyricPreview onLayout={(event) => { handleLayout('lyricY', event) }} />
       <SheetThemeProvider>
-        <MusicMoreSheet ref={moreSheetRef} />
+        <MusicMoreSheet ref={moreSheetRef} onOpenArtist={openArtist} />
+        <ArtistPickerSheet ref={artistSheetRef} />
       </SheetThemeProvider>
     </View>
   )

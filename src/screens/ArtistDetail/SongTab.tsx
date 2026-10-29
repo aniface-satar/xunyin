@@ -9,6 +9,7 @@ import { playList } from '@/core/player/player'
 import { LIST_IDS } from '@/config/constant'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
+import { BorderWidths } from '@/theme'
 import { createStyle } from '@/utils/tools'
 import { type ArtistSongSort, type ArtistSource } from '@/utils/musicSdk/artistNormalizers'
 
@@ -89,32 +90,64 @@ export default ({ source, artistId }: {
     if (isMultiSelectMode) listRef.current?.exitMultiSelect()
     else listRef.current?.showMultiSelect()
   }
+  const handleSelectAll = () => {
+    listRef.current?.selectAll(true)
+  }
 
   return (
     <View style={styles.container}>
-      <View style={styles.toolbar}>
+      {
+        // 工具条与下方歌曲列表之间补一条分割线，复用上方标签栏的分割线样式
+      }
+      <View style={{ ...styles.toolbar, borderBottomColor: theme['c-border-background'] }}>
         {
-          source != 'mg'
-            ? <TouchableOpacity
-                style={styles.toolButton}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                onPress={handleToggleSort}
-              >
-                <Text size={14} color={theme['c-primary']}>{t(SORT_LABEL[sort])}</Text>
-              </TouchableOpacity>
-            : null
+          // 多选态：左侧留空，右侧只剩「取消 / 全选」，批量操作栏仍在列表底部
+          isMultiSelectMode
+            ? <>
+                <TouchableOpacity
+                  style={styles.toolButton}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  onPress={handleToggleMultiSelect}
+                >
+                  <Text size={14} color={theme['c-primary']}>{t('list_select_cancel')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ ...styles.toolButton, marginLeft: 14 }}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  onPress={handleSelectAll}
+                >
+                  <Text size={14} color={theme['c-primary']}>{t('list_select_all')}</Text>
+                </TouchableOpacity>
+              </>
+            : <>
+                {
+                  source != 'mg'
+                    ? <TouchableOpacity
+                        style={styles.toolButton}
+                        hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        onPress={handleToggleSort}
+                      >
+                        <Text size={14} color={theme['c-primary']}>{t(SORT_LABEL[sort])}</Text>
+                      </TouchableOpacity>
+                    : null
+                }
+                <TouchableOpacity
+                  style={{ ...styles.toolButton, marginLeft: 14 }}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  onPress={handleToggleMultiSelect}
+                >
+                  <Text size={14} color={theme['c-primary']}>{t('mylist_multi_select')}</Text>
+                </TouchableOpacity>
+              </>
         }
-        <TouchableOpacity
-          style={{ ...styles.toolButton, marginLeft: 14 }}
-          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          onPress={handleToggleMultiSelect}
-        >
-          <Text size={14} color={theme['c-primary']}>{t(isMultiSelectMode ? 'list_select_cancel' : 'mylist_multi_select')}</Text>
-        </TouchableOpacity>
       </View>
       <OnlineList
         key={sort}
@@ -124,7 +157,7 @@ export default ({ source, artistId }: {
         onPlayList={handlePlayList}
         onMultiSelectModeChange={setIsMultiSelectMode}
         multiSelectStyle="mylist"
-        multiSelectBarPosition="header"
+        multiSelectUi="external"
       />
     </View>
   )
@@ -140,6 +173,7 @@ const styles = createStyle({
     justifyContent: 'flex-end',
     height: 38,
     paddingRight: 10,
+    borderBottomWidth: BorderWidths.normal,
   },
   toolButton: {
     height: 26,

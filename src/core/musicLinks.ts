@@ -27,6 +27,19 @@ export const normalizeArtistName = (name: string): string => {
   return name.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
+// 选择器里按显示名去重：同一歌手的写法差异（空格/大小写）只保留第一次出现的写法
+export const buildArtistCandidates = (singer: string): string[] => {
+  const seen = new Set<string>()
+  const names: string[] = []
+  for (const name of splitArtistNames(singer)) {
+    const key = normalizeArtistName(name)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    names.push(name)
+  }
+  return names
+}
+
 export const pickExactArtistMatch = <T extends { name: string }>(
   list: readonly T[],
   name: string,

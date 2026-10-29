@@ -87,8 +87,26 @@ test('歌曲 tab 顶部有单个排序切换按钮和多选按钮', () => {
   assert.match(songTab, /mylist_multi_select/)
   assert.match(songTab, /showMultiSelect/)
   assert.match(songTab, /multiSelectStyle="mylist"/)
-  assert.match(songTab, /multiSelectBarPosition="header"/)
+  assert.match(songTab, /multiSelectUi="external"/)
   assert.match(songTab, /source != 'mg'|source !== 'mg'/)
+})
+
+test('多选态工具条左侧留空，右侧只剩「取消 / 全选」，批量操作栏回到列表底部', () => {
+  const songTab = src('src/screens/ArtistDetail/SongTab.tsx')
+  // 内置的选择栏交给宿主工具条绘制，避免和「取消 / 全选」重复
+  assert.doesNotMatch(songTab, /multiSelectBarPosition="header"/)
+  // 页面内不再自己画批量操作条，恢复由列表底部渲染
+  assert.doesNotMatch(songTab, /MultipleActionsBar/)
+  assert.doesNotMatch(songTab, /onSelectedListChange=/)
+  assert.match(songTab, /list_select_cancel/)
+  assert.match(songTab, /list_select_all/)
+  assert.match(songTab, /selectAll\(true\)/)
+})
+
+test('批量操作栏与选择栏解耦，external 形态下仍渲染在列表底部', () => {
+  const onlineList = src('src/components/OnlineList/index.tsx')
+  assert.match(onlineList, /multiSelectUi\?: 'builtin' \| 'external'/)
+  assert.match(onlineList, /multiSelectStyle == 'mylist' && isMultiSelectMode[\s\S]{0,120}<MultipleActionsBar/)
 })
 
 test('切换排序会清空列表并回到第一页', () => {

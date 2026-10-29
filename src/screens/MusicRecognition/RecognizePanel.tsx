@@ -3,6 +3,7 @@ import { AppState, TouchableOpacity, View } from 'react-native'
 import Text from '@/components/common/Text'
 import Waveform from '@/components/musicRecognition/Waveform'
 import ListeningRing from '@/components/musicRecognition/ListeningRing'
+import ListeningRipples from '@/components/musicRecognition/ListeningRipples'
 import AfpWasmView from '@/components/musicRecognition/AfpWasmView'
 import { useI18n } from '@/lang'
 import { useTheme } from '@/store/theme/hook'
@@ -317,21 +318,25 @@ export default () => {
     : busy
       ? null
       : t('music_recognition_desc')
-  // 只有"正在听"是实心的：按下去盘面从淡底翻成主色，一眼就知道机器开始干活了。
-  // 改之前两种状态用的是同一个 token（c-button-background 与 c-primary-background 是同一个值），
-  // 所以盘面几乎没变化，只能靠声纹条变高来判断有没有开始。
+  // 盘面不再跟着状态翻底色：原来「正在听」是把淡底整块涂成主色 —— 那一下看着像按钮被按下去
+  // 锁死了，而且淡底与主色只差一圈 1px 描边（改之前两个 token 其实是同一个值），
+  // 浅色主题下几乎看不出来，全靠声纹条变高才猜到「开始了」。
+  // 现在三个状态共用淡底：静的那一层只负责说「这是个可以按的圆盘」，
+  // 「已经在听」交给盘内一圈圈推出去的波纹去说（见 ListeningRipples）。
   const disc = phase == 'not_ready'
-    ? { backgroundColor: theme['c-button-background'], borderColor: theme['c-border-background'], barColor: theme['c-font-label'] }
+    ? { borderColor: theme['c-border-background'], barColor: theme['c-font-label'] }
     : busy
-      ? { backgroundColor: theme['c-primary'], borderColor: theme['c-primary-dark-100'], barColor: theme['c-content-background'] }
-      : { backgroundColor: theme['c-button-background'], borderColor: theme['c-primary-alpha-400'], barColor: theme['c-primary'] }
+      // 听着的时候描边提到实色主色：关掉动效的用户没有波纹可看，这一圈描边加上状态文案与
+      // 停止按钮，仍然是「已经开始」的静默证据。
+      ? { borderColor: theme['c-primary'], barColor: theme['c-primary'] }
+      : { borderColor: theme['c-primary-alpha-400'], barColor: theme['c-primary'] }
 
   return (
     <View style={styles.container}>
       <View style={styles.discWrap}>
         { busy ? <ListeningRing pulse={pulse} size={DISC_SIZE} color={theme['c-primary']} /> : null }
         <TouchableOpacity
-          style={[styles.disc, { backgroundColor: disc.backgroundColor, borderColor: disc.borderColor }]}
+          style={[styles.disc, { backgroundColor: theme['c-button-background'], borderColor: disc.borderColor }]}
           activeOpacity={0.8}
           disabled={phase == 'not_ready'}
           accessibilityRole="button"
@@ -344,6 +349,13 @@ export default () => {
             }
           }}
         >
+          {
+            // 只在聆听期间挂载：波纹是「正在听」的持续反馈，停下来就该立刻收，
+            // 没有「按了停止还在扩」的中间态。
+            busy
+              ? <ListeningRipples size={DISC_SIZE} color={theme['c-primary-alpha-400']} />
+              : null
+          }
           <Waveform
             active={busy}
             bars={11}

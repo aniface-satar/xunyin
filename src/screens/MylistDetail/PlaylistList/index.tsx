@@ -1,10 +1,11 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, TouchableOpacity, View, type FlatListProps } from 'react-native'
 
 import Image from '@/components/common/Image'
 import { LoveIcon } from '@/components/common/LoveIcon'
 import Text from '@/components/common/Text'
 import { getListMusics, removeUserList } from '@/core/list'
+import { isLikedNetworkPlaylist, type LikedNetworkPlaylist } from '@/core/mylistLibrary'
 import { getListDetail } from '@/core/songlist'
 import { useMyList } from '@/store/list/hook'
 import { useTheme } from '@/store/theme/hook'
@@ -57,15 +58,14 @@ const PlaylistRow = memo(({ item, meta, onPress, onUnlike }: {
   )
 })
 
-export default ({ keyword = '' }: { keyword?: string }) => {
+export default ({ keyword = '', active = true }: { keyword?: string, active?: boolean }) => {
   const theme = useTheme()
   const t = useI18n()
   const allList = useMyList()
   const searchText = keyword.trim().toLowerCase()
   const displayPlaylists = useMemo(() => {
-    const playlists = allList.filter((list): list is LX.List.UserListInfo => {
-      return 'source' in list && 'sourceListId' in list &&
-        !!list.source && !!list.sourceListId && !!list.isLove
+    const playlists = allList.filter((list): list is LikedNetworkPlaylist => {
+      return 'source' in list && isLikedNetworkPlaylist(list)
     })
     return searchText
       ? playlists.filter(listInfo => listInfo.name.toLowerCase().includes(searchText))
@@ -73,6 +73,8 @@ export default ({ keyword = '' }: { keyword?: string }) => {
   }, [allList, searchText])
 
   const [metas, setMetas] = useState<Record<string, PlaylistMeta>>({})
+  // 已经拉过详情的歌单，滑回这个标签时不再重复请求
+  const loadedIdsRef = useRef(new Set<string>())
 
   const loadMeta = useCallback(async(playlist: LX.List.UserListInfo) => {
     const list = await getListMusics(playlist.id)
@@ -96,21 +98,34 @@ export default ({ keyword = '' }: { keyword?: string }) => {
     }
   }, [])
 
+  // 页面常驻在 PagerView 里，只有切到这个标签才逐个拉歌单详情（每个歌单一次网络请求），拉过的不再重复拉
   useEffect(() => {
-    for (const playlist of displayPlaylists) void loadMeta(playlist).catch(() => {})
-  }, [displayPlaylists, loadMeta])
+    if (!active) return
+    for (const playlist of displayPlaylists) {
+      if (loadedIdsRef.current.has(playlist.id)) continue
+      loadedIdsRef.current.add(playlist.id)
+      void loadMeta(playlist).catch(() => {
+        loadedIdsRef.current.delete(playlist.id)
+      })
+    }
+  }, [active, displayPlaylists, loadMeta])
 
   useEffect(() => {
+    if (!active) return
     const handleChange = (ids: string[]) => {
       const changedPlaylists = displayPlaylists.filter(playlist => ids.includes(playlist.id))
-      for (const playlist of changedPlaylists) void loadMeta(playlist).catch(() => {})
+      for (const playlist of changedPlaylists) {
+        void loadMeta(playlist).catch(() => {
+          loadedIdsRef.current.delete(playlist.id)
+        })
+      }
     }
 
     global.app_event.on('myListMusicUpdate', handleChange)
     return () => {
       global.app_event.off('myListMusicUpdate', handleChange)
     }
-  }, [displayPlaylists, loadMeta])
+  }, [active, displayPlaylists, loadMeta])
 
   const handlePress = useCallback((item: LX.List.UserListInfo) => {
     if (!item.source || !item.sourceListId) return

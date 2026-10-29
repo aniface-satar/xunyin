@@ -3,6 +3,7 @@ import { View, Animated, TouchableHighlight } from 'react-native'
 import { useWindowSize } from '@/utils/hooks'
 
 import Modal, { type ModalType } from './Modal'
+import GlassBackdrop from './GlassBackdrop'
 
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
@@ -127,7 +128,15 @@ const Menu = ({
   // console.log(menuStyle)
   // console.log(menuItemStyle)
   return (
-    <View style={{ ...styles.menu, ...menuStyle, backgroundColor: theme['c-content-background'] }} onStartShouldSetResponder={() => true}>
+    <View style={{ ...styles.menu, ...menuStyle, backgroundColor: theme['c-content-background'], overflow: 'hidden' }} onStartShouldSetResponder={() => true}>
+      {
+        // 浮层自己的底：壁纸模式下它那块实底被换成了透明（`c-content-background`），
+        // 不糊的话一整列菜单项直接压在照片纹理上 —— 选中的那行连图标带字一起掉进图里。
+        // 这一处就是那张菜单浮窗：歌曲条右侧 ⋮、自建歌单条 ⋮、以及音源选择（SourceSelector）
+        // 全走这一个组件，糊图按屏幕坐标铺，与下拉那一小块底下的壁纸对得上。
+        // 普通主题不插：那边本来就是实底，多铺一层会改观感。
+        theme['is-wallpaper'] ? <GlassBackdrop blurRadius={24} style={{ borderRadius: 2 }} /> : null
+      }
       <Animated.ScrollView keyboardShouldPersistTaps={'always'}>
         {
           menus.map((menu, index) => (

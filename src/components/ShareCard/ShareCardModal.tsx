@@ -6,6 +6,7 @@ import { Icon } from '@/components/common/Icon'
 import Loading from '@/components/common/Loading'
 import Text from '@/components/common/Text'
 import SheetThemeProvider from '@/components/player/SheetThemeProvider'
+import GlassBackdrop from '@/components/common/GlassBackdrop'
 import ShareCard, { type ShareCardData } from '@/components/ShareCard'
 import { RATIO_OPTIONS, type RatioKey, shotRect as shotRectFor } from './cardScale'
 import { useI18n } from '@/lang'
@@ -173,6 +174,10 @@ const ShareCardModal = ({ visible, mode, musicInfo, lyricFontSize, lyricLines, o
   return (
     <Modal visible={visible} onRequestClose={handleClose} statusBarTranslucent animationType="fade">
       <View style={styles.root}>
+        {/* 这个弹窗自己的底：壁纸模式下把原本那块纯黑换成「糊掉的壁纸 + 深色压暗」。
+            铺在拍摄子树之外 —— 被拍的只有 shotWrap 里那张卡（spec §5），糊图不会进成品图。
+            普通主题不插：那边这块底就该是纯黑 */}
+        {theme['is-wallpaper'] ? <GlassBackdrop blurRadius={36} playerScope /> : null}
         {/* 被拍的只有这一层：控件层挂在它外面，所以不会进图（spec §5）。
             非全屏比例下矩形比屏幕小，挂一层居中包装让它悬在屏幕正中。 */}
         <View style={styles.shotWrap}>

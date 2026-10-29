@@ -8,6 +8,7 @@ import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import Text from './Text'
 import { useStatusbarHeight } from '@/store/common/hook'
+import GlassBackdrop from './GlassBackdrop'
 
 const styles = createStyle({
   centeredView: {
@@ -172,6 +173,14 @@ export default forwardRef<PopupType, PopupProps>(({
     <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(0,0,0,0.35)" ref={modalRef}>
       <View style={{ ...styles.centeredView, ...centeredViewStyle, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
         <View style={{ ...styles.modalView, ...modalViewStyle, backgroundColor: theme['c-content-background'] }} onStartShouldSetResponder={() => true}>
+          {
+            // 弹层自己的底：壁纸模式下这个面板原本的实白底变成了透明（`c-content-background`），
+            // 不糊的话一整块内容就直接压在照片纹理上。糊图铺满整屏、按窗口坐标对齐，
+            // 面板里那一块的纹理与页面上的壁纸对得上。普通主题不插，那边仍是实白底。
+            theme['is-wallpaper']
+              ? <GlassBackdrop blurRadius={24} style={position == 'bottom' ? { borderTopLeftRadius: 8, borderTopRightRadius: 8 } : undefined} />
+              : null
+          }
           <View style={styles.header}>
             <Text size={13} style={styles.title} numberOfLines={1}>{title}</Text>
             {closeBtnComponent}

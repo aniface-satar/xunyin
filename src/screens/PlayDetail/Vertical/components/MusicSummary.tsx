@@ -5,16 +5,15 @@ import Text from '@/components/common/Text'
 import { LoveIcon } from '@/components/common/LoveIcon'
 import { Icon } from '@/components/common/Icon'
 import Image from '@/components/common/Image'
+import ArtistPickerSheet from '@/components/ArtistPickerSheet'
 import { usePlayerMusicInfo, usePlayMusicInfo } from '@/store/player/hook'
 import { useIsLove } from '@/store/player/useIsLove'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import SynchronizedMarquee, { useSynchronizedMarquee } from '@/components/common/SynchronizedMarquee'
 import SheetThemeProvider from '@/components/player/SheetThemeProvider'
 import { collectMusic, uncollectMusic } from '@/core/player/player'
-import { resolveArtistForMusic } from '@/core/artistResolve'
-import { getArtistSearchName } from '@/core/musicLinks'
-import { useOpenMusicDetail } from '@/utils/hooks/useOpenMusicDetail'
-import { createStyle, toast } from '@/utils/tools'
+import { useArtistPicker } from '@/utils/hooks/useArtistPicker'
+import { createStyle } from '@/utils/tools'
 import { scaleSizeH, scaleSizeW, setSpText } from '@/utils/pixelRatio'
 import { BTN_ICON_SIZE, BTN_WIDTH, DOTS_VERTICAL_ALIGNMENT_OFFSET } from '../Player/components/MoreBtn/Btn'
 import { FULL_COVER_RADIUS, getPlayDetailLayout } from '../layout'
@@ -36,17 +35,13 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
   const marquee = useSynchronizedMarquee({ lineCount: 2 })
   const { width: winWidth, height: winHeight } = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
-  const openMusicDetail = useOpenMusicDetail()
-  const resolvingArtistRef = useRef(false)
+  const { sheetRef: artistSheetRef, openArtist } = useArtistPicker()
   const rawMusicInfo = playMusicInfo.musicInfo
     ? 'progress' in playMusicInfo.musicInfo
       ? playMusicInfo.musicInfo.metadata.musicInfo
       : playMusicInfo.musicInfo
     : null
-  const artistSearchName = rawMusicInfo && rawMusicInfo.source != 'local'
-    ? getArtistSearchName(rawMusicInfo.singer)
-    : null
-
+  const canOpenArtist = rawMusicInfo != null && rawMusicInfo.source != 'local'
   const { contentWidth } = useMemo(() => getPlayDetailLayout(
     winWidth,
     winHeight,
@@ -59,14 +54,8 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
     else collectMusic()
   }
   const handleOpenArtist = useCallback(() => {
-    if (!rawMusicInfo || !artistSearchName || resolvingArtistRef.current) return
-    resolvingArtistRef.current = true
-    void resolveArtistForMusic(rawMusicInfo).then(item => {
-      resolvingArtistRef.current = false
-      if (item) openMusicDetail({ type: 'artist', info: item })
-      else toast(global.i18n.t('artist_not_found'))
-    })
-  }, [artistSearchName, openMusicDetail, rawMusicInfo])
+    if (rawMusicInfo) openArtist(rawMusicInfo)
+  }, [openArtist, rawMusicInfo])
   const moreSheetRef = useRef<MusicMoreSheetType>(null)
 
   return (
@@ -83,7 +72,7 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
         <SynchronizedMarquee id="artist" controller={marquee} style={textStyles.artistMask}>
           <TouchableOpacity
             activeOpacity={0.7}
-            disabled={!artistSearchName}
+            disabled={!canOpenArtist}
             onPress={handleOpenArtist}
             accessibilityRole="button"
             accessibilityLabel={musicInfo.singer}
@@ -118,7 +107,8 @@ export default memo(({ marginTop = 0, coverSize = 72 }: MusicSummaryProps) => {
         </TouchableOpacity>
       </View>
       <SheetThemeProvider>
-        <MusicMoreSheet ref={moreSheetRef} />
+        <MusicMoreSheet ref={moreSheetRef} onOpenArtist={openArtist} />
+        <ArtistPickerSheet ref={artistSheetRef} />
       </SheetThemeProvider>
     </View>
   )

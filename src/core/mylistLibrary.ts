@@ -1,10 +1,28 @@
-import { createAlbumListId } from '../utils/musicSdk/albumNormalizers.ts'
-import { splitArtistNames } from './musicLinks.ts'
+import { isAlbumListId } from '../utils/musicSdk/albumNormalizers.ts'
 
 // 纯函数：不得引入 request/config/store，测试会直接 import 本模块
 
-export interface LikedAlbumGroup {
+export type LikedAlbumList = LX.List.UserListInfo & {
+  isLove: true
+  source: LX.OnlineSource
+  sourceListId: string
+}
+
+export type LikedNetworkPlaylist = LX.List.UserListInfo & {
+  isLove: true
+  source: LX.OnlineSource
+  sourceListId: string
+}
+
+export interface LikedAlbumMeta {
+  count: number
+  cover: string
+  author: string
+}
+
+export interface LikedAlbumRow {
   key: string
+  listId: string
   id: string
   name: string
   author: string
@@ -13,67 +31,39 @@ export interface LikedAlbumGroup {
   count: number
 }
 
-export interface LikedArtistGroup {
-  key: string
-  name: string
-  count: number
-  sources: LX.OnlineSource[]
+const hasSourceList = (list: LX.List.UserListInfo): list is LX.List.UserListInfo & {
+  source: LX.OnlineSource
+  sourceListId: string
+} => {
+  return !!list.isLove && !!list.source && !!list.sourceListId
 }
 
-const compareText = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0
-
-const hasAlbumId = (albumId: unknown): boolean => {
-  return albumId != null && albumId !== '' && String(albumId) != '0'
+export const isLikedAlbumList = (list: LX.List.UserListInfo): list is LikedAlbumList => {
+  return hasSourceList(list) && isAlbumListId(list.sourceListId)
 }
 
-export const groupLikedAlbums = (list: readonly LX.Music.MusicInfo[]): LikedAlbumGroup[] => {
-  const groups = new Map<string, LikedAlbumGroup>()
-  for (const music of list) {
-    if (music.source == 'local') continue
-    const rawAlbumId = music.meta.albumId
-    if (!hasAlbumId(rawAlbumId)) continue
-    const albumId = String(rawAlbumId)
-    const key = `${music.source}__${albumId}`
-    const current = groups.get(key)
-    if (current) {
-      current.count++
-      if (!current.cover && music.meta.picUrl) current.cover = music.meta.picUrl
-      continue
-    }
-    groups.set(key, {
-      key,
-      id: createAlbumListId(albumId),
-      name: music.meta.albumName || '',
-      author: music.singer,
-      source: music.source,
-      cover: music.meta.picUrl ?? '',
-      count: 1,
+export const isLikedNetworkPlaylist = (list: LX.List.UserListInfo): list is LikedNetworkPlaylist => {
+  return hasSourceList(list) && !isAlbumListId(list.sourceListId)
+}
+
+export const buildLikedAlbumRows = (
+  lists: readonly LX.List.UserListInfo[],
+  metas: Readonly<Record<string, LikedAlbumMeta>>,
+): LikedAlbumRow[] => {
+  const rows: LikedAlbumRow[] = []
+  for (const list of lists) {
+    if (!isLikedAlbumList(list)) continue
+    const meta = metas[list.id]
+    rows.push({
+      key: list.id,
+      listId: list.id,
+      id: list.sourceListId,
+      name: list.name,
+      author: meta?.author ?? '',
+      source: list.source,
+      cover: meta?.cover ?? '',
+      count: meta?.count ?? 0,
     })
   }
-  return Array.from(groups.values()).sort((a, b) => b.count - a.count || compareText(a.key, b.key))
-}
-
-export const groupLikedArtists = (list: readonly LX.Music.MusicInfo[]): LikedArtistGroup[] => {
-  const groups = new Map<string, { name: string, count: number, sourceCounts: Map<string, number> }>()
-  for (const music of list) {
-    if (music.source == 'local') continue
-    const names = new Set(splitArtistNames(music.singer))
-    for (const name of names) {
-      let group = groups.get(name)
-      if (!group) {
-        group = { name, count: 0, sourceCounts: new Map() }
-        groups.set(name, group)
-      }
-      group.count++
-      group.sourceCounts.set(music.source, (group.sourceCounts.get(music.source) ?? 0) + 1)
-    }
-  }
-  return Array.from(groups.values()).map(group => ({
-    key: group.name,
-    name: group.name,
-    count: group.count,
-    sources: Array.from(group.sourceCounts.entries())
-      .sort((a, b) => b[1] - a[1] || compareText(a[0], b[0]))
-      .map(([source]) => source as LX.OnlineSource),
-  })).sort((a, b) => b.count - a.count || compareText(a.key, b.key))
+  return rows
 }

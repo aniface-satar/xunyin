@@ -1,118 +1,79 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { groupLikedAlbums, groupLikedArtists } from '../src/core/mylistLibrary.ts'
+import { buildLikedAlbumRows, isLikedAlbumList, isLikedNetworkPlaylist } from '../src/core/mylistLibrary.ts'
 
-const song = (over: Record<string, any> = {}): any => ({
-  id: '1',
-  name: '歌',
-  singer: '周杰伦',
-  source: 'tx',
-  interval: '03:00',
-  meta: {
-    songId: '1',
-    albumName: '范特西',
-    picUrl: 'https://p/1.jpg',
-    albumId: '11',
-    qualitys: [],
-    _qualitys: {},
-  },
+const userList = (over: Record<string, any> = {}): any => ({
+  id: 'userlist_1',
+  name: '列表',
+  locationUpdateTime: null,
   ...over,
 })
 
-const metaWith = (over: Record<string, any> = {}): any => ({
-  songId: '1',
-  albumName: '范特西',
-  qualitys: [],
-  _qualitys: {},
-  ...over,
+const albumList = userList({ id: 'al1', name: '范特西', isLove: true, source: 'tx', sourceListId: 'album__11' })
+const networkPlaylist = userList({ id: 'pl1', name: '网络歌单', isLove: true, source: 'wy', sourceListId: '123' })
+
+test('显式喜欢的专辑只归入专辑', () => {
+  assert.equal(isLikedAlbumList(albumList), true)
+  assert.equal(isLikedNetworkPlaylist(albumList), false)
 })
 
-test('喜欢的歌曲按 source + albumId 聚合专辑', () => {
-  const groups = groupLikedAlbums([
-    song({ id: '1' }),
-    song({ id: '2', meta: metaWith({ albumId: '11', picUrl: 'https://p/2.jpg' }) }),
-    song({ id: '3', singer: '费玉清', meta: metaWith({ albumId: '12', albumName: '千里之外' }) }),
-  ])
-  assert.deepEqual(groups, [
+test('网络歌单只归入歌单', () => {
+  assert.equal(isLikedNetworkPlaylist(networkPlaylist), true)
+  assert.equal(isLikedAlbumList(networkPlaylist), false)
+})
+
+test('榜单收藏按网络歌单归类', () => {
+  const board = userList({ isLove: true, source: 'wy', sourceListId: 'board__wy__19723756' })
+  assert.equal(isLikedNetworkPlaylist(board), true)
+  assert.equal(isLikedAlbumList(board), false)
+})
+
+test('自建列表、未喜欢、缺源信息的都不进入两个标签', () => {
+  const cases = [
+    userList({ sourceListId: 'album__11' }),
+    userList({ isLove: true }),
+    userList({ isLove: true, source: 'tx' }),
+    userList({ isLove: true, sourceListId: 'album__' }),
+  ]
+  for (const item of cases) {
+    assert.equal(isLikedAlbumList(item), false)
+    assert.equal(isLikedNetworkPlaylist(item), false)
+  }
+})
+
+test('专辑行只收显式喜欢的专辑，封面/歌手/曲数来自已存歌曲', () => {
+  const rows = buildLikedAlbumRows([
+    albumList,
+    networkPlaylist,
+    userList({ id: 'self', name: '自建' }),
+  ], {
+    al1: { count: 10, cover: 'https://p/1.jpg', author: '周杰伦' },
+  })
+  assert.deepEqual(rows, [
     {
-      key: 'tx__11',
+      key: 'al1',
+      listId: 'al1',
       id: 'album__11',
       name: '范特西',
       author: '周杰伦',
       source: 'tx',
       cover: 'https://p/1.jpg',
-      count: 2,
+      count: 10,
     },
+  ])
+})
+
+test('专辑元信息缺失时回退为空串与 0', () => {
+  assert.deepEqual(buildLikedAlbumRows([albumList], {}), [
     {
-      key: 'tx__12',
-      id: 'album__12',
-      name: '千里之外',
-      author: '费玉清',
+      key: 'al1',
+      listId: 'al1',
+      id: 'album__11',
+      name: '范特西',
+      author: '',
       source: 'tx',
       cover: '',
-      count: 1,
+      count: 0,
     },
   ])
-})
-
-test('专辑聚合跳过本地歌曲、缺 albumId 与 0', () => {
-  assert.deepEqual(groupLikedAlbums([
-    song({ source: 'local', meta: { songId: 'x', albumName: '专辑', filePath: 'x', ext: 'mp3' } }),
-    song({ meta: metaWith({ albumId: undefined }) }),
-    song({ meta: metaWith({ albumId: '0' }) }),
-    song({ meta: metaWith({ albumId: 0 }) }),
-  ]), [])
-})
-
-test('不同源的同一个 albumId 不合并', () => {
-  const groups = groupLikedAlbums([
-    song({ id: '1', source: 'tx', meta: metaWith({ albumId: '11' }) }),
-    song({ id: '2', source: 'wy', meta: metaWith({ albumId: '11', albumName: '范特西 (网易)' }) }),
-  ])
-  assert.equal(groups.length, 2)
-  assert.deepEqual(groups.map(group => group.key).sort(), ['tx__11', 'wy__11'])
-})
-
-test('专辑按歌曲数降序，数量相同按 key 排序', () => {
-  const groups = groupLikedAlbums([
-    song({ id: '1', source: 'wy', meta: metaWith({ albumId: '22' }) }),
-    song({ id: '2', source: 'tx', meta: metaWith({ albumId: '11' }) }),
-    song({ id: '3', source: 'tx', meta: metaWith({ albumId: '11' }) }),
-  ])
-  assert.deepEqual(groups.map(group => group.key), ['tx__11', 'wy__22'])
-})
-
-test('喜欢的歌曲按歌手拆分聚合，同一首歌内去重', () => {
-  const groups = groupLikedArtists([
-    song({ id: '1', singer: '周杰伦、费玉清' }),
-    song({ id: '2', singer: '周杰伦' }),
-    song({ id: '3', source: 'wy', singer: '费玉清 / 张惠妹' }),
-    song({ id: '4', singer: '周杰伦、周杰伦' }),
-  ])
-  assert.deepEqual(groups, [
-    { key: '周杰伦', name: '周杰伦', count: 3, sources: ['tx'] },
-    { key: '费玉清', name: '费玉清', count: 2, sources: ['tx', 'wy'] },
-    { key: '张惠妹', name: '张惠妹', count: 1, sources: ['wy'] },
-  ])
-})
-
-test('歌手聚合跳过本地歌曲与空名', () => {
-  assert.deepEqual(groupLikedArtists([
-    song({ source: 'local', meta: { songId: 'x', albumName: '专辑', filePath: 'x', ext: 'mp3' } }),
-    song({ singer: '  ' }),
-  ]), [])
-})
-
-test('歌手数量相同时按名字码点排序，源按出现次数降序', () => {
-  const groups = groupLikedArtists([
-    song({ id: '1', source: 'wy', singer: '费玉清' }),
-    song({ id: '2', source: 'tx', singer: '周杰伦' }),
-    song({ id: '3', source: 'wy', singer: '周杰伦' }),
-    song({ id: '4', source: 'tx', singer: '费玉清' }),
-    song({ id: '5', source: 'wy', singer: '费玉清' }),
-    song({ id: '6', source: 'wy', singer: '周杰伦' }),
-  ])
-  assert.deepEqual(groups.map(group => group.name), ['周杰伦', '费玉清'])
-  assert.deepEqual(groups[0].sources, ['wy', 'tx'])
-  assert.deepEqual(groups[1].sources, ['wy', 'tx'])
 })

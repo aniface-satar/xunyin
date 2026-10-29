@@ -51,7 +51,7 @@ const BottomTabBar = ({ onTabPress }: { onTabPress?: (id: CommonState['navActive
       zIndex: 3,
       transform: [{ translateY: containerTranslateY }],
     }}>
-      <GlassBackdrop blurRadius={24} overlayOpacity={0.58} />
+      <GlassBackdrop blurRadius={24} overlayOpacity={0.58} flat />
       {
         NAV_MENUS.map(({ id, icon }) => {
           const active = activeId == id

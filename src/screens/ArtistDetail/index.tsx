@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import { TouchableOpacity, View } from 'react-native'
+import PagerView, { type PagerViewOnPageSelectedEvent } from 'react-native-pager-view'
 
 import { getArtistDetail } from '@/core/artist'
+import { isLikedArtist } from '@/core/artistLibrary'
+import { toggleLikedArtist } from '@/core/likedArtist'
+import { useLikedArtists } from '@/store/likedArtist/hook'
 import { BorderWidths } from '@/theme'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
@@ -27,6 +31,7 @@ export default ({ info, onBack }: {
 }) => {
   const theme = useTheme()
   const t = useI18n()
+  const pagerRef = useRef<ComponentRef<typeof PagerView>>(null)
   const [activeTab, setActiveTab] = useState<ArtistTab>('songs')
   const [detail, setDetail] = useState<ArtistDetailInfo>({
     name: info.name,
@@ -38,6 +43,20 @@ export default ({ info, onBack }: {
   })
   const [detailStatus, setDetailStatus] = useState<IntroStatus>('loading')
   const isUnmountedRef = useRef(false)
+  const likedArtists = useLikedArtists()
+  const liked = useMemo(() => {
+    return isLikedArtist(likedArtists, info.source, info.id)
+  }, [likedArtists, info.id, info.source])
+
+  const handleToggleLike = useCallback(() => {
+    void toggleLikedArtist({
+      source: info.source,
+      id: info.id,
+      name: detail.name || info.name,
+      alias: detail.alias || info.alias,
+      img: detail.img || info.img,
+    })
+  }, [detail, info])
 
   const loadDetail = useCallback(() => {
     setDetailStatus('loading')
@@ -59,9 +78,19 @@ export default ({ info, onBack }: {
     }
   }, [loadDetail])
 
+  const handlePageSelected = useCallback(({ nativeEvent }: PagerViewOnPageSelectedEvent) => {
+    const tab = TAB_LIST[nativeEvent.position]?.id
+    if (tab && tab != activeTab) setActiveTab(tab)
+  }, [activeTab])
+
+  useEffect(() => {
+    const index = TAB_LIST.findIndex(tab => tab.id == activeTab)
+    if (index >= 0) pagerRef.current?.setPage(index)
+  }, [activeTab])
+
   return (
     <View style={styles.container}>
-      <Header info={detail} onBack={onBack} />
+      <Header info={detail} liked={liked} onToggleLike={handleToggleLike} onBack={onBack} />
       <View style={{ ...styles.tabBar, borderBottomColor: theme['c-border-background'] }}>
         {TAB_LIST.map(tab => (
           <TouchableOpacity
@@ -80,15 +109,25 @@ export default ({ info, onBack }: {
           </TouchableOpacity>
         ))}
       </View>
-      <View style={{ ...styles.tabContent, display: activeTab == 'songs' ? 'flex' : 'none' }}>
-        <SongTab source={info.source} artistId={info.id} />
-      </View>
-      <View style={{ ...styles.tabContent, display: activeTab == 'albums' ? 'flex' : 'none' }}>
-        <AlbumTab source={info.source} artistId={info.id} active={activeTab == 'albums'} />
-      </View>
-      <View style={{ ...styles.tabContent, display: activeTab == 'intro' ? 'flex' : 'none' }}>
-        <IntroTab desc={detail.desc} status={detailStatus} onRetry={loadDetail} />
-      </View>
+      {
+        // 标签页放进 PagerView 后每页常驻，滑动手势与标签点击共用 activeTab
+      }
+      <PagerView
+        ref={pagerRef}
+        style={styles.pagerView}
+        initialPage={Math.max(0, TAB_LIST.findIndex(tab => tab.id == activeTab))}
+        onPageSelected={handlePageSelected}
+      >
+        <View collapsable={false} style={styles.tabContent}>
+          <SongTab source={info.source} artistId={info.id} />
+        </View>
+        <View collapsable={false} style={styles.tabContent}>
+          <AlbumTab source={info.source} artistId={info.id} active={activeTab == 'albums'} />
+        </View>
+        <View collapsable={false} style={styles.tabContent}>
+          <IntroTab desc={detail.desc} status={detailStatus} onRetry={loadDetail} />
+        </View>
+      </PagerView>
     </View>
   )
 }
@@ -115,6 +154,9 @@ const styles = createStyle({
     paddingRight: 2,
     paddingBottom: 4,
     borderBottomWidth: BorderWidths.normal3,
+  },
+  pagerView: {
+    flex: 1,
   },
   tabContent: {
     flex: 1,

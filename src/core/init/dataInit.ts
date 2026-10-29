@@ -7,6 +7,7 @@ import { getViewPrevState } from '@/utils/data'
 import { type NAV_ID_Type } from '@/config/constant'
 import { bootLog } from '@/utils/bootLog'
 import { getDislikeInfo, setDislikeInfo } from '@/core/dislikeList'
+import { initLikedArtists } from '@/core/likedArtist'
 import { unlink } from '@/utils/fs'
 import { TEMP_FILE_PATH } from '@/utils/tools'
 // import { play, playList } from '../player/player'
@@ -31,6 +32,7 @@ export default async(appSetting: LX.AppSetting) => {
   bootLog('User list init...')
   setUserList(await getUserLists()) // 获取用户列表
   setDislikeInfo(await getDislikeInfo()) // 获取不喜欢列表
+  await initLikedArtists() // 获取喜欢的创作者
   bootLog('User list inited.')
   const savedNavId: string = (await getViewPrevState()).id
   setNavActiveId(savedNavId == 'nav_songlist' || savedNavId == 'nav_top' ? 'nav_discover' : savedNavId as NAV_ID_Type)

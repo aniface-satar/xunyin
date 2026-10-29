@@ -89,7 +89,7 @@ export default memo(() => {
   }, [])
 
   return (
-    <SubTitle title={t('setting_basic_theme')}>
+    <SubTitle level={2} title={t('setting_basic_theme')}>
       <Text style={styles.tip} size={12} color={theme['c-font-label']}>
         {t('setting_basic_theme_non_solid_tip')}
       </Text>

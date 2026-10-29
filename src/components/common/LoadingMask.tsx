@@ -3,6 +3,7 @@ import { Animated } from 'react-native'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
+import { WALLPAPER_SCRIM } from '@/utils/wallpaper/palette'
 import Loading from './Loading'
 
 // interface LoadingMaskProps {
@@ -57,7 +58,10 @@ export default forwardRef<LoadingMaskType, {}>((props, ref) => {
 
 
   const maskComponent = useMemo(() => (
-    <Animated.View style={{ ...styles.container, backgroundColor: theme['c-main-background'], opacity: animFade }}>
+    // 壁纸模式下 c-main-background 是全透明的（背景要一直透到最底下），这层遮罩就失去了
+    // "先盖住、再淡出"的意义 —— 加载中还看得见下面那半张列表。所以那时候换成柔光色，
+    // 淡出时仍然是"从压暗回到照片"，跟别处是同一套语言。
+    <Animated.View style={{ ...styles.container, backgroundColor: theme['is-wallpaper'] ? WALLPAPER_SCRIM : theme['c-main-background'], opacity: animFade }}>
       <Loading size={25} label={t('list_loading')} />
     </Animated.View>
   ), [animFade, t, theme])

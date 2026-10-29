@@ -6,11 +6,11 @@
 const MAX_BASE_NAME = 72
 
 /** 文件名里的非法字符一律去掉：SAF 那边不会替你报错，只会写不出或者写歪。 */
-export const cardFileName = (name: string, singer: string) => {
+export const cardFileName = (name: string, singer: string, fallback = 'lyric-poster') => {
   // eslint-disable-next-line no-control-regex
   const clean = (value: string) => value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim()
   const title = clean(name)
   const artist = clean(singer)
   const joined = artist ? `${title} - ${artist}` : title
-  return (joined || 'lyric-poster').slice(0, MAX_BASE_NAME)
+  return (joined || fallback).slice(0, MAX_BASE_NAME)
 }

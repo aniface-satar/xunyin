@@ -1,4 +1,4 @@
-import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { TouchableOpacity, View } from 'react-native'
 import { BorderWidths } from '@/theme'
 import { scaleSizeW } from '@/utils/pixelRatio'
@@ -9,7 +9,9 @@ import Text, { AnimatedText } from '@/components/common/Text'
 import { createStyle, shareSonglist } from '@/utils/tools'
 import { pop } from '@/navigation'
 import Image from '@/components/common/Image'
+import ArtistPickerSheet from '@/components/ArtistPickerSheet'
 import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
+import { useArtistPicker } from '@/utils/hooks/useArtistPicker'
 import { useListInfo } from './state'
 import { useAnimateOnecNumber } from '@/utils/hooks/useAnimateNumber'
 import { useStatusbarHeight } from '@/store/common/hook'
@@ -63,33 +65,31 @@ export interface HeaderProps {
   onBack?: () => void
   isMultiSelectMode?: boolean
   onToggleMultiSelect?: () => void
+  detailInfo: DetailInfo
+  // 专辑页隐藏封面右侧简介（简介移到下方「介绍」标签），歌单页保持原样
+  hideDesc?: boolean
+  // 专辑页不提供「加入自建歌单」
+  hideActionBar?: boolean
 }
 
-export interface HeaderType {
-  setInfo: (info: DetailInfo) => void
-}
 export interface DetailInfo {
   name: string
+  author?: string
   desc: string
   playCount: string
   imgUrl?: string
 }
 
-export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onBack, isMultiSelectMode = false, onToggleMultiSelect }: HeaderProps, ref) => {
+export default memo(({ componentId, embedded, onBack, isMultiSelectMode = false, onToggleMultiSelect, detailInfo, hideDesc = false, hideActionBar = false }: HeaderProps) => {
   const fullStatusBarHeight = useStatusbarHeight()
   const theme = useTheme()
   const t = useI18n()
   const shareType = useSettingValue('common.shareType')
   const info = useListInfo()
   const allList = useMyList()
-  const [detailInfo, setDetailInfo] = useState<DetailInfo>({ name: '', desc: '', playCount: '', imgUrl: info.img })
+  const { sheetRef: artistSheetRef, openArtist } = useArtistPicker()
+  const canOpenArtist = !!detailInfo.author
   const statusBarHeight = embedded ? 0 : fullStatusBarHeight
-
-  useImperativeHandle(ref, () => ({
-    setInfo(info) {
-      setDetailInfo(info)
-    },
-  }), [])
 
   const back = () => {
     if (onBack) {
@@ -167,12 +167,42 @@ export default forwardRef<HeaderType, HeaderProps>(({ componentId, embedded, onB
         <Pic playCount={detailInfo.playCount} imgUrl={detailInfo.imgUrl} />
         <View style={{ flexDirection: 'column', flexGrow: 1, flexShrink: 1, paddingLeft: 5 }} nativeID={NAV_SHEAR_NATIVE_IDS.songlistDetail_title}>
           <Text size={14} numberOfLines={ 1 }>{detailInfo.name}</Text>
-          <View style={{ flexGrow: 0, flexShrink: 1 }}>
-            <Text size={13} color={theme['c-font-label']} numberOfLines={ 4 }>{detailInfo.desc}</Text>
-          </View>
+          {
+            detailInfo.author
+              ? (
+                <TouchableOpacity
+                  style={styles.artistRow}
+                  activeOpacity={0.7}
+                  disabled={!canOpenArtist}
+                  onPress={() => {
+                    openArtist({ source: info.source, singer: detailInfo.author! })
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={detailInfo.author}
+                >
+                  <Text style={styles.artistName} size={12} color={theme['c-font-label']} numberOfLines={1}>{detailInfo.author}</Text>
+                  {
+                    canOpenArtist
+                      ? <Icon name="chevron-right" size={12} color={theme['c-font-label']} style={styles.artistArrow} />
+                      : null
+                  }
+                </TouchableOpacity>
+                )
+              : null
+          }
+          {
+            hideDesc
+              ? null
+              : (
+                <View style={{ flexGrow: 0, flexShrink: 1 }}>
+                  <Text size={13} color={theme['c-font-label']} numberOfLines={ 4 }>{detailInfo.desc}</Text>
+                </View>
+                )
+          }
         </View>
       </View>
-      <ActionBar name={detailInfo.name || info.name} />
+      {hideActionBar ? null : <ActionBar name={detailInfo.name || info.name} />}
+      <ArtistPickerSheet ref={artistSheetRef} />
       {/* <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View style={{ flexGrow: 0, flexShrink: 1, paddingTop: 5, paddingRight: 5 }}>
               <Text style={{ fontSize: 12, color: AppColors.normal20 }} numberOfLines={ 1 }>{playCount || '-'}</Text>
@@ -193,6 +223,17 @@ const styles = createStyle({
     flexDirection: 'row',
     flexGrow: 0,
     flexShrink: 0,
+  },
+  artistRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    marginTop: 2,
+  },
+  artistName: {
+    flexShrink: 1,
+  },
+  artistArrow: {
+    marginLeft: 2,
   },
   topRow: {
     flexGrow: 0,

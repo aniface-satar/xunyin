@@ -6,6 +6,8 @@ import { log as writeLog } from '@/utils/log'
 
 import { getUserLists, userLists } from '@/utils/listManage'
 import { getDislikeInfo } from '@/utils/dislikeManage'
+import { isAlbumListId } from '@/utils/musicSdk/albumNormalizers'
+import likedArtistState from '@/store/likedArtist/state'
 import { buildTrackKey, getAlbumName, getArtistKeys, getPrimaryArtist } from './trackKey.ts'
 import { bucketFromLangField, bucketFromLyric, resolveLang } from './language.ts'
 import type { LangBucket } from './language.ts'
@@ -17,7 +19,7 @@ import { getArtistLangTable, loadArtistLangTable, observeArtistLangField, observ
 import { ensureLibraryIndex, getLibraryTrackOrigins, refreshLibraryIndex } from './library.ts'
 import { buildTrackPlaylistIndex, buildSessionCoOccurrence } from './similarity.ts'
 import { selectPlaylistEvictions, normalizePlaylistKey } from './playlistIndex.ts'
-import { buildRadioProfile, buildPlaylistKeywords } from './profile.ts'
+import { buildRadioProfile, buildPlaylistKeywords, buildSimilarArtistSeeds, pickSimilarAlbum } from './profile.ts'
 import { createRadioQueue } from './queue.ts'
 import { createSession } from './session.ts'
 import { planChannelQuotas } from './channels.ts'
@@ -25,11 +27,11 @@ import { selectFinalQueue, type FinalQueueItem } from './diversity.ts'
 import { buildQualityDiagnostics, formatQualityDiagnostics, type QualityDiagnosticsSummary } from './diagnostics.ts'
 import { buildFinalQueueItems, filterPoolCandidates, mergePoolCandidates, poolStats, resolvePoolLang, shouldRefreshForProfileChange } from './candidatePool.ts'
 import { computePlaylistAudioAffinity, enqueueAudioAnalysis } from './audioFeature.ts'
-import { createSimilarArtistCandidates, refreshExternalCandidates, type CatalogRefreshParams, type KnownExternalPlaylist } from './candidate.ts'
+import { createSimilarAlbumCandidates, createSimilarArtistCandidates, refreshExternalCandidates, type CatalogRefreshParams, type KnownExternalPlaylist } from './candidate.ts'
 import { inferArtistLangFromTags, runSimilarArtistRefresh } from './similarArtist.ts'
 import type { SimilarArtistCache } from './similarArtist.ts'
 import { clearSimilarArtistCache, createSimilarArtistIo, loadSimilarArtistCache, setSimilarArtistCache } from './similarArtistStore.ts'
-import { getCatalogCapabilities, getChartBoards, getChartTracks, getPlaylistTags, type ChartSummary } from './sdkCatalog.ts'
+import { getAlbumTracks, getCatalogCapabilities, getChartBoards, getChartTracks, getPlaylistTags, type ChartSummary } from './sdkCatalog.ts'
 import { pickNewSongBoard, pickPlaylistSort, pickPlaylistTag, prioritizeL1LangSources, rankPlaylistsByProfile, rankTracksByProfile } from './tabSections.ts'
 import { getLearnedStyleTokens } from './tokenFeedback.ts'
 import { applySeedWeights, computePreferenceKeywords, computeSeedWeights, mergePreferenceKeywords, revokeSeedWeights, sanitizeWeights } from './onboarding.ts'
@@ -132,6 +134,11 @@ class RecommendationEngine {
     global.app_event.on('stop', () => {
       if (this.currentPlayId) void this.finishCurrent('app_destroy')
       void flushState()
+    })
+    global.state_event.on('likedArtistsUpdated', () => {
+      // 收藏歌手是显式偏好：一次改动画像就当攒满阈值，让下一轮刷新换进相似歌手/专辑
+      this.profileRevision += cfg.profileRefresh.revisionThreshold
+      this.maybeRefreshForProfileChange()
     })
     AppState.addEventListener('change', status => {
       if (status !== 'active') {
@@ -243,6 +250,8 @@ class RecommendationEngine {
       trackPrefs: getState().tracks,
       history,
       session: getState().session,
+      // 歌手页的显式收藏：只做相似歌手/专辑扩展的种子，不改 topArtists 的同歌手召回
+      likedArtists: likedArtistState.likedArtists.map(item => ({ name: item.name, source: item.source, id: item.id })),
       now: Date.now(),
     })
   }
@@ -250,7 +259,8 @@ class RecommendationEngine {
   private async getKnownExternalPlaylists(): Promise<KnownExternalPlaylist[]> {
     await getUserLists()
     return userLists
-      .filter(list => !!list.source && !!list.sourceListId)
+      // 收藏的专辑同样是"已知歌单"，但它的曲目全在库里，拉详情只会被整批过滤掉，白花一次请求
+      .filter(list => !!list.source && !!list.sourceListId && !isAlbumListId(list.sourceListId))
       .map(list => ({
         id: list.id,
         source: list.source!,
@@ -422,11 +432,11 @@ class RecommendationEngine {
     if (this.radioMode != 'radio') return null
     if (input.reason == 'initial' || input.reason == 'empty_queue' || input.reason == 'next_empty') return null
     if (input.remainingBudget < cfg.similarArtist.minBudget) return null
-    if (state.candidateCache.length < cfg.candidatePool.minCacheForInstantStart) return null
-    const seedArtists = input.params.profile.topArtists
-      .map(item => item.artist)
-      .filter(artist => !!artist && !input.params.blocked.singerNames.has(artist))
+    const seedArtists = buildSimilarArtistSeeds(input.params.profile, input.params.blocked.singerNames)
     if (!seedArtists.length) return null
+    // 池子还薄时优先保启动速度；但用户显式收藏了歌手，就是要相似扩展，此时放行
+    const hasLikedSeed = (input.params.profile.likedArtists ?? []).length > 0
+    if (!hasLikedSeed && state.candidateCache.length < cfg.candidatePool.minCacheForInstantStart) return null
     const policy = cfg.similarArtist
     // 只在真正跑 E 的刷新上推进计数：预算不足的轮次不该把"每 3 次起新种子"的节奏拖长
     const startNewSeed = this.similarArtistTick % policy.seedIntervalRefreshes == 0
@@ -459,7 +469,38 @@ class RecommendationEngine {
         state.candidateCache = filterPoolCandidates(state.candidateCache, input.exclusion)
         run.reasons.push(`similar_artist_songs:${run.songs.reduce((sum, item) => sum + item.tracks.length, 0)}`)
       }
-      return { requests: run.requests, reasons: run.reasons }
+      // 相似专辑扩展：从相似歌手的热门歌里挑一张还有未入库曲目的专辑取详情，只花 1 次请求；
+      // 专辑内的曲目比"歌手热门 8 首"更成体系，补的是 E 的纵深
+      let albumRequests = 0
+      if (run.songs.length && input.remainingBudget - run.requests >= 1) {
+        // 判重口径与入池过滤一致：trackKey + 跨源"歌名+歌手"对，别把整张听过的专辑当新专辑拉详情
+        const heardKeys = input.params.libraryPairKeys?.size
+          ? new Set([...input.params.libraryKeys, ...input.params.libraryPairKeys])
+          : input.params.libraryKeys
+        const albumPick = pickSimilarAlbum(run.songs, heardKeys)
+        if (albumPick) {
+          try {
+            const album = await getAlbumTracks('kg', albumPick.albumId, 1, { signal: input.params.signal })
+            const incoming = createSimilarAlbumCandidates(albumPick, album.tracks, input.params)
+            albumRequests = 1
+            if (incoming.length) {
+              state.candidateCache = mergePoolCandidates(state.candidateCache, incoming, cfg.candidatePool.maxSize, {
+                limits: input.poolLimits,
+                resolveBucket: input.poolBucketOf,
+              })
+              state.candidateCache = filterPoolCandidates(state.candidateCache, input.exclusion)
+              run.reasons.push(`similar_album:${albumPick.albumId}:${incoming.length}`)
+            }
+          } catch (error) {
+            recallLog('similarAlbumError', {
+              albumId: albumPick.albumId,
+              message: error instanceof Error ? error.message : String(error),
+            })
+            run.reasons.push('similar_album_failed')
+          }
+        }
+      }
+      return { requests: run.requests + albumRequests, reasons: run.reasons }
     } catch (error) {
       recallLog('similarArtistError', { message: error instanceof Error ? error.message : String(error) })
       return { requests: 0, reasons: ['similar_artist_failed'] }

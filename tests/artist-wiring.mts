@@ -7,6 +7,7 @@ const src = (rel: string) => readFileSync(path.join(import.meta.dirname, '..', r
 
 const searchTypeState = src('src/store/search/state.ts')
 const searchTypeSelector = src('src/screens/Home/Views/Search/SearchTypeSelector.tsx')
+const searchTypes = src('src/screens/Home/Views/Search/searchTypes.ts')
 const searchList = src('src/screens/Home/Views/Search/List.tsx')
 const searchIndex = src('src/screens/Home/Views/Search/index.tsx')
 const artistState = src('src/store/search/artist/state.ts')
@@ -19,8 +20,9 @@ const coreArtist = src('src/core/artist.ts')
 
 test('搜索页把 artist 作为第四种搜索类型接入', () => {
   assert.match(searchTypeState, /export type SearchType = 'music' \| 'songlist' \| 'album' \| 'artist'/)
-  assert.match(searchTypeSelector, /'album',\s*'artist',/)
-  assert.match(searchList, /listType == 'artist'[\s\S]{0,120}<ArtistList/)
+  assert.match(searchTypes, /'music',\s*'album',\s*'songlist',\s*'artist',/)
+  assert.match(searchTypeSelector, /SEARCH_TYPES\.map/)
+  assert.match(searchList, /<ArtistList ref=\{artistListRef\}/)
   assert.match(searchIndex, /searchArtistState/)
   assert.match(artistState, /\.artist\?\.search/)
 })
@@ -92,8 +94,9 @@ test('歌手详情页由头像区、三个标签和三个内容页组成', () =>
   assert.match(index, /<SongTab/)
   assert.match(index, /<AlbumTab/)
   assert.match(index, /<IntroTab/)
-  // 三个页常驻挂载，切标签不丢滚动位置
-  assert.match(index, /display: activeTab == .+ \? 'flex' : 'none'/)
+  // 三个页常驻在 PagerView 里，切标签不丢滚动位置，且支持左右滑动
+  assert.match(index, /<PagerView/)
+  assert.match(index, /onPageSelected=\{handlePageSelected\}/)
   assert.match(songTab, /<OnlineList/)
   assert.match(songTab, /setTempList/)
   assert.match(albumTab, /<Songlist/)

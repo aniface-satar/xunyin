@@ -6,6 +6,8 @@ import { Icon } from '@/components/common/Icon'
 import { useKeyboard } from '@/utils/hooks'
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
+import { WALLPAPER_INK } from '@/utils/wallpaper/palette'
+import GlassBackdrop from './GlassBackdrop'
 import Text from './Text'
 import { scaleSizeH } from '@/utils/pixelRatio'
 
@@ -101,8 +103,17 @@ export default forwardRef<DialogType, DialogProps>(({
     <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(0,0,0,0.35)" ref={modalRef}>
       <View style={{ ...styles.centeredView, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
         <View style={{ ...styles.modalView, height, backgroundColor: theme['c-content-background'] }} onStartShouldSetResponder={() => true}>
+          {
+            // 弹层自己的底：壁纸模式下这个面板原本的实白底变成了透明（`c-content-background`），
+            // 不糊的话一整块内容就直接压在照片纹理上，每一行都要在图的明暗里找字。
+            // 糊图铺满整屏、按窗口坐标对齐，所以面板里那一块的纹理与页面上的壁纸对得上。
+            // 普通主题不插：那边本来就是实白底，多铺一层会改变观感。
+            theme['is-wallpaper'] ? <GlassBackdrop blurRadius={24} style={{ borderRadius: 4 }} /> : null
+          }
           <View style={{ ...styles.header, backgroundColor: theme['c-primary-light-100-alpha-100'] }}>
-            <Text style={styles.title} size={13} color={theme['c-primary-light-1000']} numberOfLines={1}>{title}</Text>
+            {/* 这个键在壁纸模式下被整族反转成了暗色（它是"纸面白"，那里得变成暗面），
+                而这里当字色用。所以壁纸模式下显式取那支白，否则就是白底白字。 */}
+            <Text style={styles.title} size={13} color={theme['is-wallpaper'] ? WALLPAPER_INK : theme['c-primary-light-1000']} numberOfLines={1}>{title}</Text>
             {closeBtnComponent}
           </View>
           {children}

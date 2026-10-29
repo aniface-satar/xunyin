@@ -4,7 +4,8 @@ ADB="/e/Android/Sdk/platform-tools/adb.exe"
 PKG="cn.toside.music.mobile"
 ABI=$($ADB shell getprop ro.product.cpu.abi | tr -d '\r')
 echo "ABI: $ABI"
-APK="C:/Users/30913/Documents/ChatGPT/music/android/app/build/outputs/apk/release/xunyin-v1.0.8-arm64-v8a.apk"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+APK="$REPO_ROOT/android/app/build/outputs/apk/release/xunyin-v1.0.8-arm64-v8a.apk"
 
 echo "== 1. wake & install =="
 $ADB shell input keyevent KEYCODE_WAKEUP

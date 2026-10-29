@@ -109,25 +109,22 @@ test('歌手名匹配归一化后比对，大小写不敏感且只认精确匹�
 test('播控页 more sheet 的歌手/专辑行接上跳转', () => {
   const sheet = src('src/screens/PlayDetail/Vertical/Player/components/MusicMoreSheet.tsx')
   assert.match(sheet, /useOpenMusicDetail/)
-  assert.match(sheet, /resolveArtistForMusic/)
+  assert.match(sheet, /onOpenArtist/)
   assert.match(sheet, /getMusicAlbumListInfo/)
-  assert.match(sheet, /artist_not_found/)
   assert.match(sheet, /chevron-right/)
   assert.match(sheet, /hide\(/)
 })
 
 test('主页面歌手名可点击进歌手详情', () => {
   const musicInfo = src('src/screens/PlayDetail/Vertical/Player/components/MusicInfo.tsx')
-  assert.match(musicInfo, /useOpenMusicDetail/)
-  assert.match(musicInfo, /resolveArtistForMusic|getArtistSearchName/)
-  assert.match(musicInfo, /artist_not_found/)
+  assert.match(musicInfo, /useArtistPicker/)
+  assert.match(musicInfo, /ArtistPickerSheet/)
 })
 
 test('歌词页摘要的歌手名同样可点击进歌手详情', () => {
   const summary = src('src/screens/PlayDetail/Vertical/components/MusicSummary.tsx')
-  assert.match(summary, /useOpenMusicDetail/)
-  assert.match(summary, /resolveArtistForMusic/)
-  assert.match(summary, /artist_not_found/)
+  assert.match(summary, /useArtistPicker/)
+  assert.match(summary, /ArtistPickerSheet/)
   assert.match(summary, /<TouchableOpacity[\s\S]{0,200}onPress=\{handleOpenArtist\}/)
 })
 
@@ -149,19 +146,28 @@ test('歌手解析走歌曲源搜索并缓存成功结果', () => {
 
 test('我喜欢下的标签页增加专辑和歌手', () => {
   const detail = src('src/screens/MylistDetail/index.tsx')
-  assert.match(detail, /\['music', 'playlist', 'album', 'artist'\]/)
+  assert.match(detail, /\['music', 'album', 'playlist', 'artist'\]/)
   assert.match(detail, /mylist_album_tab/)
   assert.match(detail, /mylist_artist_tab/)
 
   const albumTab = src('src/screens/MylistDetail/AlbumTab.tsx')
-  assert.match(albumTab, /groupLikedAlbums/)
+  assert.match(albumTab, /useMyList/)
+  assert.match(albumTab, /buildLikedAlbumRows/)
   assert.match(albumTab, /useOpenMusicDetail/)
   assert.match(albumTab, /mylist_no_album/)
+  // 页面常驻后，滑回标签不能重复请求封面/数量
+  assert.match(albumTab, /loadedIdsRef\.current\.has/)
 
   const artistTab = src('src/screens/MylistDetail/ArtistTab.tsx')
-  assert.match(artistTab, /groupLikedArtists/)
-  assert.match(artistTab, /resolveArtistBySources/)
-  assert.match(artistTab, /artist_not_found/)
+  assert.match(artistTab, /mylist_no_artist/)
+  assert.doesNotMatch(artistTab, /groupLikedArtists/)
+
+  const playlistList = src('src/screens/MylistDetail/PlaylistList/index.tsx')
+  assert.match(playlistList, /isLikedNetworkPlaylist/)
+
+  const library = src('src/core/mylistLibrary.ts')
+  assert.match(library, /isLikedAlbumList/)
+  assert.doesNotMatch(library, /groupLikedAlbums|groupLikedArtists/)
 })
 
 test('三语文案包含新标签与空态', () => {

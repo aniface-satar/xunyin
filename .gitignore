@@ -117,3 +117,5 @@ android/.gradle-home/
 /.probe-t5.mts
 /pinned-good.js
 /.zcodeignore
+
+/.rollback/

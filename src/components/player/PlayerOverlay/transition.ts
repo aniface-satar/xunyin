@@ -13,6 +13,14 @@ export const getOverlayTransitionVisibility = ({
   showStaticContent: isOpen && !isTransitioning && !gestureEnabled,
 })
 
+// 卡片在转场里是 pointerEvents:none（动画期间不让误触子控件），只有静止态才接管触摸。
+// 根层如果跟着退成 box-none，空白处就匹配不到 overlay 树里的任何视图 ——
+// Android 的命中测试（TouchTargetHelper）会继续遍历下一个兄弟节点，也就是叠在下面的那一页，
+// 于是"点在播放页空白处"变成了"点开下面列表里的一行"。转场有几百毫秒（点开固定 800ms）
+// 而缓出极快，页面看着早就展开了，中招全凭点得早晚，所以是"有概率"。
+// 根层在挂载期间自己当命中目标（auto）即可兜住整屏；收起动画里也不放行，
+// 免得卡片还盖在屏幕上时点到底下那一页。
+export const getOverlayRootPointerEvents = (mounted: boolean) => (mounted ? 'auto' : 'none')
 
 export const getGhostLyricTop = (
   fullTitleTop: number,

@@ -29,6 +29,8 @@ const xhsShareText = '我在小红书收获了20次赞与收藏，点击链接�
 // 官方 QQ 群：用 mqqapi 直接打开群卡片（加入页），客户端不存在时退化为复制群号
 const qqGroupNumber = '1125210014'
 const qqGroupScheme = `mqqapi://card/show_pslcard?src_type=internal&version=1&uin=${qqGroupNumber}&card_type=group&source=qrcode`
+// 本项目 GitHub 仓库
+const githubRepoUrl = 'https://github.com/aniface-satar/xunyin'
 
 export default memo(() => {
   const theme = useTheme()
@@ -61,6 +63,13 @@ export default memo(() => {
   const copyQQGroupNumber = () => {
     clipboardWriteText(qqGroupNumber)
     toast(t('about_qq_copy_done'))
+  }
+  const openGithubRepo = () => {
+    void openUrl(githubRepoUrl)
+  }
+  const copyGithubRepoUrl = () => {
+    clipboardWriteText(githubRepoUrl)
+    toast(t('about_github_copy_done'))
   }
 
   // const goToQQGroup = () => {
@@ -137,7 +146,6 @@ export default memo(() => {
               </View>
               <Text style={styles.communityRowMain} size={15}>{t('about_xhs_title')}</Text>
               <View style={styles.communityRowSpace} />
-              <Text size={13} color={theme['c-primary-font']} numberOfLines={1}>{t('about_xhs_action')}</Text>
               <Icon name="chevron-right" size={12} color={theme['c-font-label']} style={styles.communityRowArrow} />
             </View>
             <Text style={styles.communityRowDesc} size={12} color={theme['c-font-label']}>{t('about_xhs_desc')}</Text>
@@ -155,10 +163,26 @@ export default memo(() => {
               </View>
               <Text style={styles.groupNumber} size={16}>{qqGroupNumber}</Text>
               <View style={styles.communityRowSpace} />
-              <Text size={13} color={theme['c-primary-font']} numberOfLines={1}>{t('about_qq_action')}</Text>
               <Icon name="chevron-right" size={12} color={theme['c-font-label']} style={styles.communityRowArrow} />
             </View>
             <Text style={styles.communityRowDesc} size={12} color={theme['c-font-label']}>{t('about_qq_desc')}</Text>
+          </TouchableOpacity>
+          <View style={{ ...styles.communityDivider, backgroundColor: theme['c-border-background'] }} />
+          <TouchableOpacity
+            style={styles.communityRow}
+            activeOpacity={0.7}
+            accessibilityRole="link"
+            onPress={openGithubRepo}
+            onLongPress={copyGithubRepoUrl}
+          >
+            <View style={styles.communityRowTop}>
+              <View style={{ ...styles.chip, borderColor: theme['c-primary-alpha-500'] }}>
+                <Text style={styles.chipText} size={11} color={theme['c-primary-font']}>GitHub</Text>
+              </View>
+              <Text style={styles.communityRowMain} size={15}>{t('about_github_star')}</Text>
+              <View style={styles.communityRowSpace} />
+              <Icon name="chevron-right" size={12} color={theme['c-font-label']} style={styles.communityRowArrow} />
+            </View>
           </TouchableOpacity>
         </View>
         <Text style={styles.communityHint} size={11.5} color={theme['c-font-label']}>{t('about_copy_hint')}</Text>

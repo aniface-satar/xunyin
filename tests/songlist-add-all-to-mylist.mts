@@ -82,6 +82,11 @@ test('这条链路自己不落库，加歌走既有 createList 一套', () => {
   }
 })
 
+test('专辑页不挂「加入自建歌单」按钮', () => {
+  assert.match(musicListSource, /hideActionBar/, '专辑页没有关掉按钮')
+  assert.match(headerSource, /hideActionBar \? null : <ActionBar name=\{detailInfo\.name \|\| info\.name\} \/>/)
+})
+
 test('三个语言都有文案，繁简不共用一条', () => {
   const keys = ['songlist_add_to_mylist', 'songlist_add_to_mylist_done', 'songlist_add_to_mylist_exists', 'songlist_add_to_mylist_failed', 'songlist_add_to_mylist_loading']
   for (const { name, entries } of langs) {

@@ -78,6 +78,12 @@ const getSongListContext = (source: LX.OnlineSource) => {
   return resetRequestHandles(songList)
 }
 
+const getAlbumContext = (source: LX.OnlineSource) => {
+  const album = (musicSdk as unknown as Record<string, { album?: Record<string, unknown> } | undefined>)[source]?.album
+  if (!album || typeof album != 'object') return null
+  return resetRequestHandles(album)
+}
+
 const getLeaderboardContext = (source: LX.OnlineSource) => {
   const leaderboard = (musicSdk as unknown as Record<string, { leaderboard?: Record<string, unknown> } | undefined>)[source]?.leaderboard
   if (!leaderboard || typeof leaderboard != 'object') return null
@@ -200,6 +206,41 @@ export const getPlaylistDetailPage = async(
     author: result?.info?.author,
     desc: result?.info?.desc,
     playCount: result?.info?.play_count ?? null,
+    total: result?.total ?? tracks.length,
+    page: result?.page ?? page,
+    tracks,
+  }
+}
+
+export interface AlbumDetailResult {
+  id: string
+  source: LX.OnlineSource
+  name?: string
+  author?: string
+  total: number
+  page: number
+  tracks: LX.Music.MusicInfoOnline[]
+}
+
+export const getAlbumTracks = async(
+  source: LX.OnlineSource,
+  albumId: string,
+  page = 1,
+  requestOptions?: RunRequestOptions,
+): Promise<AlbumDetailResult> => {
+  const context = getAlbumContext(source)
+  const result = await callMethod<{
+    list?: LX.Music.MusicInfoOnline[]
+    total?: number
+    page?: number
+    info?: { name?: string, author?: string }
+  }>(context, 'getAlbumDetail', [albumId, page], requestOptions)
+  const tracks = (result?.list ?? []).map(musicInfo => toNewMusicInfo(musicInfo) as LX.Music.MusicInfoOnline)
+  return {
+    id: albumId,
+    source,
+    name: result?.info?.name,
+    author: result?.info?.author,
     total: result?.total ?? tracks.length,
     page: result?.page ?? page,
     tracks,

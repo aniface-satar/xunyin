@@ -78,12 +78,16 @@ export const storageDataPrefix = {
 
   fontSize: '@font_size',
 
+  // 自定义图片背景那一列（图片文件在私有目录 custom_bg/，这里只存元数据）
+  customBg: '@custom_bg',
+
   theme: '@theme',
 
   cheatTip: '@cheat_tip',
   remoteLyricTip: '@remote_lyric_tip',
 
   dislikeList: '@dislike_list',
+  likedArtist: '@liked_artist',
   downloadList: '@download_list',
 
   userApi: '@user_api__',

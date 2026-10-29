@@ -1,7 +1,7 @@
 import { recommendationConfig } from './config.ts'
-import { buildTrackKey, getArtistKeys, getPrimaryArtist, normalizeArtistKey, normalizeText } from './trackKey.ts'
+import { buildTrackKey, exactPairKey, getArtistKeys, getPrimaryArtist, normalizeArtistKey, normalizeText } from './trackKey.ts'
 import { computeCoOccurrence, computePlaylistAffinity } from './similarity.ts'
-import type { InterestDirection, ProfileSeedTrack, RadioProfile, SessionPreference, TrackPreference } from './types.ts'
+import type { InterestDirection, LikedArtistSeed, ProfileSeedTrack, RadioProfile, SessionPreference, TrackPreference } from './types.ts'
 
 export { computeCoOccurrence, computePlaylistAffinity }
 
@@ -22,6 +22,8 @@ export interface BuildRadioProfileInput {
   trackPrefs: Record<string, TrackPreference>
   history?: readonly ProfileHistoryInput[]
   session?: SessionPreference
+  /** 歌手页显式收藏的歌手：只做相似歌手/专辑扩展的种子，不参与 topArtists。 */
+  likedArtists?: readonly LikedArtistSeed[]
   now?: number
   maxSeeds?: number
   maxSeedsPerArtist?: number
@@ -374,6 +376,20 @@ const buildTopArtists = (directions: InterestDirection[]): Array<{ artist: strin
     .slice(0, 20)
 }
 
+const normalizeLikedArtists = (list: readonly LikedArtistSeed[] | undefined): LikedArtistSeed[] => {
+  if (!list?.length) return []
+  const seen = new Set<string>()
+  const result: LikedArtistSeed[] = []
+  for (const item of list) {
+    const name = String(item.name ?? '').trim()
+    const key = normalizeText(name)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    result.push({ name, source: item.source, id: item.id })
+  }
+  return result
+}
+
 export const buildRadioProfile = (input: BuildRadioProfileInput): RadioProfile => {
   const now = input.now ?? Date.now()
   const directions = buildDirections(input, now)
@@ -388,8 +404,56 @@ export const buildRadioProfile = (input: BuildRadioProfileInput): RadioProfile =
     seeds,
     seedKeys: new Set(seeds.map(seed => seed.trackKey)),
     topArtists: buildTopArtists(directions),
+    likedArtists: normalizeLikedArtists(input.likedArtists),
     updatedAt: now,
   }
+}
+
+/**
+ * 相似歌手通道的种子：显式收藏的歌手优先（不依赖听歌历史），再用画像歌手按权重补齐。
+ * 用归一化名字去重；屏蔽歌手在进入 MB 检索前就剔除。
+ */
+export const buildSimilarArtistSeeds = (
+  profile: Pick<RadioProfile, 'likedArtists' | 'topArtists'>,
+  blockedNames: ReadonlySet<string> = new Set(),
+  limit = 50,
+): string[] => {
+  const seen = new Set<string>()
+  const seeds: string[] = []
+  const push = (name: string) => {
+    const key = normalizeText(name)
+    if (!key || seen.has(key) || blockedNames.has(key)) return
+    seen.add(key)
+    seeds.push(name)
+  }
+  for (const item of profile.likedArtists ?? []) push(item.name)
+  for (const item of profile.topArtists) push(item.artist)
+  return seeds.slice(0, limit)
+}
+
+/**
+ * 歌手热门歌直采目标：与收藏歌手同名的画像歌手不在这里花请求——
+ * 用户明确喜欢该歌手时，默认其作品大多已听过，请求应留给相似歌手/专辑。
+ */
+export const selectArtistHitTargets = (
+  profile: RadioProfile,
+  rotation: number,
+  blockedNames: ReadonlySet<string>,
+  count: number,
+): Array<{ artist: string, weight: number }> => {
+  if (count <= 0) return []
+  const topWeight = profile.topArtists[0]?.weight ?? 0
+  const likedKeys = new Set((profile.likedArtists ?? []).map(item => normalizeText(item.name)))
+  const strong = profile.topArtists.filter(item =>
+    item.weight >= topWeight * recommendationConfig.profile.coldStart.strongArtistWeightRatio &&
+    item.weight > 0 &&
+    !blockedNames.has(item.artist) &&
+    !likedKeys.has(item.artist),
+  )
+  if (!strong.length) return []
+  const start = Math.abs(rotation) % strong.length
+  return Array.from({ length: Math.min(count, strong.length) },
+    (_, index) => strong[(start + index) % strong.length])
 }
 
 /**
@@ -397,11 +461,18 @@ export const buildRadioProfile = (input: BuildRadioProfileInput): RadioProfile =
  * 歌手名搜到的是歌手向歌单，最能体现画像；歌单名搜到的是同主题歌单；
  * 词面学习验证过的风格词（如常被听完的"爵士/国风"）排最后兜底，不挤占画像主关键词。
  */
-export const buildPlaylistKeywords = (profile: RadioProfile, limit = 8, learnedTokens: readonly string[] = []): string[] => {
+export const buildPlaylistKeywords = (
+  profile: RadioProfile,
+  limit = 8,
+  learnedTokens: readonly string[] = [],
+  excludedArtists: readonly string[] = [],
+): string[] => {
   const keywords: string[] = []
+  const excluded = new Set(excludedArtists.map(artist => normalizeText(artist)).filter(Boolean))
   const add = (value: string | undefined) => {
     const normalized = normalizeText(value)
-    if (normalized && !keywords.includes(normalized)) keywords.push(normalized)
+    if (!normalized || excluded.has(normalized)) return
+    if (!keywords.includes(normalized)) keywords.push(normalized)
   }
   const topWeight = profile.topArtists[0]?.weight ?? 0
   for (const artist of profile.topArtists) {
@@ -451,4 +522,63 @@ export const pickChartBoard = <T extends { name?: string }>(
     return hits[rotation % hits.length].board
   }
   return scored[rotation % scored.length].board
+}
+
+export interface SimilarAlbumPick {
+  seedArtist: string
+  artistName: string
+  albumId: string
+  albumName: string
+}
+
+interface SimilarAlbumTrack {
+  name: string
+  singer?: string | null
+  source?: string | null
+  id?: string | number | null
+  meta?: { albumId?: string | number | null, albumName?: string | null } | null
+}
+
+/**
+ * 相似歌手的歌搜回来自带专辑信息：挑一张还有未入库曲目的专辑，再补一次详情取整张。
+ * 整张都已入库的专辑视为用户已听过/已收藏，不再重复推荐。
+ */
+export const pickSimilarAlbum = (
+  groups: ReadonlyArray<{ seedArtist: string, artistName: string, tracks: readonly SimilarAlbumTrack[] }>,
+  libraryKeys: ReadonlySet<string>,
+): SimilarAlbumPick | null => {
+  const picks: Array<{ pick: SimilarAlbumPick, unheard: number, order: number }> = []
+  let order = 0
+  for (const group of groups) {
+    const buckets = new Map<string, { pick: SimilarAlbumPick, unheard: number, order: number }>()
+    for (const track of group.tracks) {
+      const rawId = track.meta?.albumId
+      const albumId = rawId == null ? '' : String(rawId)
+      if (!albumId || albumId == '0') continue
+      const existing = buckets.get(albumId)
+      // 库里可能是别的音源的同一首：trackKey 不同，只能与 isExcluded 一样再按"歌名+歌手"判重
+      const heard = libraryKeys.has(buildTrackKey(track as unknown as LX.Music.MusicInfo)) ||
+        libraryKeys.has(exactPairKey(track.name, track.singer))
+      const unheard = heard ? 0 : 1
+      if (existing) {
+        existing.unheard += unheard
+        continue
+      }
+      buckets.set(albumId, {
+        pick: {
+          seedArtist: group.seedArtist,
+          artistName: group.artistName,
+          albumId,
+          albumName: String(track.meta?.albumName ?? '').trim(),
+        },
+        unheard,
+        order: order++,
+      })
+    }
+    for (const bucket of buckets.values()) {
+      if (bucket.unheard > 0) picks.push(bucket)
+    }
+  }
+  picks.sort((a, b) => b.unheard - a.unheard || a.order - b.order)
+  return picks[0]?.pick ?? null
 }

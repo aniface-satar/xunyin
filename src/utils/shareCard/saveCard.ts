@@ -37,16 +37,21 @@ const uniqueName = async(dir: string, baseName: string, ext: string) => {
 }
 
 /**
- * 把导出的临时 PNG 落到用户选的目录（spec §5：海报不混进下载的音乐文件，所以是独立的 shareCard.savePath）。
+ * 把导出的临时图片落到用户选的目录（spec §5：海报不混进下载的音乐文件，所以是独立的 shareCard.savePath）。
  * 返回落地的文件名；用户没选位置就返回 null。SAF 写出来的图不会被系统立刻收进媒体库，补一次扫描，扫不到就算了。
+ * 封面另存也走这条链路：目录、去重、扫描的判据只该有一份。
  */
-export const saveShareCard = async(tempPath: string, baseName: string): Promise<string | null> => {
+export const saveImageToChosenFolder = async(tempPath: string, baseName: string, ext: string): Promise<string | null> => {
   let dir = getDir()
   if (!dir || !await isUsableDir(dir)) dir = (await pickDir()) ?? ''
   if (!dir) return null
-  const name = await uniqueName(dir, baseName, 'png')
+  const name = await uniqueName(dir, baseName, ext)
   await copyFile(tempPath, joinSavePath(dir, name))
   const realPath = childRealPath(dir, name)
   if (realPath) void RNFS.scanFile(realPath).catch(() => {})
   return name
+}
+
+export const saveShareCard = async(tempPath: string, baseName: string): Promise<string | null> => {
+  return saveImageToChosenFolder(tempPath, baseName, 'png')
 }

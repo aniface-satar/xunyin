@@ -43,7 +43,7 @@
 `android-native/keystore.properties` 读取（该文件已 gitignore）：
 
 ```properties
-storeFile=C:/Users/30913/Documents/ChatGPT/music/android/app/debug.keystore
+storeFile=E:/Code/music/android/app/debug.keystore
 storePassword=android
 keyAlias=androiddebugkey
 keyPassword=android

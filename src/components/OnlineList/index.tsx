@@ -1,24 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react'
-import { ScrollView, View } from 'react-native'
+import { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
+import { View } from 'react-native'
 // import LoadingMask, { LoadingMaskType } from '@/components/common/LoadingMask'
 import List, { type ListProps, type ListType, type Status, type RowInfoType } from './List'
 import ListMenu, { type ListMenuType, type Position, type SelectInfo } from './ListMenu'
 import ListMusicMultiAdd, { type MusicMultiAddModalType as ListAddMultiType } from '@/components/MusicMultiAddModal'
 import ListMusicAdd, { type MusicAddModalType as ListMusicAddType } from '@/components/MusicAddModal'
 import MultipleModeBar, { type MultipleModeBarType, type SelectMode } from './MultipleModeBar'
+import MultipleActionsBar, { type MultipleAction } from './MultipleActionsBar'
 import { clearMusicUrl, handleDislikeMusic, handlePlay, handlePlayLater, handleShare, handleShowMusicSourceDetail } from './listAction'
 import { createStyle } from '@/utils/tools'
-import { BorderWidths, BorderRadius } from '@/theme'
-import Text from '@/components/common/Text'
-import Button from '@/components/common/Button'
-import { useTheme } from '@/store/theme/hook'
-import { useI18n } from '@/lang'
-import { hasDislike } from '@/core/dislikeList'
-import { hasMusicUrlByMusic } from '@/utils/data'
 import MusicToggleModal, { type MusicToggleModalType } from '@/screens/Home/Views/Mylist/MusicList/MusicToggleModal'
 import DownloadQualitySheet, { type DownloadQualitySheetType } from '@/components/DownloadQualitySheet'
-
-type MultipleAction = 'playLater' | 'download' | 'add' | 'toggleSource' | 'copyName' | 'musicSourceDetail' | 'removeCache' | 'dislike'
 
 export interface OnlineListProps {
   onRefresh: ListProps['onRefresh']
@@ -30,7 +22,14 @@ export interface OnlineListProps {
   rowType?: RowInfoType
   multiSelectStyle?: 'default' | 'mylist'
   multiSelectBarPosition?: 'top' | 'header'
+  /**
+   * builtin：选择栏（已选 N 项 / 全选）与底部批量操作栏都由列表自己渲染（默认）；
+   * external：不渲染内置选择栏，改由宿主页面在自己的工具条里绘制「取消 / 全选」，
+   * 宿主通过 ref 的 selectAll 驱动；底部批量操作栏保持不变。
+   */
+  multiSelectUi?: 'builtin' | 'external'
   onMultiSelectModeChange?: (isMultiSelectMode: boolean) => void
+  onSelectedListChange?: (selectedList: LX.Music.MusicInfoOnline[]) => void
   showLocateButton?: boolean
 }
 export interface OnlineListType {
@@ -38,66 +37,7 @@ export interface OnlineListType {
   setStatus: (val: Status) => void
   showMultiSelect: () => void
   exitMultiSelect: () => void
-}
-
-const OnlineMultipleActions = ({ selectedList, onAction }: {
-  selectedList: LX.Music.MusicInfoOnline[]
-  onAction: (action: MultipleAction) => void
-}) => {
-  const t = useI18n()
-  const theme = useTheme()
-  const musicInfo = selectedList[0]
-  const [hasUrlCache, setHasUrlCache] = useState(false)
-
-  useEffect(() => {
-    let isCurrent = true
-    setHasUrlCache(false)
-    if (musicInfo) {
-      void hasMusicUrlByMusic(musicInfo).then(exists => {
-        if (isCurrent) setHasUrlCache(exists)
-      })
-    }
-    return () => {
-      isCurrent = false
-    }
-  }, [musicInfo])
-
-  const actions = useMemo(() => {
-    const menus: Array<{ action: MultipleAction, label: string, disabled?: boolean }> = [
-      { action: 'playLater', label: t('play_later'), disabled: !selectedList.length },
-      { action: 'download', label: t('download_menu'), disabled: !selectedList.length },
-      { action: 'add', label: t('add_to'), disabled: !selectedList.length },
-      { action: 'toggleSource', label: t('toggle_source'), disabled: !musicInfo },
-      { action: 'copyName', label: t('copy_name'), disabled: !musicInfo },
-      { action: 'musicSourceDetail', label: t('music_source_detail'), disabled: !musicInfo },
-      { action: 'removeCache', label: t('list_remove_cache'), disabled: !hasUrlCache },
-      { action: 'dislike', label: t('dislike'), disabled: !musicInfo || hasDislike(musicInfo) },
-    ]
-    return menus
-  }, [hasUrlCache, musicInfo, selectedList.length, t])
-
-  return (
-    <ScrollView
-      style={multipleStyles.container}
-      contentContainerStyle={{ ...multipleStyles.content, borderTopColor: theme['c-border-background'] }}
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-    >
-      {
-        actions.map(action => (
-          <Button
-            key={action.action}
-            disabled={action.disabled}
-            onPress={() => { onAction(action.action) }}
-            style={{ ...multipleStyles.action, backgroundColor: theme['c-button-background'], borderColor: theme['c-border-background'] }}
-          >
-            <Text size={12} numberOfLines={1} color={theme['c-button-font']}>{action.label}</Text>
-          </Button>
-        ))
-      }
-    </ScrollView>
-  )
+  selectAll: (isAll: boolean) => void
 }
 
 export default forwardRef<OnlineListType, OnlineListProps>(({
@@ -110,7 +50,9 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
   rowType,
   multiSelectStyle = 'default',
   multiSelectBarPosition = 'top',
+  multiSelectUi = 'builtin',
   onMultiSelectModeChange,
+  onSelectedListChange,
   showLocateButton,
 }, ref) => {
   const listRef = useRef<ListType>(null)
@@ -138,6 +80,10 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
     exitMultiSelect() {
       hancelExitSelect()
     },
+    selectAll(isAll) {
+      listRef.current?.selectAll(isAll)
+      multipleModeBarRef.current?.setIsSelectAll(isAll)
+    },
   }))
 
   useEffect(() => {
@@ -161,7 +107,8 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
 
   const handleSelectedListChange = useCallback((list: LX.Music.MusicInfoOnline[]) => {
     setSelectedList(list)
-  }, [])
+    onSelectedListChange?.(list)
+  }, [onSelectedListChange])
 
   const showMenu = (musicInfo: LX.Music.MusicInfoOnline, index: number, position: Position) => {
     listMenuRef.current?.show({
@@ -232,14 +179,15 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
     />
   )
   const barInHeader = multiSelectBarPosition == 'header'
-  const listHeader = barInHeader
+  const builtinMultiSelectUi = multiSelectUi == 'builtin'
+  const listHeader = barInHeader && builtinMultiSelectUi
     ? <>{ListHeaderComponent}{multipleModeBar}</>
     : ListHeaderComponent
 
   return (
     <View style={styles.container}>
       {
-        barInHeader
+        barInHeader || !builtinMultiSelectUi
           ? null
           : <View style={styles.topBar}>{multipleModeBar}</View>
       }
@@ -267,8 +215,9 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
         />
       </View>
       {
+        // 底部批量操作栏与选择栏解耦：即使选择栏交给宿主页面绘制，这里仍保留原有位置
         multiSelectStyle == 'mylist' && isMultiSelectMode
-          ? <OnlineMultipleActions selectedList={selectedList} onAction={handleMultipleAction} />
+          ? <MultipleActionsBar selectedList={selectedList} onAction={handleMultipleAction} />
           : null
       }
       <ListMusicAdd ref={listMusicAddRef} onAdded={() => { hancelExitSelect() }} />
@@ -318,31 +267,5 @@ const styles = createStyle({
   },
   exitMultipleModeBtn: {
     height: 40,
-  },
-})
-
-const multipleStyles = createStyle({
-  container: {
-    flexGrow: 0,
-    flexShrink: 0,
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 8,
-    paddingRight: 2,
-    paddingVertical: 7,
-    borderTopWidth: BorderWidths.normal,
-  },
-  action: {
-    height: 30,
-    paddingLeft: 12,
-    paddingRight: 12,
-    marginRight: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: BorderRadius.normal,
-    borderWidth: BorderWidths.normal,
-    overflow: 'hidden',
   },
 })
