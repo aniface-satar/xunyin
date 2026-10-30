@@ -12,12 +12,16 @@ import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.util.Log;
+import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 
 import androidx.core.app.LocaleManagerCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.graphics.Insets;
 import androidx.core.os.LocaleListCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Promise;
@@ -29,6 +33,7 @@ import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.bridge.WritableNativeArray;
 
 import java.io.File;
+import java.lang.ref.WeakReference;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -36,6 +41,12 @@ public class UtilsModule extends ReactContextBaseJavaModule {
   private final ReactApplicationContext reactContext;
 
   private int listenerCount = 0;
+
+  // Android 15 起 targetSdk >= 35 的应用强制边到边：导航栏变成半透明压在内容上，
+  // 不再把窗口顶上去。这里记的是真正派发到窗口内容区的那份 insets ——
+  // 非边到边时 DecorView 已经把 insets 消费掉了，这里读到 0，老系统不会重复加内边距。
+  private volatile WindowInsetsCompat windowInsets;
+  private WeakReference<Activity> insetsActivity;
 
   UtilsEvent utilsEvent;
 
@@ -389,6 +400,48 @@ public class UtilsModule extends ReactContextBaseJavaModule {
     params.putInt("width", rect.width());
     params.putInt("height", rect.height());
     promise.resolve(params);
+  }
+
+  @ReactMethod
+  public void getWindowInsets(Promise promise) {
+    ensureInsetsListener(reactContext.getCurrentActivity());
+    promise.resolve(buildInsetsMap(windowInsets));
+  }
+
+  private void ensureInsetsListener(Activity activity) {
+    if (activity == null) return;
+    if (insetsActivity != null && insetsActivity.get() == activity) return;
+    // Activity 重建后窗口是新的，旧 insets 不再作数
+    windowInsets = null;
+    insetsActivity = new WeakReference<>(activity);
+    activity.runOnUiThread(() -> {
+      View content = activity.findViewById(android.R.id.content);
+      if (content == null) {
+        insetsActivity = null;
+        return;
+      }
+      ViewCompat.setOnApplyWindowInsetsListener(content, (view, insets) -> {
+        windowInsets = insets;
+        utilsEvent.sendEvent(utilsEvent.WINDOW_INSETS_CHANGED, buildInsetsMap(insets));
+        return insets;
+      });
+      ViewCompat.requestApplyInsets(content);
+    });
+  }
+
+  private WritableMap buildInsetsMap(WindowInsetsCompat insets) {
+    WritableMap params = Arguments.createMap();
+    if (insets == null) {
+      params.putInt("statusBar", 0);
+      params.putInt("navigationBar", 0);
+      return params;
+    }
+    // 三键导航的占用看 tappableElement，手势导航看 navigationBars，取大的那个才是真被系统栏压住的高度
+    Insets navigationBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+    Insets tappableElements = insets.getInsets(WindowInsetsCompat.Type.tappableElement());
+    params.putInt("statusBar", insets.getInsets(WindowInsetsCompat.Type.statusBars()).top);
+    params.putInt("navigationBar", Math.max(navigationBars.bottom, tappableElements.bottom));
+    return params;
   }
 
   @ReactMethod

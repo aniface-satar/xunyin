@@ -28,6 +28,19 @@ export const useStatusbarHeight = () => {
   return value
 }
 
+export const useNavigationBarHeight = () => {
+  const [value, update] = useState(state.navigationBarHeight)
+
+  useEffect(() => {
+    global.state_event.on('navigationBarHeightUpdated', update)
+    return () => {
+      global.state_event.off('navigationBarHeightUpdated', update)
+    }
+  }, [])
+
+  return value
+}
+
 export const useComponentIds = () => {
   const [value, update] = useState(state.componentIds)
 

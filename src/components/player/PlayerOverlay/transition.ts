@@ -303,6 +303,21 @@ export const getCardBottomClampRange = ({
   }
 }
 
+// 底部导航栏在强制边到边（Android 15 起 targetSdk ≥ 35）下要往屏幕底多铺一条系统导航栏的高度：
+// 图标和文字留在系统栏上沿，玻璃底继续铺到屏幕底，不然整条会被虚拟键盖掉。
+// 高度变了，getBottomBarRiseRange 的位移量也必须跟着变（位移要 ≥ 自身高度才能整条移出屏底）。
+export const getBottomBarHeight = ({
+  baseHeight,
+  bottomInset,
+}: {
+  baseHeight: number
+  bottomInset: number
+}) => {
+  const base = Number.isFinite(baseHeight) && baseHeight > 0 ? baseHeight : 0
+  const inset = Number.isFinite(bottomInset) && bottomInset > 0 ? bottomInset : 0
+  return base + inset
+}
+
 // 底部导航栏跟同一条窗口走：p = 1 时回到原位，p ≤ span 之后整条停在屏幕外（它的下沿会越出屏底，
 // 上沿收在屏幕下缘），中途与卡片下缘同速率下移/回升。
 // barHeight 用 BottomTabBar 自己的高度（TAB_BAR_HEIGHT）：它 ≥ 卡片下缘要收的那一段（winHeight - barBottom）时，

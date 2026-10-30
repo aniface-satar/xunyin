@@ -18,11 +18,13 @@ import musicSdk from '@/utils/musicSdk'
 import { usePlayerMusicInfo, usePlayMusicInfo } from '@/store/player/hook'
 
 import { useTheme } from '@/store/theme/hook'
+import { useNavigationBarHeight } from '@/store/common/hook'
 import { useI18n } from '@/lang'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
 import { primeBackdropForPanel } from '@/utils/backdropSnapshot'
 import { useOpenMusicDetail } from '@/utils/hooks/useOpenMusicDetail'
 import { assertApiSupport, createStyle, toast } from '@/utils/tools'
+import { scaleSizeH } from '@/utils/pixelRatio'
 
 export interface MusicMoreSheetType {
   show: () => void
@@ -67,6 +69,8 @@ const SHEET_COVER_TO_INFO_GAP = 14
 const MusicMoreSheet = forwardRef<MusicMoreSheetType, MusicMoreSheetProps>(({ onOpenArtist }, ref) => {
   const theme = useTheme()
   const t = useI18n()
+  // 强制边到边后三键导航压在面板下缘，底部操作行要让开它
+  const navigationBarHeight = useNavigationBarHeight()
   const musicInfo = usePlayerMusicInfo()
   const playMusicInfo = usePlayMusicInfo()
   const openMusicDetail = useOpenMusicDetail()
@@ -225,7 +229,7 @@ const MusicMoreSheet = forwardRef<MusicMoreSheetType, MusicMoreSheetProps>(({ on
                 restOffset={slide.sheetLayout}
                 style={{ backgroundColor: theme['c-content-background'] }}
               />
-              <View style={styles.content} onStartShouldSetResponder={() => true}>
+              <View style={{ paddingBottom: scaleSizeH(16) + navigationBarHeight }} onStartShouldSetResponder={() => true}>
                 <View style={styles.header}>
                   <Image cache={false} url={musicInfo.pic} style={styles.cover} />
                   <View style={styles.info}>
@@ -307,9 +311,6 @@ const styles = createStyle({
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
     overflow: 'hidden',
-  },
-  content: {
-    paddingBottom: 16,
   },
   header: {
     flexDirection: 'row',

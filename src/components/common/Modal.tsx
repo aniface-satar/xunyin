@@ -1,7 +1,7 @@
 // import { createStyle } from '@/utils/tools'
 import { useImperativeHandle, forwardRef, useRef, useState, useMemo } from 'react'
 import { Modal, TouchableWithoutFeedback, View, type ModalProps as _ModalProps } from 'react-native'
-import { useStatusbarHeight } from '@/store/common/hook'
+import { useNavigationBarHeight, useStatusbarHeight } from '@/store/common/hook'
 import { primeBackdropForPanel } from '@/utils/backdropSnapshot'
 // import { useWindowSize } from '@/utils/hooks'
 
@@ -38,6 +38,11 @@ export interface ModalProps extends Omit<_ModalProps, 'visible'> {
    * 是否填充状态栏
    */
   statusBarPadding?: boolean
+  /**
+   * 是否给系统导航栏让出底部安全距离。键盘弹出时由调用方关掉：
+   * IME 的 bottom inset 已经把导航栏那一段算进去了，再叠一次会多出一个导航栏高的空隙
+   */
+  navigationBarPadding?: boolean
 }
 
 
@@ -51,6 +56,7 @@ export default forwardRef<ModalType, ModalProps>(({
   bgHide = true,
   bgColor = 'rgba(0,0,0,0)',
   statusBarPadding = true,
+  navigationBarPadding = true,
   children,
   ...props
 }: ModalProps, ref) => {
@@ -59,6 +65,7 @@ export default forwardRef<ModalType, ModalProps>(({
   const openTokenRef = useRef(0)
   // const { window: windowSize } = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
+  const navigationBarHeight = useNavigationBarHeight()
   const handleRequestClose = () => {
     if (keyHide) {
       openTokenRef.current += 1
@@ -108,7 +115,7 @@ export default forwardRef<ModalType, ModalProps>(({
       {/* <StatusBar /> */}
       {/* <View style={{ flex: 1, paddingTop: statusBarPadding ? StatusBar.currentHeight : 0 }}> */}
       <TouchableWithoutFeedback style={{ flex: 1, paddingTop: statusBarPadding ? statusBarHeight : 0 }} onPress={handleBgClose}>
-        <View style={{ flex: 1, backgroundColor: bgColor }}>
+        <View style={{ flex: 1, backgroundColor: bgColor, paddingBottom: navigationBarPadding ? navigationBarHeight : 0 }}>
           {memoChildren}
         </View>
       </TouchableWithoutFeedback>

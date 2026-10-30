@@ -5,6 +5,7 @@ import { FlatList, type FlatListProps, RefreshControl, View } from 'react-native
 import CommentFloor from './CommentFloor'
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
+import { useNavigationBarHeight } from '@/store/common/hook'
 import { type Comment } from '../utils'
 import { useI18n } from '@/lang'
 import Text from '@/components/common/Text'
@@ -28,6 +29,8 @@ const List = forwardRef<ListType, ListProps>(({
 }, ref) => {
   // const t = useI18n()
   const theme = useTheme()
+  // 评论页没有底部导航栏，列表滚到底时最后一条会和页脚一起压在系统导航键下面
+  const navigationBarHeight = useNavigationBarHeight()
   const flatListRef = useRef<FlatList>(null)
   const [currentList, setList] = useState<Comment[]>([])
   const [status, setStatus] = useState<Status>('idle')
@@ -86,6 +89,7 @@ const List = forwardRef<ListType, ListProps>(({
     <FlatList
       ref={flatListRef}
       style={styles.list}
+      contentContainerStyle={{ paddingBottom: navigationBarHeight }}
       data={currentList}
       onEndReachedThreshold={0.5}
       // maxToRenderPerBatch={4}

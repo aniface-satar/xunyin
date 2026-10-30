@@ -5,7 +5,9 @@ import GlassBackdrop from '@/components/common/GlassBackdrop'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
 import { useTheme } from '@/store/theme/hook'
+import { useNavigationBarHeight } from '@/store/common/hook'
 import { useI18n } from '@/lang'
+import { scaleSizeH } from '@/utils/pixelRatio'
 import { createStyle } from '@/utils/tools'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
@@ -21,10 +23,14 @@ export interface LyricSettingSheetType {
   show: () => void
 }
 
+const SETTINGS_BOTTOM_PADDING = 18
+
 const LyricSettingSheet = forwardRef<LyricSettingSheetType>((_, ref) => {
   const theme = useTheme()
   const glassColors = useGlassColors()
   const t = useI18n()
+  // 强制边到边后三键导航压在面板下缘，最后一行设置要让开它
+  const navigationBarHeight = useNavigationBarHeight()
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
   const slide = useSheetSlideAnimation()
@@ -94,7 +100,7 @@ const LyricSettingSheet = forwardRef<LyricSettingSheetType>((_, ref) => {
                   <Icon name="close" size={14} color={glassColors.muted} />
                 </TouchableOpacity>
               </View>
-              <View style={styles.settings} onStartShouldSetResponder={() => true}>
+              <View style={{ paddingBottom: scaleSizeH(SETTINGS_BOTTOM_PADDING) + navigationBarHeight }} onStartShouldSetResponder={() => true}>
                 <SettingLyricProgress compact />
                 <SettingVolume compact />
                 <SettingPlaybackRate compact />
@@ -128,9 +134,6 @@ const styles = createStyle({
   content: {
     flex: 0,
     flexGrow: 0,
-  },
-  settings: {
-    paddingBottom: 18,
   },
   header: {
     flexDirection: 'row',

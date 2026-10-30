@@ -19,6 +19,7 @@ import { playList, playTempPlayList } from '@/core/player/player'
 import { removeTempPlayList } from '@/core/player/tempPlayList'
 import { usePlayInfo, usePlayMusicInfo, useRandomList, useTempPlayList } from '@/store/player/hook'
 import { useSettingValue } from '@/store/setting/hook'
+import { useNavigationBarHeight } from '@/store/common/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { LIST_ITEM_HEIGHT } from '@/config/constant'
@@ -140,6 +141,8 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
   const randomList = useRandomList()
   const togglePlayMethod = useSettingValue('player.togglePlayMethod')
   const listId = playInfo.playerListId ?? playMusicInfo.listId
+  // 强制边到边后三键导航压在面板下缘，列表要能滚到它上面去
+  const navigationBarHeight = useNavigationBarHeight()
 
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
@@ -449,7 +452,7 @@ const PlaylistSheet = forwardRef<PlaylistSheetType>((_, ref) => {
                         keyExtractor={item => `${item.route}_${item.index}_${item.musicInfo.id}`}
                         renderItem={renderItem}
                         getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
-                        contentContainerStyle={styles.listContent}
+                        contentContainerStyle={{ paddingBottom: scaleSizeH(14) + navigationBarHeight }}
                         nestedScrollEnabled
                         showsVerticalScrollIndicator={false}
                         scrollEnabled={!dragId}
@@ -556,9 +559,6 @@ const styles = createStyle({
   },
   listViewport: {
     flex: 1,
-  },
-  listContent: {
-    paddingBottom: 14,
   },
   empty: {
     alignItems: 'center',

@@ -11,11 +11,12 @@ import ShareCard, { type ShareCardData } from '@/components/ShareCard'
 import { RATIO_OPTIONS, type RatioKey, shotRect as shotRectFor } from './cardScale'
 import { type CardTone } from './cardTheme'
 import { useI18n } from '@/lang'
-import { useStatusbarHeight } from '@/store/common/hook'
+import { useNavigationBarHeight, useStatusbarHeight } from '@/store/common/hook'
 import { useTheme } from '@/store/theme/hook'
 import { BorderRadius } from '@/theme'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { useWindowSize } from '@/utils/hooks'
+import { scaleSizeH } from '@/utils/pixelRatio'
 import { cardFileName } from '@/utils/shareCard/cardFileName'
 import { captureShareCard, shareCapturedCard } from '@/utils/shareCard/exportCard'
 import { saveShareCard } from '@/utils/shareCard/saveCard'
@@ -75,6 +76,8 @@ const ShareCardModal = ({ visible, mode, musicInfo, lyricFontSize, lyricLines, o
   const glassColors = useGlassColors()
   const { width, height } = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
+  // 强制边到边后三键导航压在屏幕下缘，底部的选项行与动作按钮都要让开
+  const navigationBarHeight = useNavigationBarHeight()
   const shotRef = useRef<View>(null)
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState<BusyAction | null>(null)
@@ -237,7 +240,7 @@ const ShareCardModal = ({ visible, mode, musicInfo, lyricFontSize, lyricLines, o
             上面两排是选项：最上一排定卡底（白底 / 黑底），下面一排定比例（2:3 / 5:7 / 3:4 / 9:16 / 全屏），
             形状与歌词工具条的多选小按钮同族。顺序是"先定样子、再定裁切" —— 底色是这张图的一部分，
             比例只是画布，所以底色离被拍的卡更近。 */}
-        <Animated.View style={[styles.actions, chromeStyle]}>
+        <Animated.View style={[styles.actions, chromeStyle, { paddingBottom: scaleSizeH(BAR_PADDING_BOTTOM) + navigationBarHeight }]}>
           <Animated.View style={[styles.noticeLayer, { opacity: noticeAnim }]} pointerEvents="none">
             <Text size={12} color={glassColors.muted}>{t('share_card_creating')}</Text>
           </Animated.View>
@@ -338,7 +341,7 @@ const styles = createStyle({
     flexDirection: 'column',
     gap: ROW_GAP,
     paddingHorizontal: 20,
-    paddingBottom: BAR_PADDING_BOTTOM,
+    // 底边距在渲染处按导航栏高度现算
   },
   // 状态条绝对定位在选项行上方：它出现/消失不带动下面的按钮布局（热缓存下这里永远不出现）
   noticeLayer: {

@@ -6,9 +6,11 @@ import Text from '@/components/common/Text'
 import { FeatureIcon } from '@/components/common/Icon'
 import { useI18n } from '@/lang'
 import { useTheme } from '@/store/theme/hook'
+import { useNavigationBarHeight } from '@/store/common/hook'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
 import { primeBackdropForPanel } from '@/utils/backdropSnapshot'
 import { createStyle } from '@/utils/tools'
+import { scaleSizeH } from '@/utils/pixelRatio'
 
 export interface ShareModeSheetType {
   show: () => void
@@ -28,6 +30,8 @@ const ACTIONS = [
 const ShareModeSheet = forwardRef<ShareModeSheetType, ShareModeSheetProps>(({ onSelect }, ref) => {
   const theme = useTheme()
   const t = useI18n()
+  // 强制边到边后三键导航压在面板下缘，选项要让开它
+  const navigationBarHeight = useNavigationBarHeight()
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
   const slide = useSheetSlideAnimation()
@@ -110,7 +114,7 @@ const ShareModeSheet = forwardRef<ShareModeSheetType, ShareModeSheetProps>(({ on
               restOffset={slide.sheetLayout}
               style={{ backgroundColor: theme['c-content-background'] }}
             />
-            <View style={styles.content} onStartShouldSetResponder={() => true}>
+            <View style={{ paddingBottom: scaleSizeH(16) + navigationBarHeight }} onStartShouldSetResponder={() => true}>
               <View style={styles.titleRow}>
                 <Text size={13} color={theme['c-font-label']}>{t('share_mode_sheet_title')}</Text>
               </View>
@@ -154,9 +158,6 @@ const styles = createStyle({
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
     overflow: 'hidden',
-  },
-  content: {
-    paddingBottom: 16,
   },
   titleRow: {
     alignItems: 'center',

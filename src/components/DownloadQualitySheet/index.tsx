@@ -21,10 +21,12 @@ import { ensureUsableSaveDir } from '@/core/download/target'
 import { getQualityLabel } from '@/core/download/qualityLabel'
 import { getSharedQualities, type QualityChoice } from '@/core/download/quality'
 import { useTheme } from '@/store/theme/hook'
+import { useNavigationBarHeight } from '@/store/common/hook'
 import { useI18n } from '@/lang'
 import type { Message } from '@/lang'
 import { useSheetSlideAnimation } from '@/utils/hooks/useSheetSlideAnimation'
 import { createStyle } from '@/utils/tools'
+import { scaleSizeH } from '@/utils/pixelRatio'
 
 export interface DownloadQualitySheetType {
   show: (musicInfos: LX.Music.MusicInfoOnline[]) => void
@@ -59,6 +61,8 @@ const buildOptions = (
 const DownloadQualitySheet = forwardRef<DownloadQualitySheetType>((_, ref) => {
   const theme = useTheme()
   const t = useI18n()
+  // 强制边到边后三键导航压在面板下缘，最后一行要走得开
+  const navigationBarHeight = useNavigationBarHeight()
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
   const [options, setOptions] = useState<QualityOption[]>([])
@@ -138,7 +142,7 @@ const DownloadQualitySheet = forwardRef<DownloadQualitySheetType>((_, ref) => {
               restOffset={slide.sheetLayout}
               style={{ backgroundColor: theme['c-content-background'] }}
             />
-            <View style={styles.content}>
+            <View style={[styles.content, { paddingBottom: scaleSizeH(12) + navigationBarHeight }]}>
               <Text style={styles.title} size={13} color={theme['c-font']}>
                 {t('download_quality_title')}
               </Text>
@@ -217,7 +221,6 @@ const styles = createStyle({
   },
   content: {
     paddingTop: 16,
-    paddingBottom: 12,
   },
   title: {
     textAlign: 'center',

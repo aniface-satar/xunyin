@@ -85,6 +85,24 @@ export const onWindowSizeChange = (handler: (size: { width: number, height: numb
   }
 }
 
+export interface WindowInsets { statusBar: number, navigationBar: number }
+
+export const getWindowInsets = async(): Promise<WindowInsets> => {
+  return UtilsModule.getWindowInsets()
+}
+
+export const onWindowInsetsChange = (handler: (insets: WindowInsets) => void): () => void => {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  const eventEmitter = new NativeEventEmitter(UtilsModule)
+  const eventListener = eventEmitter.addListener('window-insets-changed', event => {
+    handler(event as WindowInsets)
+  })
+
+  return () => {
+    eventListener.remove()
+  }
+}
+
 export const isIgnoringBatteryOptimization = async(): Promise<boolean> => {
   return UtilsModule.isIgnoringBatteryOptimization()
 }

@@ -30,7 +30,8 @@ test('keeps every lyric player setting visible in the sheet content', () => {
 })
 
 test('uses compact settings so every option fits without scrolling', () => {
-  const contentIndex = componentSource.indexOf('<View style={styles.settings}')
+  // 底部留白改成"基础值 + 系统导航栏高度"之后不再走 styles.settings，用渲染处那段内边距当标记
+  const contentIndex = componentSource.indexOf('paddingBottom: scaleSizeH(SETTINGS_BOTTOM_PADDING)')
   const settings = [
     'SettingLyricProgress',
     'SettingVolume',

@@ -73,6 +73,10 @@ export const setStatusbarHeight = (size: number) => {
   commonActions.setStatusbarHeight(size)
 }
 
+export const setNavigationBarHeight = (size: number) => {
+  commonActions.setNavigationBarHeight(size)
+}
+
 export const setComponentId = (name: keyof CommonStateType['componentIds'], id: string) => {
   commonActions.setComponentId(name, id)
 }

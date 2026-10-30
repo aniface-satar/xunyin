@@ -289,6 +289,8 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
     winWidth = _useWindowSize.width,
     winHeight = _useWindowSize.height;
   var statusBarHeight = (0, require("../../../store/common/hook").useStatusbarHeight)();
+  // 强制边到边后三键导航压在窗口上，全屏播放器的底部控制区要让出这一条
+  var navigationBarHeight = (0, require("../../../store/common/hook").useNavigationBarHeight)();
   var animationRef = (0, _react.useRef)(null);
   var rootRef = (0, _react.useRef)(null);
   // 点开播放栏后，补间不立刻起步：先让 overlay 以 progress=1 真正画出去一帧（见 queueOpen）
@@ -437,7 +439,7 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   var fullControlSize = Math.min(Math.max(winWidth * 0.33 * global.lx.fontSize * 0.4, _Btn.BTN_WIDTH * 1.2), _Btn.BTN_WIDTH * 1.6, Math.max(winHeight * 0.11, _Btn.BTN_WIDTH * 1.2));
   var fullControlVerticalPadding = (0, require("../../../utils/pixelRatio").scaleSizeH)(22);
   var fullControlContainerHeight = fullControlSize + _Btn.BTN_WIDTH + (0, require("../../../utils/pixelRatio").scaleSizeH)(62);
-  var fullControlBottomPadding = (0, require("../../../utils/pixelRatio").scaleSizeH)(15);
+  var fullControlBottomPadding = (0, require("../../../utils/pixelRatio").scaleSizeH)(15) + navigationBarHeight;
   var fullActionRowBottomPadding = (0, require("../../../utils/pixelRatio").scaleSizeH)(6);
   var fullControlLeft = contentLeft;
   var fullControlRight = coverRight;

@@ -41,6 +41,10 @@ export class StateEvent extends Event {
     this.emit('statusbarHeightUpdated', size)
   }
 
+  navigationBarHeightUpdated(size: number) {
+    this.emit('navigationBarHeightUpdated', size)
+  }
+
   apiSourceUpdated(source: LX.AppSetting['common.apiSource']) {
     this.emit('apiSourceUpdated', source)
   }
