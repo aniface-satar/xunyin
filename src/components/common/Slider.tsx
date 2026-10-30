@@ -12,9 +12,9 @@ export type SliderProps = Pick<_SliderProps,
 | 'onSlidingComplete'
 | 'onValueChange'
 | 'step'
->
+> & Partial<Pick<_SliderProps, 'thumbTintColor' | 'minimumTrackTintColor' | 'maximumTrackTintColor'>>
 
-export default memo(({ value, minimumValue, maximumValue, onSlidingStart, onSlidingComplete, onValueChange, step }: SliderProps) => {
+export default memo(({ value, minimumValue, maximumValue, onSlidingStart, onSlidingComplete, onValueChange, step, thumbTintColor, minimumTrackTintColor, maximumTrackTintColor }: SliderProps) => {
   const theme = useTheme()
 
   const handleValueChange = (value: number) => {
@@ -28,9 +28,11 @@ export default memo(({ value, minimumValue, maximumValue, onSlidingStart, onSlid
       style={styles.slider}
       minimumValue={minimumValue}
       maximumValue={maximumValue}
-      minimumTrackTintColor={theme['c-primary-alpha-500']}
-      maximumTrackTintColor={theme['c-primary-alpha-500']}
-      thumbTintColor={theme['c-primary']}
+      // 默认跟主题走（c-primary 系）；特殊页面（如壁纸编辑页）可传入固定色盖掉 ——
+      // 那边的主题色正是正在编辑的变量，滑杆若跟主题走会随选色变化
+      minimumTrackTintColor={minimumTrackTintColor ?? theme['c-primary-alpha-500']}
+      maximumTrackTintColor={maximumTrackTintColor ?? theme['c-primary-alpha-500']}
+      thumbTintColor={thumbTintColor ?? theme['c-primary']}
       onSlidingStart={onSlidingStart}
       onSlidingComplete={onSlidingComplete}
       onValueChange={handleValueChange}

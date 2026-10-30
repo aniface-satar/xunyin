@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useRef } from 'react'
 import { Animated, TouchableOpacity, View } from 'react-native'
 import { useKeyboard } from '@/utils/hooks'
 
@@ -16,7 +16,7 @@ import { scaleSizeH } from '@/utils/pixelRatio'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { BorderRadius, BorderWidths } from '@/theme'
 import { usePlayerOverlay } from '@/components/player/PlayerOverlay'
-import { BOTTOM_STRIP_SETTLE_SPAN, getBottomBarHeight, getBottomBarRiseRange } from '@/components/player/PlayerOverlay/transition'
+import { BOTTOM_STRIP_SETTLE_SPAN, getBottomBarHeight, getBottomBarInset, getBottomBarRiseRange } from '@/components/player/PlayerOverlay/transition'
 import GlassBackdrop from '@/components/common/GlassBackdrop'
 
 const TAB_BAR_HEIGHT = 54
@@ -28,7 +28,16 @@ const BottomTabBar = ({ onTabPress }: { onTabPress?: (id: CommonState['navActive
   const t = useI18n()
   const playerOverlay = usePlayerOverlay()
   const glassColors = useGlassColors()
-  const navigationBarHeight = useNavigationBarHeight()
+  const liveNavigationBarHeight = useNavigationBarHeight()
+  const frozenNavigationBarHeightRef = useRef(liveNavigationBarHeight)
+  const barSettled = playerOverlay?.barSettled !== false
+  if (barSettled) frozenNavigationBarHeightRef.current = liveNavigationBarHeight
+  // 转场期间（展开动画、整页停留、收起动画）把这条高度钉住，落定后才接真实值（见 transition.ts）
+  const navigationBarHeight = getBottomBarInset({
+    liveInset: liveNavigationBarHeight,
+    frozenInset: frozenNavigationBarHeightRef.current,
+    settled: barSettled,
+  })
 
   if (keyboardShown) return null
 
@@ -37,9 +46,9 @@ const BottomTabBar = ({ onTabPress }: { onTabPress?: (id: CommonState['navActive
   const { progress } = playerOverlay
   // 系统导航栏（Android 15 起强制边到边）压在屏幕上，条形要多铺这一条：图标文字留在系统栏上沿，
   // 玻璃底一直铺到屏幕底。位移量必须用铺满后的总高度，否则收起时屏底会露出半截。
-  // 图标区仍按设计稿高度换算（与 styles.items 同一个值），只把导航栏那一条加在下面，视觉高度不变。
-  const barHeight = getBottomBarHeight({ baseHeight: TAB_BAR_HEIGHT, bottomInset: navigationBarHeight })
+  // 高度按 scaleSizeH 换算（styles.items 的 54 也走同一套换算），位移量取换算后的实际高度。
   const barContentHeight = scaleSizeH(TAB_BAR_HEIGHT)
+  const barHeight = getBottomBarHeight({ baseHeight: barContentHeight, bottomInset: navigationBarHeight })
   // 与卡片下缘共用同一条窗口（见 PlayerOverlay/transition.ts）：展开时进度一离开 1（动画第一帧 / 手指刚动）
   // 导航栏就跟着往下走，展开量到 60% 时整条已在屏幕外；收起时在行程后 60% 里一起升回来。
   // 旧窗口开在整屏一侧（[0, 0.3]），展开要等展开量到 70% 才动 —— 真机反馈"导航栏并没有跟着先动"

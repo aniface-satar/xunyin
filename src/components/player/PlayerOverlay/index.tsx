@@ -144,7 +144,8 @@ var OverlayBackdrop = function OverlayBackdrop(_refBackdrop) {
   var wallpaper = theme['is-wallpaper'] === true;
   var customBgSource = wallpaper ? (0, require("../../../utils/customBgBridge").getCustomBgSource)() : null;
   var wallpaperBackdrop = customBgSource != null && customBgSource.applyToPlayer && hasBackdropImage;
-  var veil = (0, require("../../../store/setting/hook").useSettingValue)('theme.customBg.veil');
+  var veilDark = (0, require("../../../store/setting/hook").useSettingValue)('theme.customBg.veilDark');
+  var veilLight = (0, require("../../../store/setting/hook").useSettingValue)('theme.customBg.veilLight');
   // 壁纸模式下这一层整个不画，改由 PlayerOverlay 的 WallpaperBackdrop 在卡片的**外面**铺：
   // 这一层是卡片的子层，卡片收起时靠 scaleY 把自己压进播放栏，背景图跟着一起被压扁 ——
   // 那正是"背景随动画形变"的来源。固定层不动、只开窗，才是一层钉在页面上的透明底。
@@ -169,18 +170,32 @@ var OverlayBackdrop = function OverlayBackdrop(_refBackdrop) {
         blurRadius: wallpaperBackdrop ? (customBgSource != null ? customBgSource.blur : 0) : 24
       }) : null, coverSurface != null ? (0, _jsxRuntime.jsx)(_CoverBackdrop.default, {
         progress: progress
-      }) : null, coverSurface != null ? null : (0, _jsxRuntime.jsx)(_reactNative.View, {
+      }) : null, coverSurface != null ? null : (wallpaper ? (hasBackdropImage ? (0, _jsxRuntime.jsxs)(_jsxRuntime.Fragment, {
+        // 与主界面同一对柔光：压暗层 + 提亮层各铺各的、同时生效（编辑页两条滑块）。
+        // 底色是两支常量，不再跟着墨色走 —— 柔光与墨已经解绑
+        children: [(0, _jsxRuntime.jsx)(_reactNative.View, {
+          style: [_reactNative.StyleSheet.absoluteFill, {
+            backgroundColor: require("../../../utils/wallpaper/palette").WALLPAPER_SCRIM,
+            opacity: (0, require("../../../utils/wallpaper/palette").clampWallpaperVeil)(veilDark)
+          }]
+        }), (0, _jsxRuntime.jsx)(_reactNative.View, {
+          style: [_reactNative.StyleSheet.absoluteFill, {
+            backgroundColor: require("../../../utils/wallpaper/palette").WALLPAPER_SCRIM_LIGHT,
+            opacity: (0, require("../../../utils/wallpaper/palette").clampWallpaperVeil)(veilLight)
+          }]
+        })]
+      }) : (0, _jsxRuntime.jsx)(_reactNative.View, {
         style: [_reactNative.StyleSheet.absoluteFill, {
-          // 壁纸模式下"洗白"这层换成跟主界面同款的深色柔光：不柔光的话白字直接压在照片上，
-          // 就是用户反馈的那个可读性问题；洗白的话照片又被洗淡了，两头都不对。
-          // 没有图（applyToPlayer 关掉、动态背景也关着）时铺满柔光色 —— 壁纸模式下 c-content-background
-          // 是全透明的，这时候不兜一层，整个播控页就变成一张全透明的膜，透出下面的首页。
-          backgroundColor: wallpaper ? (0, require("../../../utils/wallpaper/palette").WALLPAPER_SCRIM) : theme['c-content-background'],
-          opacity: wallpaper
-            ? (hasBackdropImage ? (0, require("../../../utils/wallpaper/palette").clampWallpaperVeil)(veil) : 1)
-            : (hasBackdropImage ? 0.58 : 0.64)
+          // 没有图（applyToPlayer 关掉、动态背景也关着）时铺满"主导方向"的那支柔光当场色 ——
+          // 壁纸模式下 c-content-background 是全透明的，不兜一层播控页会透出下面的首页
+          backgroundColor: (0, require("../../../utils/wallpaper/palette").dominantWallpaperScrim)(veilDark, veilLight)
         }]
-      })]
+      })) : (0, _jsxRuntime.jsx)(_reactNative.View, {
+        style: [_reactNative.StyleSheet.absoluteFill, {
+          backgroundColor: theme['c-content-background'],
+          opacity: hasBackdropImage ? 0.58 : 0.64
+        }]
+      }))]
     })
   });
 };
@@ -200,7 +215,8 @@ var WallpaperBackdrop = function WallpaperBackdrop(_refWallpaper) {
     progress = _refWallpaper.progress,
     imageSource = _refWallpaper.imageSource,
     blurRadius = _refWallpaper.blurRadius,
-    veil = _refWallpaper.veil,
+    veilDark = _refWallpaper.veilDark,
+    veilLight = _refWallpaper.veilLight,
     barTop = _refWallpaper.barTop;
   return <_reactNative.Animated.View pointerEvents="none" style={{
     position: 'absolute',
@@ -227,13 +243,22 @@ var WallpaperBackdrop = function WallpaperBackdrop(_refWallpaper) {
         resizeMode="cover"
         blurRadius={blurRadius}
       />
-      {/* 与主界面同款、同深度的柔光：0.24 亮纱会让壁纸发灰，洗白会把照片洗没 */}
+      {/* 与主界面同一对柔光（压暗 + 提亮两层、可叠加），深度各归编辑页那条滑块 */}
       <_reactNative.View
         style={[
           _reactNative.StyleSheet.absoluteFill,
           {
             backgroundColor: require("../../../utils/wallpaper/palette").WALLPAPER_SCRIM,
-            opacity: (0, require("../../../utils/wallpaper/palette").clampWallpaperVeil)(veil),
+            opacity: (0, require("../../../utils/wallpaper/palette").clampWallpaperVeil)(veilDark),
+          },
+        ]}
+      />
+      <_reactNative.View
+        style={[
+          _reactNative.StyleSheet.absoluteFill,
+          {
+            backgroundColor: require("../../../utils/wallpaper/palette").WALLPAPER_SCRIM_LIGHT,
+            opacity: (0, require("../../../utils/wallpaper/palette").clampWallpaperVeil)(veilLight),
           },
         ]}
       />
@@ -252,7 +277,8 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
   // 把 bg-image 换成壁纸 URI 的唯一条件；关掉时 bg-image 会回落到主题自带插画，那是另一张图。
   var wallpaperCustomBg = (0, require("../../../utils/customBgBridge").getCustomBgSource)();
   var wallpaperBackdropSource = wallpaperCustomBg != null && wallpaperCustomBg.applyToPlayer ? wallpaperCustomBg : null;
-  var wallpaperBackdropVeil = (0, require("../../../store/setting/hook").useSettingValue)('theme.customBg.veil');
+  var wallpaperBackdropVeilDark = (0, require("../../../store/setting/hook").useSettingValue)('theme.customBg.veilDark');
+  var wallpaperBackdropVeilLight = (0, require("../../../store/setting/hook").useSettingValue)('theme.customBg.veilLight');
   // 进入/收起那一下的"变色"必须挂在 progress 轴上（窗口表在 ./transition）：底色和墨色都是
   // OnCoverThemeProvider 从 context 发下来的静态值，卡片挂载那一帧就整体翻完，任何墙钟淡入都追不上手指。
   // baseTheme 直接读 store —— provider 只换 context、不换这份，于是两个端点就是"播放栏那一面"与"全屏那一面"。
@@ -1332,7 +1358,8 @@ var PlayerOverlay = (0, _react.forwardRef)(function (_ref2, ref) {
         progress={progress}
         imageSource={{ uri: wallpaperBackdropSource.uri }}
         blurRadius={wallpaperBackdropSource.blur}
-        veil={wallpaperBackdropVeil}
+        veilDark={wallpaperBackdropVeilDark}
+        veilLight={wallpaperBackdropVeilLight}
         barTop={source == null ? winHeight : source.bar.y}
       /> : null}{(0, _jsxRuntime.jsxs)(_reactNative.Animated.View, Object.assign({
         pointerEvents: mounted && !isTransitioning ? 'auto' : 'none',

@@ -278,6 +278,11 @@ const state: InitState = {
     'c-border-background': theme['c-primary-light-100-alpha-700'],
 
     'is-wallpaper': false,
+    // 只有壁纸模式才会用到（见 utils/wallpaper/palette.ts），这里给的是白墨的默认值；
+    // 壁纸模式由 buildWallpaperTheme 按当前背景自己的 ink 换成那一支。
+    // 柔光的底色不进主题：压暗/提亮两层是常量（WALLPAPER_SCRIM / WALLPAPER_SCRIM_LIGHT），
+    // 深度跟每张背景自己的条目走，与墨无关
+    'wallpaper-ink': 'rgb(255, 255, 255)',
 
     'bg-image-position': 'center',
     'bg-image-size': 'cover',

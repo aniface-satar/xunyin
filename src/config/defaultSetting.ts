@@ -98,7 +98,12 @@ const defaultSetting: LX.AppSetting = {
   'theme.customBg.enabled': false,
   'theme.customBg.applyToPlayer': true,
   'theme.customBg.activeId': '',
+  // 旧版全局柔光深度，仅作老存档升级的种子（见 core/customBg.ts），不再被写入
   'theme.customBg.veil': 0.55,
+  // 柔光镜像：真相在每张背景条目的 veilDark / veilLight 上（两层可叠加），加载后由 syncVeilSettings 对齐
+  'theme.customBg.veilDark': 0.3,
+  'theme.customBg.veilLight': 0,
+  'theme.customBg.ink': 'white',
 }
 
 

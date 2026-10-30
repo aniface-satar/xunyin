@@ -105,15 +105,21 @@ export const buildActiveThemeColors = (theme: LX.Theme): LX.ActiveTheme => {
     'is-wallpaper': false,
   } as unknown as LX.ActiveTheme
 
-  // 壁纸模式：整棵树换成「白字 + 透明面 + 深色柔光」那一套（见 utils/wallpaper/palette.ts）。
+  // 壁纸模式：整棵树换成「一支墨 + 透明面 + 柔光」那一套（见 utils/wallpaper/palette.ts）。
   //
   // 为什么在这里换而不是各组件里换：`c-content-background` 全项目有 45 个 .tsx 在读，
   // 逐个改成 transparent 既改不全也守不住 —— 新加一个页面就漏一个。这一层是它们共同的来源，
-  // 换一次就全换。组件侧只剩三处需要知情：PageContent 铺柔光、GlassBackdrop 不再糊背景、
-  // PlayerOverlay 的播控背景不叠压暗层，它们都读 `is-wallpaper`。
+  // 换一次就全换。组件侧只剩四处需要知情：PageContent 铺柔光、GlassBackdrop 不再糊背景、
+  // PlayerOverlay 的播控背景不叠压暗层、歌词页换专用那一档，它们都读 `is-wallpaper`。
+  //
+  // 墨色跟着**这一张背景自己**走（customBgBridge 带过来的 `ink`），不再读全局设置：
+  // 每张图有各自的明暗，白字与黑字哪套更好看是"这张图"的事。浅图用深墨、深图用浅墨，
+  // 柔光方向与状态栏图标由那一支颜色的亮度推出来（见 palette 里的 isDarkWallpaperInk）。
   // 强调色不跟着 applyToPlayer 走：那张图有没有铺到播控页，是播控页的可选项，
-  // 不该让整个 App 的强调色跟着翻（切一次播控页背景就换一套配色）。壁纸模式下永远是同一支白。
-  return customBg != null ? buildWallpaperTheme(activeTheme) : activeTheme
+  // 不该让整个 App 的强调色跟着翻（切一次播控页背景就换一套配色）。壁纸模式下永远是同一支墨。
+  return customBg != null
+    ? buildWallpaperTheme(activeTheme, customBg.ink)
+    : activeTheme
 }
 
 

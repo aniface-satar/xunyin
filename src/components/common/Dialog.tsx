@@ -6,7 +6,6 @@ import { Icon } from '@/components/common/Icon'
 import { useKeyboard } from '@/utils/hooks'
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
-import { WALLPAPER_INK } from '@/utils/wallpaper/palette'
 import GlassBackdrop from './GlassBackdrop'
 import Text from './Text'
 import { scaleSizeH } from '@/utils/pixelRatio'
@@ -111,9 +110,9 @@ export default forwardRef<DialogType, DialogProps>(({
             theme['is-wallpaper'] ? <GlassBackdrop style={{ borderRadius: 4 }} /> : null
           }
           <View style={{ ...styles.header, backgroundColor: theme['c-primary-light-100-alpha-100'] }}>
-            {/* 这个键在壁纸模式下被整族反转成了暗色（它是"纸面白"，那里得变成暗面），
-                而这里当字色用。所以壁纸模式下显式取那支白，否则就是白底白字。 */}
-            <Text style={styles.title} size={13} color={theme['is-wallpaper'] ? WALLPAPER_INK : theme['c-primary-light-1000']} numberOfLines={1}>{title}</Text>
+            {/* 这个键是"纸面白"，壁纸模式下被整族反转成了场色（白字那套是暗面、黑字那套是白面），
+                而这里当字色用。所以壁纸模式下显式取那一支墨，否则就是同色底同色字。 */}
+            <Text style={styles.title} size={13} color={theme['is-wallpaper'] ? theme['wallpaper-ink'] : theme['c-primary-light-1000']} numberOfLines={1}>{title}</Text>
             {closeBtnComponent}
           </View>
           {children}

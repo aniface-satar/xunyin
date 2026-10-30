@@ -4,7 +4,6 @@ import { Icon } from '@/components/common/Icon'
 import { useTheme } from '@/store/theme/hook'
 import Text from '@/components/common/Text'
 import { type RowInfo, createStyle } from '@/utils/tools'
-import { WALLPAPER_INK } from '@/utils/wallpaper/palette'
 
 export interface PathItem {
   name: string
@@ -56,8 +55,8 @@ export default memo(({ item, onPress, rowInfo }: {
             </View>
             {
               item.isDir
-                // 这个键是主题的"浅色墨"，壁纸模式下整族反转成暗色，压在同一条暗行上就看不见了
-                ? <Icon name="chevron-right" color={theme['is-wallpaper'] ? WALLPAPER_INK : theme['c-primary-light-100-alpha-600']} size={18} />
+                // 这个键是主题的"浅色墨"，壁纸模式下整族反转成场色，压在同一条行上就看不见了
+                ? <Icon name="chevron-right" color={theme['is-wallpaper'] ? theme['wallpaper-ink'] : theme['c-primary-light-100-alpha-600']} size={18} />
                 : <Text style={styles.size} size={12} color={theme['c-font-label']}>{item.sizeText}</Text>
             }
           </TouchableOpacity>

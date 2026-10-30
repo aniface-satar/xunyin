@@ -6,7 +6,8 @@ import { useStatusbarHeight } from '@/store/common/hook'
 import { getCachedBackdropSnapshot, requestBackdropSnapshot, type BackdropSnapshot } from '@/utils/backdropSnapshot'
 import { getCustomBgSource } from '@/utils/customBgBridge'
 import useWindowSize from '@/utils/hooks/useWindowSize'
-import { WALLPAPER_SCRIM } from '@/utils/wallpaper/palette'
+import { dominantWallpaperScrim } from '@/utils/wallpaper/palette'
+import { useSettingValue } from '@/store/setting/hook'
 
 // 跟帧重测的落定条件：连续 N 帧测量值不变视为动画已结束；超过时限强制停止兜底
 const SETTLE_STABLE_FRAMES = 3
@@ -37,9 +38,10 @@ interface GlassBackdropProps {
    */
   restOffset?: { x: number, y: number } | null
   /**
-   * 壁纸模式下压暗层的不透明度。快照里已经烘着页面自己那层柔光（`theme.customBg.veil`），
-   * 这里再按页面那档压一遍就会明显比四周黑一截、像一块深色框；固定成一个轻档，
-   * 各处玻璃面才是"同一张图的磨砂版"。
+   * 壁纸模式下玻璃面那层压色的不透明度。快照里已经烘着页面自己那对柔光
+   * （`theme.customBg.veilDark` / `veilLight`），这里再按页面那档压一遍就会明显比四周
+   * 黑一截、像一块深色框；固定成一个轻档，各处玻璃面才是"同一张图的磨砂版"。
+   * 压色的方向按两层柔光里开得更深的那支取（见 dominantWallpaperScrim）。
    */
   scrimOpacity?: number
   /**
@@ -56,6 +58,9 @@ interface GlassBackdropProps {
 
 const GlassBackdrop = ({ blurRadius = 16, overlayOpacity = 0.62, scrimOpacity = 0.3, flat = false, selfCapture = true, measureKey, restOffset, style }: GlassBackdropProps) => {
   const theme = useTheme()
+  // 两层柔光的主导方向：玻璃面只需要一支压色，跟页面里开得更深的那层同向
+  const veilDark = useSettingValue('theme.customBg.veilDark')
+  const veilLight = useSettingValue('theme.customBg.veilLight')
   const windowSize = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
   const wallpaper = theme['is-wallpaper']
@@ -210,7 +215,9 @@ const GlassBackdrop = ({ blurRadius = 16, overlayOpacity = 0.62, scrimOpacity = 
           style={[
             StyleSheet.absoluteFill,
             {
-              backgroundColor: WALLPAPER_SCRIM,
+              // 压色按两层柔光的主导方向取：只开压暗层就是深玻璃、只开提亮层就是浅玻璃，
+              // 两层都开时跟主调走 —— 与页面的观感是同一套语言
+              backgroundColor: dominantWallpaperScrim(veilDark, veilLight),
               opacity: scrimOpacity,
             },
           ]}

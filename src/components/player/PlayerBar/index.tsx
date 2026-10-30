@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, PanResponder, View, type LayoutChangeEvent } from 'react-native'
-import { useKeyboard } from '@/utils/hooks'
-import { useNavActiveId } from '@/store/common/hook'
+import { useKeyboard, useWindowSize } from '@/utils/hooks'
+import { useNavActiveId, useNavigationBarHeight } from '@/store/common/hook'
 
 import Pic from './components/Pic'
 import Title from './components/Title'
@@ -23,6 +23,13 @@ export default memo(({ isHome = false }: { isHome?: boolean }) => {
   const autoHidePlayBar = useSettingValue('common.autoHidePlayBar')
   const playerOverlay = usePlayerOverlay()
   const theme = useTheme()
+  // 播放栏的窗口坐标会被"窗口可用高度"和"系统导航栏让位高度"一起决定：
+  // 冷启动时页面先按旧窗口排一次（Android 15 边到边下 native 的 visible frame 不含系统栏，
+  // 比 RN 根视图矮一整条），随后窗口长高、导航栏 inset 才报到 —— 播放栏被顶着往上走了一截。
+  // 位置变了必须重新量一次，否则 overlay 的展开/收起终点还钉在旧坐标上，
+  // 卡片与播放栏之间会当场裂开一条（导航栏/控制栏"跳一下"就是这个）。
+  const navigationBarHeight = useNavigationBarHeight()
+  const { height: windowHeight } = useWindowSize()
   const barRef = useRef<View>(null)
   const [progressVisible, setProgressVisible] = useState(true)
   const [barLayout, setBarLayout] = useState({ x: 0, y: 0, width: 0, height: 0 })
@@ -66,7 +73,7 @@ export default memo(({ isHome = false }: { isHome?: boolean }) => {
         controls: controlLayout,
       })
     })
-  }, [artistLayout, barLayout.height, barLayout.width, controlLayout, picLayout, progressLayout, titleLayout])
+  }, [artistLayout, barLayout.height, barLayout.width, barLayout.y, controlLayout, navigationBarHeight, picLayout, progressLayout, titleLayout, windowHeight])
 
   const handleBarLayout = useCallback((event: LayoutChangeEvent) => {
     setBarLayout(event.nativeEvent.layout)

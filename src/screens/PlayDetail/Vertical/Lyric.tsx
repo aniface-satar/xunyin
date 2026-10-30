@@ -10,7 +10,7 @@ import { useTheme } from '@/store/theme/hook'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { BLUR_LYRIC_COMPONENT_OPACITY, LYRIC_COMPONENT_OPACITY } from '@/utils/monet/onCoverTheme'
 import { useCoverSurface } from '@/utils/monet/useCoverSurface'
-import { WALLPAPER_LYRIC_ACTIVE_SHADOW, WALLPAPER_LYRIC_INK, WALLPAPER_LYRIC_OPACITY, WALLPAPER_LYRIC_TRANSLATION_INK } from '@/utils/wallpaper/palette'
+import { WALLPAPER_LYRIC_OPACITY, getWallpaperLyricPalette } from '@/utils/wallpaper/palette'
 import { useLyricToolMode } from '@/utils/hooks/useLyricToolMode'
 import { buildLyricCopyText, hasLyricText, invertLyricSelection, pickLyricLineIndexes, pickLyricLinesForCopy, selectAllLyricLines, setLyricToolMode } from '@/core/lyricCopy'
 import { useI18n } from '@/lang'
@@ -90,7 +90,7 @@ interface LineProps {
   /** 非当前行（含它的译文）那一档透明度。由页面按"封面场是哪一档"决定，逐行不自己判断 ——
    *  判一次要订阅一次背景状态，摊到几百行上就是白订阅。 */
   lyricOpacity: number
-  /** 壁纸模式（自定义背景）且播控页没有封面场：非当前行改走 utils/wallpaper/palette 那一档白。
+  /** 壁纸模式（自定义背景）且播控页没有封面场：非当前行改走 utils/wallpaper/palette 那一档墨。
    *  同样由页面判一次再传进来，理由同上 —— 这个布尔要跟 `useCoverSurface()` 一起判断。 */
   wallpaperLyric: boolean
   onLayout: (lineNum: number, height: number, width: number) => void
@@ -102,6 +102,10 @@ interface LineProps {
 const LrcLine = memo(({ line, lineNum, activeLine, selected, selectable, lyricOpacity, wallpaperLyric, onLayout, onRowCount, onPress, onLongPress }: LineProps) => {
   const glassColors = useGlassColors(lyricOpacity)
   const theme = useTheme()
+  // 壁纸模式的墨色（白字 / 黑字）在主题里，非当前行这两支颜料与当前行的描边都从它派生 ——
+  // 换一次墨色，歌词页跟着一起翻，不需要各写一套常量
+  const wallpaperInk = theme['wallpaper-ink']
+  const wallpaperInks = useMemo(() => getWallpaperLyricPalette(wallpaperInk), [wallpaperInk])
   const lrcFontSize = useSettingValue('playDetail.vertical.style.lrcFontSize')
   const textAlign = useSettingValue('playDetail.style.align')
   const size = lrcFontSize / 10
@@ -117,18 +121,18 @@ const LrcLine = memo(({ line, lineNum, activeLine, selected, selectable, lyricOp
     ] as const : [
       // 壁纸模式：主题的 `c-350 / c-300` 在照片上只剩 0.29 / 0.26（见 palette 里那段账），
       // 换成专用那一档 —— 颜料自己带 alpha，页面那层 0.72 再乘一次
-      wallpaperLyric ? WALLPAPER_LYRIC_INK : glassColors.lyric,
-      wallpaperLyric ? WALLPAPER_LYRIC_TRANSLATION_INK : glassColors.lyricTranslation,
+      wallpaperLyric ? wallpaperInks.ink : glassColors.lyric,
+      wallpaperLyric ? wallpaperInks.translation : glassColors.lyricTranslation,
       glassColors.lyricOpacity,
     ] as const
-  }, [active, glassColors, wallpaperLyric])
+  }, [active, glassColors, wallpaperLyric, wallpaperInks])
 
-  // 当前行在壁纸模式下是纯白（c-primary = WALLPAPER_INK），色值到顶、没有更亮的空间；
-  // 要"再加深"只能压它外沿的暗部，把这一笔从"薄白"托成"带黑边的一笔"（见 palette）。
+  // 当前行在壁纸模式下是满墨（c-primary = 墨本身），色值已经到顶；要"再加深"只能压它外沿那一圈反色，
+  // 把这一笔从"薄薄一层墨"托成"带描边的一笔"（白字配黑环 / 黑字配白环，见 palette）。
   const activeShadow = wallpaperLyric && active ? {
-    textShadowColor: WALLPAPER_LYRIC_ACTIVE_SHADOW.color,
-    textShadowOffset: WALLPAPER_LYRIC_ACTIVE_SHADOW.offset,
-    textShadowRadius: WALLPAPER_LYRIC_ACTIVE_SHADOW.radius,
+    textShadowColor: wallpaperInks.activeShadow.color,
+    textShadowOffset: wallpaperInks.activeShadow.offset,
+    textShadowRadius: wallpaperInks.activeShadow.radius,
   } : null
 
   const handleLayout = ({ nativeEvent }: LayoutChangeEvent) => {
@@ -222,7 +226,7 @@ export default ({
   const posterLyricFontSize = lyricFontSizeSetting / 10
   const theme = useTheme()
   // 壁纸模式（自定义背景）下，歌词页的底是一张照片：主题灰阶 c-350 / c-300 压在上面只剩 1.87 / 1.61，
-  // 所以那两档换成 palette 里专门算过的一支（见 WALLPAPER_LYRIC_*）。
+  // 所以那两档换成 palette 里专门算过的一支（见 getWallpaperLyricPalette）。
   // 前提是**没有封面场** —— 开了动态背景时播放页整棵子树换的是封面墨色，那一档不能被这个覆盖。
   const wallpaperLyric = surface == null && theme['is-wallpaper']
   const lyricOpacity = surface?.mode === 'blur' ? BLUR_LYRIC_COMPONENT_OPACITY : wallpaperLyric ? WALLPAPER_LYRIC_OPACITY : LYRIC_COMPONENT_OPACITY

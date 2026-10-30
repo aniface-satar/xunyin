@@ -8,7 +8,7 @@ import { useSettingValue } from '@/store/setting/hook'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { useTheme } from '@/store/theme/hook'
 import { useCoverSurface } from '@/utils/monet/useCoverSurface'
-import { WALLPAPER_LYRIC_ACTIVE_SHADOW, WALLPAPER_LYRIC_INK, WALLPAPER_LYRIC_OPACITY, WALLPAPER_LYRIC_TRANSLATION_INK } from '@/utils/wallpaper/palette'
+import { getWallpaperLyricPalette } from '@/utils/wallpaper/palette'
 import { AnimatedColorText } from '@/components/common/Text'
 import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
@@ -24,12 +24,16 @@ interface LineProps {
   line: Line
   lineNum: number
   activeLine: number
-  /** 壁纸模式（自定义背景）且没有封面场：非当前行换成 palette 里那支专用的白（见 Vertical/Lyric.tsx 同名参数） */
+  /** 壁纸模式（自定义背景）且没有封面场：非当前行换成 palette 里那一档专用的墨（见 Vertical/Lyric.tsx 同名参数） */
   wallpaperLyric: boolean
   onLayout: (lineNum: number, height: number, width: number) => void
 }
 const LrcLine = memo(({ line, lineNum, activeLine, wallpaperLyric, onLayout }: LineProps) => {
   const glassColors = useGlassColors()
+  const theme = useTheme()
+  // 与竖屏同一支墨：白字 / 黑字两套的颜料与描边都从主题里那一支派生
+  const wallpaperInk = theme['wallpaper-ink']
+  const wallpaperInks = useMemo(() => getWallpaperLyricPalette(wallpaperInk), [wallpaperInk])
   const lrcFontSize = useSettingValue('playDetail.horizontal.style.lrcFontSize')
   const textAlign = useSettingValue('playDetail.style.align')
   const size = lrcFontSize / 10
@@ -42,17 +46,17 @@ const LrcLine = memo(({ line, lineNum, activeLine, wallpaperLyric, onLayout }: L
       glassColors.lyricActiveTranslation,
       1,
     ] as const : [
-      wallpaperLyric ? WALLPAPER_LYRIC_INK : glassColors.lyric,
-      wallpaperLyric ? WALLPAPER_LYRIC_TRANSLATION_INK : glassColors.lyricTranslation,
-      wallpaperLyric ? WALLPAPER_LYRIC_OPACITY : glassColors.lyricOpacity,
+      wallpaperLyric ? wallpaperInks.ink : glassColors.lyric,
+      wallpaperLyric ? wallpaperInks.translation : glassColors.lyricTranslation,
+      wallpaperLyric ? wallpaperInks.opacity : glassColors.lyricOpacity,
     ] as const
-  }, [active, glassColors, wallpaperLyric])
+  }, [active, glassColors, wallpaperLyric, wallpaperInks])
 
-  // 与竖屏同一笔账：当前行是纯白、到顶了，只能靠外沿那圈实暗环把它托深（见 palette）。
+  // 与竖屏同一笔账：当前行是满墨、到顶了，只能靠外沿那圈反色描边把它托出来（见 palette）。
   const activeShadow = wallpaperLyric && active ? {
-    textShadowColor: WALLPAPER_LYRIC_ACTIVE_SHADOW.color,
-    textShadowOffset: WALLPAPER_LYRIC_ACTIVE_SHADOW.offset,
-    textShadowRadius: WALLPAPER_LYRIC_ACTIVE_SHADOW.radius,
+    textShadowColor: wallpaperInks.activeShadow.color,
+    textShadowOffset: wallpaperInks.activeShadow.offset,
+    textShadowRadius: wallpaperInks.activeShadow.radius,
   } : null
 
   const handleLayout = ({ nativeEvent }: LayoutChangeEvent) => {

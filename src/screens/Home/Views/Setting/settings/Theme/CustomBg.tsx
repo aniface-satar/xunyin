@@ -29,7 +29,9 @@ interface CropTarget {
   src: string
   crop?: CustomBgCrop | null
   blur?: number
-  veil?: number
+  veilDark?: number
+  veilLight?: number
+  ink?: string
 }
 
 /**
@@ -38,8 +40,12 @@ interface CropTarget {
  * 它不再自带「自定义图片背景」那个开关，也不再管"要不要铺到播控页" ——
  * 前者归「应用主题」的两个勾选项，后者归「播控页背景」三选一（见 core/playerBg.ts）。
  *
- * 「深色柔光」和「背景模糊」也不在这里：它们跟"这一张图长什么样"绑死，
+ * 「柔光」「背景模糊」「界面颜色」都不在这里：它们跟"这一张图长什么样"绑死，
  * 已经下沉到裁剪页（CustomBgCropper）里，跟缩放、旋转排在一起，每张图各存一份。
+ *
+ * 界面颜色（墨）之所以也跟着下沉：一张夜景配白字、一张明信片配近黑，是同一批背景里的常态；
+ * 放在这一级就只能整套共用一支，切一次图要去改一次设置 —— 那不是"主题"，是折腾。
+ * 这一页只负责"有哪些图、哪张在用、每张是什么颜色"（列表里那一小圆点就是它的墨色）。
  */
 export default memo(() => {
   const t = useI18n()
@@ -53,12 +59,13 @@ export default memo(() => {
 
   const handlePick = useCallback((path: string) => {
     void importCustomBgSource(path).then((src) => {
-      setTarget({ src })
+      // 新图沿用当前那张的墨色：同一批壁纸通常是同一个观感偏好，省得每张都重挑一次
+      setTarget({ src, ink: activeItem?.ink })
     }).catch((err) => {
       console.log('import custom bg failed', err)
       toast(t('setting_basic_theme_custom_bg_read_failed'))
     })
-  }, [t])
+  }, [activeItem?.ink, t])
 
   const handleAdd = useCallback(() => {
     if (items.length >= MAX_CUSTOM_BG) {
@@ -74,7 +81,7 @@ export default memo(() => {
   const handleRecrop = useCallback((id: string) => {
     const item = items.find((row) => row.id === id)
     if (!item) return
-    setTarget({ id, src: item.src || item.file, crop: item.crop, blur: item.blur, veil: item.veil })
+    setTarget({ id, src: item.src || item.file, crop: item.crop, blur: item.blur, veilDark: item.veilDark, veilLight: item.veilLight, ink: item.ink })
   }, [items])
 
   const handleRemove = useCallback((id: string, name: string) => {
@@ -94,8 +101,8 @@ export default memo(() => {
     const current = target
     if (!current) return
     const task = current.id
-      ? replaceCustomBg(current.id, result.path, current.src, result.crop, result.blur, result.veil)
-      : addCustomBg(result.path, current.src, result.crop, result.blur, result.veil)
+      ? replaceCustomBg(current.id, result.path, current.src, result.crop, result.blur, result.veilDark, result.veilLight, result.ink)
+      : addCustomBg(result.path, current.src, result.crop, result.blur, result.veilDark, result.veilLight, result.ink)
     void task.then(async() => {
       setTarget(null)
       await refreshTheme()
@@ -125,9 +132,13 @@ export default memo(() => {
                   }}>
                     <Image source={{ uri: toImageUri(item.file) }} style={styles.thumb} resizeMode="cover" />
                     <View style={styles.itemText}>
-                      <Text size={13} numberOfLines={1} color={isActive ? theme['c-primary-font'] : theme['c-font']}>{item.name}</Text>
+                      <View style={styles.itemNameRow}>
+                        {/* 这一小格就是这张背景自己的前景色，一眼能看出"这图配的是黑字还是白字" */}
+                        <View style={[styles.itemInkDot, { backgroundColor: item.ink }]} />
+                        <Text size={13} numberOfLines={1} color={isActive ? theme['c-primary-font'] : theme['c-font']}>{item.name}</Text>
+                      </View>
                       <Text size={11} numberOfLines={1} style={styles.itemSub} color={theme['c-450']}>
-                        {`${t('setting_basic_theme_custom_bg_blur_value', { num: item.blur })} · ${t('setting_basic_theme_custom_bg_veil')} ${Math.round(item.veil * 100)}%`}
+                        {`${t('setting_basic_theme_custom_bg_blur_value', { num: item.blur })} · ${t('setting_basic_theme_custom_bg_sub_veil_dark')} ${Math.round(item.veilDark * 100)}% / ${t('setting_basic_theme_custom_bg_sub_veil_light')} ${Math.round(item.veilLight * 100)}%`}
                       </Text>
                     </View>
                     {isActive ? <Text size={11} color={theme['c-primary-font']}>{t('setting_basic_theme_custom_bg_in_use')}</Text> : null}
@@ -156,7 +167,9 @@ export default memo(() => {
         source={target?.src ?? ''}
         initialCrop={target?.crop ?? null}
         initialBlur={target?.blur}
-        initialVeil={target?.veil}
+        initialVeilDark={target?.veilDark}
+        initialVeilLight={target?.veilLight}
+        initialInk={target?.ink}
         onCancel={handleCropCancel}
         onApply={handleCropApply}
       />
@@ -167,6 +180,20 @@ export default memo(() => {
 const styles = createStyle({
   list: {
     paddingRight: 25,
+  },
+  itemNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  // 方形小色块（和编辑页那盘色板同一个形状），后面跟着名字
+  itemInkDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 2,
+    marginRight: 6,
+    // 白色与近白色压在浅色列表底上会化掉，给一圈极淡的描边把轮廓钉住
+    borderWidth: 1,
+    borderColor: 'rgba(128,128,128,0.45)',
   },
   item: {
     borderWidth: 1,

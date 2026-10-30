@@ -318,6 +318,22 @@ export const getBottomBarHeight = ({
   return base + inset
 }
 
+// 转场期间（展开 / 整页停留 / 收起）把底部这一条的系统栏高度钉住：这时条形正被 progress 逐帧位移，
+// 高度一变（inset 晚到、系统栏可见性抖动）条形当场改尺寸，而播放栏是 flex 跟着它走的 —— 两条一起位移，
+// 观感就是"导航栏和控制栏跳一下"。落定后才接真实值，所以这里只在 settled 时采信 live。
+export const getBottomBarInset = ({
+  liveInset,
+  frozenInset,
+  settled,
+}: {
+  liveInset: number
+  frozenInset: number
+  settled: boolean
+}) => {
+  if (settled) return Number.isFinite(liveInset) && liveInset > 0 ? liveInset : 0
+  return Number.isFinite(frozenInset) && frozenInset > 0 ? frozenInset : 0
+}
+
 // 底部导航栏跟同一条窗口走：p = 1 时回到原位，p ≤ span 之后整条停在屏幕外（它的下沿会越出屏底，
 // 上沿收在屏幕下缘），中途与卡片下缘同速率下移/回升。
 // barHeight 用 BottomTabBar 自己的高度（TAB_BAR_HEIGHT）：它 ≥ 卡片下缘要收的那一段（winHeight - barBottom）时，

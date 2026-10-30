@@ -10,6 +10,13 @@ export interface CustomBgSource {
   uri: string
   blur: number
   applyToPlayer: boolean
+  /**
+   * 这一张背景自己的前景色（字 / 图标 / 线 / 按钮的那一支）。
+   *
+   * 跟着条目走而不是跟着设置走：换一张图就该是那张图自己的配色。主题层在拼颜色时同步读它，
+   * 所以每次切图 / 改色都要经 setCustomBgSource 递一次（见 core/customBg.ts 的 syncBridge）。
+   */
+  ink: string
 }
 
 let source: CustomBgSource | null = null

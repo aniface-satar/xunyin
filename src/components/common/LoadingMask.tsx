@@ -1,9 +1,10 @@
 import { useState, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from 'react'
-import { Animated } from 'react-native'
+import { Animated, StyleSheet, View } from 'react-native'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
-import { WALLPAPER_SCRIM } from '@/utils/wallpaper/palette'
+import { WALLPAPER_SCRIM, WALLPAPER_SCRIM_LIGHT, clampWallpaperVeil } from '@/utils/wallpaper/palette'
+import { useSettingValue } from '@/store/setting/hook'
 import Loading from './Loading'
 
 // interface LoadingMaskProps {
@@ -16,6 +17,8 @@ export interface LoadingMaskType {
 
 export default forwardRef<LoadingMaskType, {}>((props, ref) => {
   const theme = useTheme()
+  const veilDark = useSettingValue('theme.customBg.veilDark')
+  const veilLight = useSettingValue('theme.customBg.veilLight')
   const t = useI18n()
   const animFade = useRef(new Animated.Value(0)).current
   const [maskVisible, setMaskVisible] = useState(false)
@@ -59,12 +62,23 @@ export default forwardRef<LoadingMaskType, {}>((props, ref) => {
 
   const maskComponent = useMemo(() => (
     // 壁纸模式下 c-main-background 是全透明的（背景要一直透到最底下），这层遮罩就失去了
-    // "先盖住、再淡出"的意义 —— 加载中还看得见下面那半张列表。所以那时候换成柔光色，
-    // 淡出时仍然是"从压暗回到照片"，跟别处是同一套语言。
-    <Animated.View style={{ ...styles.container, backgroundColor: theme['is-wallpaper'] ? WALLPAPER_SCRIM : theme['c-main-background'], opacity: animFade }}>
+    // "先盖住、再淡出"的意义 —— 加载中还看得见下面那半张列表。所以那时候改铺与页面同款的
+    // 一对柔光（压暗 + 提亮两层、深度跟当前那张背景走），淡出时仍然是"从柔光回到照片"，
+    // 与别处是同一套语言。两层放遮罩内部：整体一起淡出，不会露出一层"没淡干净"的底色。
+    <Animated.View style={{ ...styles.container, backgroundColor: theme['is-wallpaper'] ? 'transparent' : theme['c-main-background'], opacity: animFade }}>
+      {
+        theme['is-wallpaper']
+          ? (
+              <>
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: WALLPAPER_SCRIM, opacity: clampWallpaperVeil(veilDark) }]} />
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: WALLPAPER_SCRIM_LIGHT, opacity: clampWallpaperVeil(veilLight) }]} />
+              </>
+            )
+          : null
+      }
       <Loading size={25} label={t('list_loading')} />
     </Animated.View>
-  ), [animFade, t, theme])
+  ), [animFade, t, theme, veilDark, veilLight])
 
   return maskVisible ? maskComponent : null
 })

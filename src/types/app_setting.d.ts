@@ -132,11 +132,33 @@ declare global {
     'theme.customBg.activeId': string
 
     /**
-     * 壁纸模式的深色柔光强度（0 ~ 0.85）。
-     * 壁纸模式下字色只有白这一套，任何背景都得靠这层柔光压到足够暗才读得清 ——
-     * 明信片一样亮的图要多压一点，夜景图可以少压一点，所以做成可调的。
+     * 【遗留】旧版全局柔光深度。柔光已下沉到每张背景自己的条目里（veilDark / veilLight，
+     * 且拆成可叠加的两层），这个键只作为老存档升级时的种子被读一次
+     * （见 core/customBg.ts 的 loadCustomBg），不再被写入。
      */
     'theme.customBg.veil': number
+
+    /**
+     * 壁纸模式的压暗层（深色柔光）深度（0 ~ 0.85），「当前这套」的镜像。
+     * 与 veilLight 各铺各的、同时生效 —— 一压一提的组合就是雾面感。
+     * 真相在每张背景自己的 `CustomBgItem.veilDark`，这里只是让 PageContent / 播控页
+     * 这些只订阅 setting 的消费侧能跟上（见 core/customBg.ts 的 syncVeilSettings）。
+     */
+    'theme.customBg.veilDark': number
+
+    /**
+     * 壁纸模式的提亮层（浅色柔光）深度（0 ~ 0.85），「当前这套」的镜像，同上。
+     */
+    'theme.customBg.veilLight': number
+
+    /**
+     * 壁纸模式的墨色（自定义背景作为主题时的前景色），任意 CSS 颜色。
+     *
+     * 真相在每张背景自己的 `CustomBgItem.ink` 上 —— 这里存的是"当前这张是多少"的镜像，
+     * 只用于老存档升级时当种子、以及调试时读一眼。拼主题走的是 customBgBridge 那份，
+     * 别在这里改完就以为生效（改条目 + refreshTheme 才是那条路）。
+     */
+    'theme.customBg.ink': string
 
     /**
        * 动态背景的取色算法：

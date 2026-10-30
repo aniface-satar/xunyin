@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildWallpaperTheme, WALLPAPER_INK, WALLPAPER_LYRIC_ACTIVE_SHADOW, WALLPAPER_LYRIC_INK, WALLPAPER_LYRIC_OPACITY, WALLPAPER_LYRIC_TRANSLATION_INK } from '../src/utils/wallpaper/palette.ts'
+import { buildWallpaperTheme, WALLPAPER_INK, getWallpaperLyricPalette, WALLPAPER_LYRIC_OPACITY } from '../src/utils/wallpaper/palette.ts'
 
 // 绿主题那支强调色，跟 themes.ts 里 green 的一致
 const GREEN = 'rgb(77, 175, 124)'
@@ -96,7 +96,7 @@ test('文字阴影那条是实黑，不能被白强调色替掉', () => {
   assert.equal(buildWallpaperTheme(fakeTheme())['c-primary-dark-300-alpha-800'], 'rgba(0, 0, 0, 0.65)')
 })
 
-// —— 歌词页非当前行（WALLPAPER_LYRIC_*）——
+// —— 歌词页非当前行（getWallpaperLyricPalette）——
 // 最坏的场：纯白照片压默认 0.55 柔光（WALLPAPER_SCRIM 近黑）→ 场上 sRGB 119、Y=0.1846。
 // 这条账在 palette.ts 的注释里也写了一份，改常量必须两边一起改。
 const FIELD_SRGB = 119
@@ -108,8 +108,9 @@ const overField = (alpha: number) => relLum(alpha * 255 + (1 - alpha) * FIELD_SR
 const contrast = (alpha: number) => (overField(alpha) + 0.05) / (relLum(FIELD_SRGB) + 0.05)
 
 test('歌词页非当前行：照片上过 3.0，且与当前行仍差出明显一档', () => {
-  const onScreen = alphaOf(WALLPAPER_LYRIC_INK) * WALLPAPER_LYRIC_OPACITY
-  const translation = alphaOf(WALLPAPER_LYRIC_TRANSLATION_INK) * WALLPAPER_LYRIC_OPACITY
+  const inks = getWallpaperLyricPalette(WALLPAPER_INK)
+  const onScreen = alphaOf(inks.ink) * WALLPAPER_LYRIC_OPACITY
+  const translation = alphaOf(inks.translation) * WALLPAPER_LYRIC_OPACITY
   // 当前行是实白（wallpaper 模式下 c-primary = WALLPAPER_INK），它的屏上透明度恒为 1
   assert.ok(contrast(1) > 4.4, `当前行对最坏场应当有 4.4 以上，实际 ${contrast(1).toFixed(2)}`)
   assert.ok(contrast(onScreen) >= 3.0, `非当前行对最坏场要过大字号 3.0，实际 ${contrast(onScreen).toFixed(2)}`)
@@ -121,10 +122,11 @@ test('歌词页非当前行：照片上过 3.0，且与当前行仍差出明显�
 
 test('当前行的描边是实黑、比主题默认那条重：色值到顶后只能压暗部', () => {
   // 当前行颜色是 c-primary = 纯白，255 已经到顶 —— 想再"加深"只能是笔画外沿那一圈暗部。
+  const inks = getWallpaperLyricPalette(WALLPAPER_INK)
   const defaultShadowAlpha = alphaOf(buildWallpaperTheme(fakeTheme())['c-primary-dark-300-alpha-800'])
-  const activeAlpha = alphaOf(WALLPAPER_LYRIC_ACTIVE_SHADOW.color)
-  assert.match(WALLPAPER_LYRIC_ACTIVE_SHADOW.color, /^rgba\(0, 0, 0, /, '当前行的描边必须是黑的')
+  const activeAlpha = alphaOf(inks.activeShadow.color)
+  assert.match(inks.activeShadow.color, /^rgba\(0, 0, 0, /, '当前行的描边必须是黑的')
   assert.ok(activeAlpha >= defaultShadowAlpha + 0.2, `描边要比默认那条（${defaultShadowAlpha}）实一档，实际 ${activeAlpha}`)
-  assert.ok(WALLPAPER_LYRIC_ACTIVE_SHADOW.radius > 2, '半径要比主题默认的 2 宽，暗环才压得住照片的高光')
-  assert.ok(WALLPAPER_LYRIC_ACTIVE_SHADOW.offset.width > 0.2 || WALLPAPER_LYRIC_ACTIVE_SHADOW.offset.height > 0.2, '偏移要比默认的 0.2 大')
+  assert.ok(inks.activeShadow.radius > 2, '半径要比主题默认的 2 宽，暗环才压得住照片的高光')
+  assert.ok(inks.activeShadow.offset.width > 0.2 || inks.activeShadow.offset.height > 0.2, '偏移要比默认的 0.2 大')
 })

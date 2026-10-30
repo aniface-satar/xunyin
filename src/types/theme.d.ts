@@ -281,11 +281,17 @@ declare global {
       'c-border-background': string
       'bg-image'?: ImageSourcePropType
       /**
-       * 壁纸模式：自定义图片背景生效时，整棵树都换成了「白字 + 透明面」那一套配色
+       * 壁纸模式：自定义图片背景生效时，整棵树都换成了「一支墨 + 透明面」那一套配色
        * （见 utils/wallpaper/palette.ts）。组件靠这个布尔决定要不要再糊一层背景、
        * 要不要在柔光之外补压一层，不用各自去读设置。
        */
       'is-wallpaper': boolean
+      /**
+       * 壁纸模式下的墨色（字 / 图标 / 线 / 按钮共用的那一支）。
+       * 它是当前这张背景自己选的那支颜色（CustomBgItem.ink），从色板里来，不限于黑白。
+       * Dialog 标题、选择器的箭头这些"把主题浅色键当字色用"的地方要显式取它。
+       */
+      'wallpaper-ink': string
     }
 
     interface Theme {
