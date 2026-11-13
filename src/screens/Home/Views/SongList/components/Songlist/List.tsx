@@ -14,8 +14,8 @@ import Text from '@/components/common/Text'
 type FlatListType = FlatListProps<ListInfoItem>
 
 // const MAX_WIDTH = scaleSizeW(110)
-const MIN_WIDTH = scaleSizeW(110)
-const GAP = scaleSizeW(20)
+const MIN_WIDTH = Math.min(scaleSizeW(110), 145)
+const GAP = Math.min(scaleSizeW(20), 20)
 
 export interface ListProps {
   onRefresh: () => void
@@ -98,23 +98,10 @@ export default forwardRef<ListType, ListProps>(({ onRefresh, onLoadMore, onOpenD
     )
   }, [onLoadMore, status])
 
-
-  // const itemWidth = useMemo(() => {
-  //   let itemWidth = Math.max(Math.trunc(width * 0.125), MAX_WIDTH)
-  //   // if (itemWidth < )
-  // }, [width])
-  // const computedItemWidth = useMemo(() => {
-  //   let w = width - GAP
-  //   let n = width / (MIN_WIDTH + GAP)
-  //   if (n > 10) n = 10
-  //   return Math.floor(w / n)
-  // }, [width])
-  // console.log(Math.trunc(width * 0.125), itemWidth)
-  // console.log(itemWidth, MIN_WIDTH, GAP, width)
   const rowInfo = useMemo(() => {
     let w = width - GAP
     let n = width / (MIN_WIDTH + GAP)
-    if (n > 10) n = 10
+    if (n > 8) n = 8
     let computedItemWidth = Math.floor(w / n)
     const num = Math.max(Math.floor(width / computedItemWidth), 2)
     return {
@@ -122,7 +109,7 @@ export default forwardRef<ListType, ListProps>(({ onRefresh, onLoadMore, onOpenD
       width: (width - GAP) / num,
     }
   }, [width])
-  // console.log(rowNum)
+
   const list = useMemo(() => {
     const list = [...currentList]
     let whiteItemNum = (list.length % rowInfo.num)
@@ -141,7 +128,6 @@ export default forwardRef<ListType, ListProps>(({ onRefresh, onLoadMore, onOpenD
     }
     return list
   }, [currentList, rowInfo])
-  // console.log(listInfo.list.map((item) => item.id))
 
   return (
     <View style={styles.container} onLayout={onLayout}>
