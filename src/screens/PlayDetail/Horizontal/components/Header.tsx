@@ -1,12 +1,9 @@
 import { memo, useRef } from 'react'
-
 import { View, StyleSheet, TouchableOpacity } from 'react-native'
 
 import { Icon } from '@/components/common/Icon'
 import { pop } from '@/navigation'
-import { usePlayerMusicInfo } from '@/store/player/hook'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
-import Text from '@/components/common/Text'
 import { scaleSizeH } from '@/utils/pixelRatio'
 import { HEADER_HEIGHT as _HEADER_HEIGHT, NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
 import commonState from '@/store/common/state'
@@ -16,19 +13,6 @@ import SettingPopup, { type SettingPopupType } from '../../components/SettingPop
 import DesktopLyricBtn from './DesktopLyricBtn'
 
 export const HEADER_HEIGHT = scaleSizeH(_HEADER_HEIGHT)
-
-const Title = () => {
-  const glassColors = useGlassColors()
-  const musicInfo = usePlayerMusicInfo()
-
-
-  return (
-    <View style={styles.titleContent}>
-      <Text numberOfLines={1} style={styles.title} size={14} color={glassColors.text}>{musicInfo.name}</Text>
-      <Text numberOfLines={1} style={styles.title} size={12} color={glassColors.muted}>{musicInfo.singer}</Text>
-    </View>
-  )
-}
 
 export default memo(() => {
   const popupRef = useRef<SettingPopupType>(null)
@@ -47,7 +31,7 @@ export default memo(() => {
         <TouchableOpacity onPress={back} style={{ ...styles.button, width: HEADER_HEIGHT }}>
           <Icon name="chevron-left" size={18} color={glassColors.text} />
         </TouchableOpacity>
-        <Title />
+        <View style={styles.spacer} />
         <DesktopLyricBtn />
         <CommentBtn />
         <Btn icon="slider" onPress={showSetting} />
@@ -57,13 +41,10 @@ export default memo(() => {
   )
 })
 
-
 const styles = StyleSheet.create({
   container: {
     flex: 0,
-    // backgroundColor: '#ccc',
     flexDirection: 'row',
-    // justifyContent: 'center',
     height: '100%',
   },
   button: {
@@ -72,17 +53,7 @@ const styles = StyleSheet.create({
     height: '100%',
     flex: 0,
   },
-  titleContent: {
+  spacer: {
     flex: 1,
-    // alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    // flex: 1,
-    // textAlign: 'center',
-  },
-  icon: {
-    paddingLeft: 4,
-    paddingRight: 4,
   },
 })

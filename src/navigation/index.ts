@@ -21,7 +21,7 @@ const init = (callback: () => void | Promise<void>) => {
     //   },
     // },
     layout: {
-      orientation: ['portrait'],
+      orientation: ['portrait', 'landscape'],
     },
   })
   unRegisterEvent = Navigation.events().registerScreenPoppedListener(({ componentId }) => {
