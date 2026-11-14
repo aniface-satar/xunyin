@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 // import { View, StyleSheet } from 'react-native'
-import { useHorizontalMode } from '@/utils/hooks'
+import { useTabletMode } from '@/utils/hooks/useTabletMode'
 
 import Vertical from './Vertical'
 import Horizontal from './Horizontal'
@@ -12,14 +12,14 @@ import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS } from '@/config/constant'
 
 export default ({ componentId }: { componentId: string }) => {
-  const isHorizontalMode = useHorizontalMode()
+  const { isWideLayout } = useTabletMode()
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.playDetail, componentId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  if (isHorizontalMode) {
+  if (isWideLayout) {
     return (
       <PageContent>
         <StatusBar />
