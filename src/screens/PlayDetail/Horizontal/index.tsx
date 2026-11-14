@@ -9,18 +9,36 @@ import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS } from '@/config/constant'
 import PageContent from '@/components/PageContent'
 import commonState, { type InitState as CommonState } from '@/store/common/state'
+import { usePlayerMusicInfo } from '@/store/player/hook'
+import { useGlassColors } from '@/utils/hooks/useGlassColors'
+import { useTheme } from '@/store/theme/hook'
+import Text from '@/components/common/Text'
 
 import Pic from './Pic'
-// import ControlBtn from './ControlBtn'
 import Lyric from './Lyric'
 import Player from './Player'
 import { createStyle } from '@/utils/tools'
-import { marginLeftRaw } from './constant'
 import { useStatusbarHeight } from '@/store/common/hook'
-// import MoreBtn from './MoreBtn2'
+
+const SongTitle = memo(() => {
+  const musicInfo = usePlayerMusicInfo()
+  const glassColors = useGlassColors()
+
+  return (
+    <View style={styles.titleBox}>
+      <Text numberOfLines={2} style={styles.songName} size={17} color={glassColors.text}>
+        {musicInfo.name}
+      </Text>
+      <Text numberOfLines={1} style={styles.singerName} size={13} color={glassColors.muted}>
+        {musicInfo.singer}
+      </Text>
+    </View>
+  )
+})
 
 export default memo(({ componentId }: { componentId: string }) => {
   const statusBarHeight = useStatusbarHeight()
+  const theme = useTheme()
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.playDetail, componentId)
@@ -60,14 +78,11 @@ export default memo(({ componentId }: { componentId: string }) => {
           <View style={styles.leftContent}>
             <MoreBtn />
             <Pic componentId={componentId} />
+            <SongTitle />
           </View>
           <Player />
-          {/* <View style={styles.controlBtn} nativeID="pageIndicator">
-            <MoreBtn />
-            <ControlBtn />
-          </View> */}
         </View>
-        <View style={styles.right}>
+        <View style={{ ...styles.right, borderLeftColor: theme['c-border-background'] }}>
           <Lyric />
         </View>
       </View>
@@ -81,29 +96,37 @@ const styles = createStyle({
     flexDirection: 'row',
   },
   left: {
-    flex: 1,
-    width: '45%',
-    paddingBottom: 10,
-    // backgroundColor: 'rgba(0,0,0,0.1)',
-  },
-  leftContent: {
-    flexShrink: 1,
-    flexGrow: 0,
-    marginLeft: marginLeftRaw,
-    // flexDirection: 'row',
-    // backgroundColor: 'rgba(0,0,0,0.1)',
-    // alignItems: 'center',
-  },
-  right: {
-    width: '55%',
+    width: '40%',
     flexGrow: 0,
     flexShrink: 0,
-  },
-  controlBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    // backgroundColor: '#eee',
+    paddingBottom: 16,
+  },
+  leftContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingLeft: 20,
+    paddingRight: 20,
+  },
+  titleBox: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingLeft: 8,
+    paddingRight: 8,
+  },
+  songName: {
+    textAlign: 'center',
+  },
+  singerName: {
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  right: {
+    width: '60%',
+    flexGrow: 0,
+    flexShrink: 0,
+    borderLeftWidth: 1,
   },
 })
