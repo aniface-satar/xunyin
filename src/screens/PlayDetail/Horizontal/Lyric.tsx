@@ -1,9 +1,7 @@
 import { memo, useMemo, useEffect, useRef, useCallback } from 'react'
 import { View, FlatList, type FlatListProps, type NativeSyntheticEvent, type NativeScrollEvent, type LayoutChangeEvent } from 'react-native'
-// import { useLayout } from '@/utils/hooks'
 import { type Line, useLrcPlay, useLrcSet } from '@/plugins/lyric'
 import { createStyle } from '@/utils/tools'
-// import { useComponentIds } from '@/store/common/hook'
 import { useSettingValue } from '@/store/setting/hook'
 import { useGlassColors } from '@/utils/hooks/useGlassColors'
 import { useTheme } from '@/store/theme/hook'
@@ -14,9 +12,6 @@ import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
 import { scrollTo } from '@/utils/scroll'
 import PlayLine, { type PlayLineType } from '../components/PlayLine'
-// import { screenkeepAwake } from '@/utils/nativeModules/utils'
-// import { log } from '@/utils/log'
-// import { toast } from '@/utils/tools'
 
 type FlatListType = FlatListProps<Line>
 
@@ -24,18 +19,15 @@ interface LineProps {
   line: Line
   lineNum: number
   activeLine: number
-  /** 壁纸模式（自定义背景）且没有封面场：非当前行换成 palette 里那一档专用的墨（见 Vertical/Lyric.tsx 同名参数） */
   wallpaperLyric: boolean
   onLayout: (lineNum: number, height: number, width: number) => void
 }
 const LrcLine = memo(({ line, lineNum, activeLine, wallpaperLyric, onLayout }: LineProps) => {
   const glassColors = useGlassColors()
   const theme = useTheme()
-  // 与竖屏同一支墨：白字 / 黑字两套的颜料与描边都从主题里那一支派生
   const wallpaperInk = theme['wallpaper-ink']
   const wallpaperInks = useMemo(() => getWallpaperLyricPalette(wallpaperInk), [wallpaperInk])
   const lrcFontSize = useSettingValue('playDetail.horizontal.style.lrcFontSize')
-  const textAlign = useSettingValue('playDetail.style.align')
   const size = lrcFontSize / 10
   const lineHeight = setSpText(size) * 1.3
 
@@ -52,7 +44,6 @@ const LrcLine = memo(({ line, lineNum, activeLine, wallpaperLyric, onLayout }: L
     ] as const
   }, [active, glassColors, wallpaperLyric, wallpaperInks])
 
-  // 与竖屏同一笔账：当前行是满墨、到顶了，只能靠外沿那圈反色描边把它托出来（见 palette）。
   const activeShadow = wallpaperLyric && active ? {
     textShadowColor: wallpaperInks.activeShadow.color,
     textShadowOffset: wallpaperInks.activeShadow.offset,
@@ -63,13 +54,10 @@ const LrcLine = memo(({ line, lineNum, activeLine, wallpaperLyric, onLayout }: L
     onLayout(lineNum, nativeEvent.layout.height, nativeEvent.layout.width)
   }
 
-  // textBreakStrategy="simple" 用于解决某些设备上字体被截断的问题
-  // https://stackoverflow.com/a/72822360
   return (
     <View style={styles.line} onLayout={handleLayout}>
       <AnimatedColorText style={{
         ...styles.lineText,
-        textAlign,
         lineHeight,
         ...(activeShadow ?? {}),
       }} textBreakStrategy="simple" color={colors[0]} opacity={colors[2]} size={size}>{line.text}</AnimatedColorText>
@@ -77,7 +65,6 @@ const LrcLine = memo(({ line, lineNum, activeLine, wallpaperLyric, onLayout }: L
         line.extendedLyrics.map((lrc, index) => {
           return (<AnimatedColorText style={{
             ...styles.lineTranslationText,
-            textAlign,
             lineHeight: lineHeight * 0.8,
           }} textBreakStrategy="simple" key={index} color={colors[1]} opacity={colors[2]} size={size * 0.8}>{lrc}</AnimatedColorText>)
         })
@@ -97,8 +84,6 @@ export default () => {
   const { line } = useLrcPlay()
   const theme = useTheme()
   const { surface } = useCoverSurface()
-  // 与竖屏歌词页同一判据：壁纸模式且没有封面场时，非当前行走 palette 那支专用的白。
-  // 横向这一页也有封面场（动态背景），所以不能只看 is-wallpaper。
   const wallpaperLyric = surface == null && theme['is-wallpaper']
   const flatListRef = useRef<FlatList>(null)
   const playLineRef = useRef<PlayLineType>(null)
@@ -111,23 +96,10 @@ export default () => {
   const listLayoutInfoRef = useRef<{ spaceHeight: number, lineHeights: number[] }>({ spaceHeight: 0, lineHeights: [] })
   const scrollCancelRef = useRef<(() => void) | null>(null)
   const isShowLyricProgressSetting = useSettingValue('playDetail.isShowLyricProgressSetting')
-  // useLock()
-  // const [imgUrl, setImgUrl] = useState(null)
-  // const theme = useGetter('common', 'theme')
-  // const { onLayout, ...layout } = useLayout()
 
-  // useEffect(() => {
-  //   const url = playMusicInfo ? playMusicInfo.musicInfo.img : null
-  //   if (imgUrl == url) return
-  //   setImgUrl(url)
-  // // eslint-disable-next-line react-hooks/exhaustive-deps
-  // }, [playMusicInfo])
-
-  // const imgWidth = useMemo(() => layout.width * 0.75, [layout.width])
   const handleScrollToActive = (index = lineRef.current.line) => {
     if (index < 0) return
     if (flatListRef.current) {
-      // console.log('handleScrollToActive', index)
       if (scrollInfoRef.current && lineRef.current.line - lineRef.current.prevLine == 1) {
         let offset = listLayoutInfoRef.current.spaceHeight
         for (let line = 0; line < index; line++) {
@@ -190,7 +162,6 @@ export default () => {
     }, 3000)
   }
 
-
   useEffect(() => {
     return () => {
       if (delayScrollTimeout.current) {
@@ -205,7 +176,6 @@ export default () => {
   }, [])
 
   useEffect(() => {
-    // linesRef.current = lyricLines
     listLayoutInfoRef.current.lineHeights = []
     lineRef.current.prevLine = 0
     lineRef.current.line = 0
@@ -312,31 +282,21 @@ export default () => {
 const styles = createStyle({
   container: {
     flex: 1,
-    paddingLeft: 20,
-    paddingRight: 20,
-    // backgroundColor: 'rgba(0,0,0,0.1)',
+    paddingLeft: 24,
+    paddingRight: 24,
   },
   space: {
-    paddingTop: '100%',
+    paddingTop: '45%',
   },
   line: {
     paddingTop: 10,
     paddingBottom: 10,
-    // opacity: 0,
   },
   lineText: {
     textAlign: 'center',
-    // fontSize: 16,
-    // lineHeight: 20,
-    // paddingTop: 5,
-    // paddingBottom: 5,
-    // opacity: 0,
   },
   lineTranslationText: {
     textAlign: 'center',
-    // fontSize: 13,
-    // lineHeight: 17,
     paddingTop: 5,
-    // paddingBottom: 5,
   },
 })
